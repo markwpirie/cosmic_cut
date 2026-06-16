@@ -111,6 +111,7 @@ marker.x = nodeX(marker.col);
 marker.y = nodeY(marker.row);
 
 let dir = null; // {dx,dy}; null only at level begin (§ "never stop")
+let prevDir = null; // the previous (different) travel direction, for momentum
 let mode = "riding"; // "riding" | "cutting"
 let trail = []; // nodes of the in-progress cut
 let percent = 0;
@@ -120,9 +121,9 @@ let percent = 0;
 // and a normal one, §5). Seams are still rideable if the player steers onto
 // them, but they are NOT the cursor's default auto-path. We remember them here.
 const seams = new Set();
-// What the marker is currently riding, so auto-follow stays on the frontier
-// instead of wandering onto a seam.
-let rideType = "frontier"; // "frontier" | "seam"
+// What the marker is currently riding, so auto-follow stays on the auto network
+// (frontier/wall) instead of wandering onto a seam.
+let rideType = "auto"; // "auto" | "seam"
 
 // --- Input -----------------------------------------------------------------
 // Two intents drive the marker:
@@ -159,7 +160,12 @@ window.addEventListener("keyup", (e) => {
 });
 
 // --- Movement decisions (run at each grid intersection) --------------------
-function setDir(dx, dy) { dir = { dx, dy }; }
+function setDir(dx, dy) {
+  // Remember the last DIFFERENT heading so we can carry momentum through a
+  // T-junction (e.g. keep going east after a stretch heading south).
+  if (dir && (dir.dx !== dx || dir.dy !== dy)) prevDir = dir;
+  dir = { dx, dy };
+}
 
 // Canonical key for the edge leaving (col,row) in direction (dx,dy), matching
 // the wall keys recorded in finishCut().
@@ -168,14 +174,26 @@ function edgeKey(col, row, dx, dy) {
   return `v:${col}:${Math.min(row, row + dy)}`;
 }
 
+// Is this edge part of the arena's outer wall (one flank is off-grid)?
+function isArenaBorder(col, row, dx, dy) {
+  if (dx !== 0) return row === 0 || row === ROWS; // top / bottom wall
+  return col === 0 || col === COLS;               // left / right wall
+}
+
 // Can the marker ride the edge leaving (col,row) in (dx,dy), and how?
-//   "frontier" — open meets solid (the default auto-path)
-//   "seam"     — buried between two claimed cells, but a remembered cut line
-//   null       — not rideable (open space, raw interior, or off-arena)
+//   "auto" — the default travel network: the open frontier AND the arena wall.
+//            The wall is ALWAYS rideable, even where claimed territory is packed
+//            against it (so a seam reaching a buried wall can join it).
+//   "seam" — an internal cut line between two claimed regions; ridden only when
+//            the player deliberately steers onto it, never auto-followed.
+//   null   — not rideable (open space, raw interior, or off-arena)
 function rideTypeOf(col, row, dx, dy) {
   const cls = classifyEdge(col, row, dx, dy);
-  if (cls === "BOUNDARY") return "frontier";
-  if (cls === "INTERIOR" && seams.has(edgeKey(col, row, dx, dy))) return "seam";
+  if (cls === "BOUNDARY") return "auto";
+  if (cls === "INTERIOR") {
+    if (isArenaBorder(col, row, dx, dy)) return "auto"; // buried wall, still rideable
+    if (seams.has(edgeKey(col, row, dx, dy))) return "seam";
+  }
   return null;
 }
 
@@ -210,38 +228,44 @@ function decideRiding() {
   // Stopped and no usable input → stay put. The marker is only ever still at
   // level begin; it must NOT auto-start before the player picks a direction.
   if (!dir) return;
-  // 2. Keep going straight if the line carries on. Riding the frontier we only
-  //    continue along the frontier (so we follow the outer perimeter round
+  // 3. Keep going straight if the line carries on. Riding the auto network we
+  //    only continue along auto edges (so we follow the outer perimeter round
   //    corners rather than drifting onto an internal seam). Riding a seam we
   //    continue along whatever rideable edge lies straight ahead.
   const straight = rideTypeOf(marker.col, marker.row, dir.dx, dir.dy);
-  if (straight && (rideType !== "frontier" || straight === "frontier")) {
+  if (straight && (rideType !== "auto" || straight === "auto")) {
     rideType = straight;
     return;
   }
-  // 3. Forced turn (corner). Prefer the frontier — the default auto-path — then
-  //    a seam, never reversing unless nothing else is rideable. Never stop.
+  // 4. Forced turn (corner or T-junction). Gather the rideable non-reverse
+  //    exits, preferring the auto network (frontier / wall) over seams.
   const rev = { dx: -dir.dx, dy: -dir.dy };
   const all = [
     { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 },
   ];
-  for (const want of ["frontier", "seam"]) {
-    for (const d of all) {
-      if (d.dx === rev.dx && d.dy === rev.dy) continue;
-      if (rideTypeOf(marker.col, marker.row, d.dx, d.dy) === want) {
-        setDir(d.dx, d.dy);
-        rideType = want;
-        return;
-      }
-    }
+  const opts = [];
+  for (const d of all) {
+    if (d.dx === rev.dx && d.dy === rev.dy) continue;
+    const t = rideTypeOf(marker.col, marker.row, d.dx, d.dy);
+    if (t) opts.push({ d, t });
   }
-  for (const want of ["frontier", "seam"]) {
-    if (rideTypeOf(marker.col, marker.row, rev.dx, rev.dy) === want) {
-      setDir(rev.dx, rev.dy);
-      rideType = want;
-      return;
-    }
+  if (opts.length) {
+    const autos = opts.filter((o) => o.t === "auto");
+    const pool = autos.length ? autos : opts;
+    // Carry momentum through the junction: if a fork lines up with the heading
+    // we held before our last turn (e.g. east before turning south), take it.
+    // Otherwise it's a genuine 50-50, so choose at random.
+    let pick = prevDir
+      ? pool.find((o) => o.d.dx === prevDir.dx && o.d.dy === prevDir.dy)
+      : null;
+    if (!pick) pick = pool[Math.floor(Math.random() * pool.length)];
+    setDir(pick.d.dx, pick.d.dy);
+    rideType = pick.t;
+    return;
   }
+  // Only the way we came is rideable — ride back (never stop).
+  const rt = rideTypeOf(marker.col, marker.row, rev.dx, rev.dy);
+  if (rt) { setDir(rev.dx, rev.dy); rideType = rt; return; }
   dir = null; // only reachable at level begin with no input yet
 }
 
