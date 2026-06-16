@@ -30,9 +30,10 @@ const field = {
 };
 
 // Grid of cells covering the field. CELL must divide field.w and field.h.
-const CELL = 20;
-const COLS = field.w / CELL; // 36
-const ROWS = field.h / CELL; // 26
+// Finer cells = more granular cuts and smoother claimed outlines.
+const CELL = 8;
+const COLS = field.w / CELL; // 90
+const ROWS = field.h / CELL; // 65
 
 // Cell states. The grid holds the CLAIMED territory; the arena wall is implicit
 // (anything off the grid counts as solid — see cellSolid()).
@@ -300,19 +301,40 @@ function drawBackground() {
 }
 
 function drawClaimed() {
-  // Glass-like blocks come in Phase 9; for now a simple translucent fill.
-  ctx.fillStyle = "rgba(25, 230, 255, 0.18)";
-  ctx.strokeStyle = "rgba(25, 230, 255, 0.35)";
-  ctx.lineWidth = 1;
+  // Claimed cells fill as one solid translucent mass (no internal grid lines).
+  // Glass-like blocks come in Phase 9.
+  ctx.fillStyle = "rgba(25, 230, 255, 0.16)";
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (grid[r][c] !== FILLED) continue;
+      ctx.fillRect(field.x + c * CELL, field.y + r * CELL, CELL, CELL);
+    }
+  }
+}
+
+function drawClaimedOutline() {
+  // The perimeter of each claimed region — every edge where a claimed cell
+  // meets open space. This is exactly the boundary the marker can ride, so we
+  // draw it as a neon line. Edges against the arena wall are covered by the
+  // arena border, so we skip them. Batched into one path for speed.
+  ctx.strokeStyle = "#19e6ff";
+  ctx.lineWidth = 2;
+  ctx.shadowColor = "#19e6ff";
+  ctx.shadowBlur = 8;
+  ctx.beginPath();
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       if (grid[r][c] !== FILLED) continue;
       const x = field.x + c * CELL;
       const y = field.y + r * CELL;
-      ctx.fillRect(x, y, CELL, CELL);
-      ctx.strokeRect(x + 0.5, y + 0.5, CELL - 1, CELL - 1);
+      if (r - 1 >= 0 && grid[r - 1][c] === EMPTY) { ctx.moveTo(x, y); ctx.lineTo(x + CELL, y); }
+      if (r + 1 < ROWS && grid[r + 1][c] === EMPTY) { ctx.moveTo(x, y + CELL); ctx.lineTo(x + CELL, y + CELL); }
+      if (c - 1 >= 0 && grid[r][c - 1] === EMPTY) { ctx.moveTo(x, y); ctx.lineTo(x, y + CELL); }
+      if (c + 1 < COLS && grid[r][c + 1] === EMPTY) { ctx.moveTo(x + CELL, y); ctx.lineTo(x + CELL, y + CELL); }
     }
   }
+  ctx.stroke();
+  ctx.shadowBlur = 0;
 }
 
 function drawArena() {
@@ -360,6 +382,7 @@ function drawHUD() {
 function render() {
   drawBackground();
   drawClaimed();
+  drawClaimedOutline();
   drawArena();
   drawTrail();
   drawMarker();
