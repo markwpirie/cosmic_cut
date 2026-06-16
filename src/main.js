@@ -125,11 +125,15 @@ const seams = new Set();
 let rideType = "frontier"; // "frontier" | "seam"
 
 // --- Input -----------------------------------------------------------------
-// `pending` is the player's most recent intent, applied at the next grid
-// intersection (a buffered turn, like Pac-Man). We dedupe OS key-repeat so a
-// held key doesn't keep re-triggering cuts.
+// Two intents drive the marker:
+//   `pending` — a single FRESH key press, acted on at the next intersection
+//               (used to start a cut, or turn the instant it's possible).
+//   held keys — kept in `heldKeys` (press order). The latest still-held
+//               direction is a STANDING intent: hold a direction approaching a
+//               junction and the marker turns onto that line the moment it
+//               arrives. A held key never starts a cut — cuts need a fresh press.
 let pending = null;
-const down = new Set();
+const heldKeys = [];
 const KEY_VEC = {
   ArrowRight: { dx: 1, dy: 0 }, d: { dx: 1, dy: 0 }, D: { dx: 1, dy: 0 },
   ArrowLeft: { dx: -1, dy: 0 }, a: { dx: -1, dy: 0 }, A: { dx: -1, dy: 0 },
@@ -137,15 +141,22 @@ const KEY_VEC = {
   ArrowUp: { dx: 0, dy: -1 }, w: { dx: 0, dy: -1 }, W: { dx: 0, dy: -1 },
 };
 
+// The direction the player is currently holding (latest press still down).
+function currentDesired() {
+  return heldKeys.length ? KEY_VEC[heldKeys[heldKeys.length - 1]] : null;
+}
+
 window.addEventListener("keydown", (e) => {
-  const v = KEY_VEC[e.key];
-  if (!v) return;
+  if (!KEY_VEC[e.key]) return;
   e.preventDefault();
-  if (down.has(e.key)) return; // ignore auto-repeat
-  down.add(e.key);
-  pending = v;
+  if (heldKeys.includes(e.key)) return; // ignore OS auto-repeat
+  heldKeys.push(e.key);
+  pending = KEY_VEC[e.key];
 });
-window.addEventListener("keyup", (e) => down.delete(e.key));
+window.addEventListener("keyup", (e) => {
+  const i = heldKeys.indexOf(e.key);
+  if (i >= 0) heldKeys.splice(i, 1);
+});
 
 // --- Movement decisions (run at each grid intersection) --------------------
 function setDir(dx, dy) { dir = { dx, dy }; }
@@ -175,15 +186,26 @@ function startCut(dx, dy) {
 }
 
 function decideRiding() {
-  // 1. Honour a fresh player intent. The player may steer onto a seam.
+  // 1. A FRESH press acts immediately if it can: push into open space to start
+  //    a cut, or turn straight onto a line that's available right now.
   if (pending) {
-    const cls = classifyEdge(marker.col, marker.row, pending.dx, pending.dy);
     const p = pending;
     pending = null;
-    if (cls === "OPEN") { startCut(p.dx, p.dy); return; } // push into space = cut
+    if (classifyEdge(marker.col, marker.row, p.dx, p.dy) === "OPEN") {
+      startCut(p.dx, p.dy); // push into space = cut
+      return;
+    }
     const t = rideTypeOf(marker.col, marker.row, p.dx, p.dy);
     if (t) { setDir(p.dx, p.dy); rideType = t; return; } // frontier OR seam
-    // not rideable: ignore
+    // not actionable here — the held intent below applies it at the junction
+  }
+  // 2. A HELD direction turns onto its line as soon as one is reachable — this
+  //    is the "hold the turn in anticipation of a junction" behaviour. Held
+  //    keys only ride lines (frontier/seam); they never start a cut.
+  const want = currentDesired();
+  if (want) {
+    const t = rideTypeOf(marker.col, marker.row, want.dx, want.dy);
+    if (t) { setDir(want.dx, want.dy); rideType = t; return; }
   }
   // Stopped and no usable input → stay put. The marker is only ever still at
   // level begin; it must NOT auto-start before the player picks a direction.
