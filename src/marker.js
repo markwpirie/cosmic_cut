@@ -76,49 +76,44 @@ function decideRiding() {
   }
   // Stopped with no usable input → stay put (only ever at level begin).
   if (!dir) return;
-  // 3. Keep going straight if the line carries on. On the AUTO network we only
-  //    continue along auto edges (frontier rank 0 or buried wall rank 1), so we
-  //    follow the perimeter round corners rather than drifting onto a seam;
-  //    riding a SEAM we continue along whatever rideable edge lies ahead.
   const rev = { dx: -dir.dx, dy: -dir.dy };
-  const straightRank = rideRank(marker.col, marker.row, dir.dx, dir.dy);
-  const straightOk =
-    rideType === "auto" ? straightRank === 0 || straightRank === 1 : straightRank !== Infinity;
-  if (straightOk) {
-    rideType = straightRank === 2 ? "seam" : "auto";
-    return;
+
+  // 3. On a SEAM, just flow along it — never auto-divert onto the frontier (the
+  //    player steers on and off seams deliberately). Carry straight while we can.
+  if (rideType === "seam") {
+    const sr = rideRank(marker.col, marker.row, dir.dx, dir.dy);
+    if (sr !== Infinity) { rideType = sr === 2 ? "seam" : "auto"; return; }
+    // seam ran out — fall through and turn onto whatever's rideable.
   }
-  // 4. Forced turn (corner or T-junction). Gather non-reverse rideable exits and
-  //    keep only the most-preferred rank: the bright frontier (0) beats a buried
-  //    arena wall (1), so a turning perimeter never doubles back onto the wall.
-  //    Among equal-rank exits, carry momentum through the junction, else random.
-  //    (On a seam every rideable exit ranks equally — we just flow along it.)
+
+  // 4. On the AUTO network, at EVERY node pick the most-preferred non-reverse
+  //    exit: the bright frontier (rank 0) beats a buried arena wall (rank 1)
+  //    even when the wall runs straight ahead — so the marker hugs the bold line
+  //    and never glides along the outer wall when a frontier is there to take.
+  //    Tie-break within a rank: keep straight, then momentum, then a coin-flip.
+  //    Seams (rank 2) are never auto-taken while on the auto network.
+  const onSeam = rideType === "seam";
   const cands = [];
   let best = Infinity;
   for (const d of ALL_DIRS) {
     if (d.dx === rev.dx && d.dy === rev.dy) continue;
-    let rank = rideRank(marker.col, marker.row, d.dx, d.dy);
+    const rank = rideRank(marker.col, marker.row, d.dx, d.dy);
     if (rank === Infinity) continue;
-    if (rideType === "auto" && rank === 2) continue; // auto network ignores seams
-    if (rideType === "seam") rank = 0;               // on a seam, exits are equal
+    if (!onSeam && rank === 2) continue; // auto network ignores seams
     if (rank < best) { best = rank; cands.length = 0; cands.push(d); }
     else if (rank === best) cands.push(d);
   }
   if (cands.length) {
-    let pick = prevDir
-      ? cands.find((d) => d.dx === prevDir.dx && d.dy === prevDir.dy)
-      : null;
-    if (!pick) pick = cands[Math.floor(Math.random() * cands.length)];
+    let pick = cands.find((d) => d.dx === dir.dx && d.dy === dir.dy);          // keep straight
+    if (!pick && prevDir) pick = cands.find((d) => d.dx === prevDir.dx && d.dy === prevDir.dy); // momentum
+    if (!pick) pick = cands[Math.floor(Math.random() * cands.length)];        // coin-flip
     setDir(pick.dx, pick.dy);
     rideType = rideRank(marker.col, marker.row, pick.dx, pick.dy) === 2 ? "seam" : "auto";
     return;
   }
   // Only the way we came is rideable — ride back (never stop).
-  if (rideRank(marker.col, marker.row, rev.dx, rev.dy) !== Infinity) {
-    setDir(rev.dx, rev.dy);
-    rideType = rideRank(marker.col, marker.row, rev.dx, rev.dy) === 2 ? "seam" : "auto";
-    return;
-  }
+  const rr = rideRank(marker.col, marker.row, rev.dx, rev.dy);
+  if (rr !== Infinity) { setDir(rev.dx, rev.dy); rideType = rr === 2 ? "seam" : "auto"; return; }
   dir = null; // only reachable at level begin with no input yet
 }
 

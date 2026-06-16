@@ -5,11 +5,11 @@
 // in-progress cut trail is death; main.js owns that consequence. No DOM, so the
 // bounce and collision are unit-testable in Node.
 
-import { field, CELL, BLOB, MARKER, nodeX, nodeY } from "./config.js";
+import { field, CELL, COLS, ROWS, BLOB, MARKER, nodeX, nodeY } from "./config.js";
 import { cellSolid } from "./grid.js";
 
 export const blob = {
-  x: field.x + field.w / 2, // start centre-field, far from the bottom-centre marker
+  x: field.x + field.w / 2,
   y: field.y + field.h / 2,
   vx: 0,
   vy: 0,
@@ -24,9 +24,38 @@ function launch() {
   blob.vy = -BLOB.speed * k;
 }
 
+// A safe spawn: an OPEN cell, never inside claimed territory (or the blob would
+// be stuck). Prefer the field centre; otherwise the open cell farthest from the
+// player's start, so we don't drop on top of them after a death-respawn.
+function spawnPoint() {
+  const cc = Math.floor(COLS / 2);
+  const cr = Math.floor(ROWS / 2);
+  if (!cellSolid(cr, cc)) {
+    return { x: field.x + (cc + 0.5) * CELL, y: field.y + (cr + 0.5) * CELL };
+  }
+  let bestD = -1;
+  let bx = field.x + field.w / 2;
+  let by = field.y + field.h / 2;
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (cellSolid(r, c)) continue;
+      const dr = r - MARKER.startRow;
+      const dc = c - MARKER.startCol;
+      const d = dr * dr + dc * dc;
+      if (d > bestD) {
+        bestD = d;
+        bx = field.x + (c + 0.5) * CELL;
+        by = field.y + (r + 0.5) * CELL;
+      }
+    }
+  }
+  return { x: bx, y: by };
+}
+
 export function reset() {
-  blob.x = field.x + field.w / 2;
-  blob.y = field.y + field.h / 2;
+  const p = spawnPoint();
+  blob.x = p.x;
+  blob.y = p.y;
   blob.t = 0;
   launch();
 }
