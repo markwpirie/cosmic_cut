@@ -1,0 +1,62 @@
+/* COSMIC CUT — base styling. Deep space dark + neon accents (§10). */
+
+:root {
+  --bg: #05030f;
+  --neon-cyan: #19e6ff;
+  --neon-magenta: #ff3df0;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: #fff;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.title {
+  font-size: clamp(2rem, 6vw, 3.5rem);
+  letter-spacing: 0.3em;
+  font-weight: 800;
+  color: var(--neon-cyan);
+  text-shadow:
+    0 0 8px var(--neon-cyan),
+    0 0 24px var(--neon-cyan);
+}
+
+canvas {
+  /* Keep the arena crisp; scale down responsively without distorting. */
+  max-width: 100%;
+  height: auto;
+  background: #000;
+  border-radius: 6px;
+  box-shadow: 0 0 30px rgba(25, 230, 255, 0.25);
+}
+
+.tagline {
+  font-size: 0.85rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--neon-magenta);
+  opacity: 0.8;
+}

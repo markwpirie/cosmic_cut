@@ -1,0 +1,9 @@
+# OS / editor cruft
+.DS_Store
+*.log
+
+# Dependencies (none yet — plain JS for now, see GAME_DESIGN.md §12)
+node_modules/
+
+# Local editor / Claude Code settings
+.claude/
