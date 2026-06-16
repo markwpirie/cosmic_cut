@@ -1,9 +1,10 @@
-# COSMIC CUT — Game Design Document (Draft 3)
+# COSMIC CUT — Game Design Document (Draft 4)
 
 A modern, neon, space-themed take on the classic BBC Micro game *Kix* (itself a clone of the arcade game *Qix*). Carve out territory by cutting areas of the play field while dodging enemies, hit the percentage target to clear the level, and chain bold risky cuts — SPLITS, BLOCK OUTS, MEGA-CUTS and LONG cuts — for big scores.
 
-**Status:** Draft 3 — folds in markup edits, LONG-cut scoring, MULTI STACK, super-zone progression. Source of truth from here.
+**Status:** Draft 4 — Phases 0–2 built and live. Folds in the realised movement/control scheme and the perimeter (auto-network vs seam) model discovered while building the core cut/claim mechanic. Earlier drafts' scoring/mode design unchanged. Source of truth from here.
 **Repo:** `/Users/marksMAC/Documents/GitHub/cosmic_cut` (GitHub + local). Build continues in Claude Code.
+**Live:** https://markwpirie.github.io/cosmic_cut/ (GitHub Pages, deploys on push to `main`).
 **Target platform:** Web first (desktop + mobile browser), structured for later iPhone port.
 **Builder:** First game, non-coder. Scoped to be learnable step by step.
 
@@ -82,7 +83,7 @@ The showpiece move. Boxing an enemy and cutting so opponents end up separated ei
 
 - A rectangular arena, inset within a neon-bordered frame. **Looks attractive from the start** — not a grey box in the final game (though early dev phases will be plain while we build the logic).
 - Unclaimed space: deep animated space backdrop, or a parallax cloudscape (think *Super Star Wars*).
-- **Claimed areas:** solidify into shiny, glass-like blocks of colour — translucent, glossy, catching neon light. The arena visibly fills with jewel-like territory as you win. **Slow-cut claims use a darker shade** to differentiate them.
+- **Claimed areas:** solidify into shiny, glass-like blocks of colour — translucent, glossy, catching neon light. The arena visibly fills with jewel-like territory as you win. **Slow-cut claims use a darker shade** to differentiate them. Each claimed region keeps its own **internal perimeter** (the line of the cut that made it), so the border between a slow-cut darker region and a normal one stays visible and rideable — see the perimeter model in §16.
 - HUD across the top: Score, Lives, Current %, Target %, active Power-up, level multiplier (if a SPLIT is active).
 
 ---
@@ -189,12 +190,12 @@ High score saved locally (browser storage) for now; online leaderboard is a much
 
 Each phase is a working, runnable thing. One concept per phase.
 
-| Phase | Goal | New concept learned |
-|-------|------|---------------------|
-| **0** | Project skeleton on GitHub, blank canvas renders, deploys as a web page. | Repo, tooling, deploy pipeline |
-| **1** | A marker you can move around the arena border with keyboard. | Input, the game loop, drawing to canvas |
-| **2** | Cut a line into open space and claim the enclosed area. Show %. | The core algorithm — the heart of the game |
-| **3** | Add one Blob enemy + collision = lose a life. 3 lives, game over. | Enemies, collision, game state |
+| Phase | Goal | New concept learned | Status |
+|-------|------|---------------------|--------|
+| **0** | Project skeleton on GitHub, blank canvas renders, deploys as a web page. | Repo, tooling, deploy pipeline | ✅ Done |
+| **1** | A marker you can move around the arena border with keyboard. | Input, the game loop, drawing to canvas | ✅ Done (continuous "ride the rail" movement — see §16) |
+| **2** | Cut a line into open space and claim the enclosed area. Show %. | The core algorithm — the heart of the game | ✅ Done (grid + flood fill; perimeter model in §16) |
+| **3** | Add one Blob enemy + collision = lose a life. 3 lives, game over. | Enemies, collision, game state | ◻ Next |
 | **4** | Zones + level table + win condition + progression. | Data-driven design |
 | **5** | Cut mechanics: BLOCK OUT, MEGA-CUT, SPLIT, LONG, MULTI STACK + scoring. | Geometry checks, reward logic |
 | **6** | First power-up (Freeze), then the rest, ZOOM last. | Timed effects/state |
@@ -211,9 +212,11 @@ By Phase 3 you have something genuinely playable. Everything after is making it 
 
 ## 12. Tech Stack
 
-- **Language:** JavaScript (plain JS to start — no framework to fight while learning).
+- **Language:** JavaScript (plain JS, ES modules — no framework to fight while learning).
 - **Rendering:** HTML5 Canvas for Phases 1–8 (simple, easy to reason about), then **Pixi.js** for the visual upgrade in Phase 9.
-- **Hosting:** GitHub repo + GitHub Pages (free static hosting, deploys on push). Same workflow as the Pirie Smart Home repo.
+- **Arena model:** a grid of cells (currently 8px cells over a 720×520 field). Each cell is empty or claimed; the marker travels the grid lines. Claim = flood fill (§13, §16). Logic is plain maths, separate from rendering (§1.2), and is unit-tested headlessly in Node before each deploy.
+- **Hosting:** GitHub repo + GitHub Pages (free static hosting, deploys on push to `main`). Same workflow as the Pirie Smart Home repo.
+- **Live URL:** https://markwpirie.github.io/cosmic_cut/
 - **Editor:** VS Code with Claude Code.
 - **Repo path:** `/Users/marksMAC/Documents/GitHub/cosmic_cut`
 - **iPhone path:** PWA first (free, no App Store). Capacitor wrap → App Store only if ever published.
@@ -225,6 +228,8 @@ Why not Godot now: the core logic is small, learning JS + Canvas teaches transfe
 ## 13. The One Hard Part (honest flag)
 
 Section 2's claim/fill algorithm — and the SPLIT detection in Phase 5 — are the genuinely tricky bits. Cutting the arena, working out which enclosed region to claim, and detecting which enemies ended up on which side of a cut (and which side is smaller) is real geometry/flood-fill work. LONG-cut length tracking is easier but needs the cut path recorded. Everything else is more forgiving. Phases 2 and 5 are where the real learning lands — walk through the logic rather than just pasting code.
+
+**As built (Phase 2):** the arena is a grid; a cut records a trail of grid edges; closing the loop runs a flood fill that labels the open cells into regions and **claims everything except the largest open region** (so you keep the big space to play in). With no enemy yet (Phase 3 adds them), that just means the smaller side is claimed. The same flood fill is what Phase 5's SPLIT will reuse to decide which side enemies are on. See §16 for the rideable-perimeter model that fell out of this.
 
 ---
 
@@ -246,6 +251,11 @@ Section 2's claim/fill algorithm — and the SPLIT detection in Phase 5 — are 
 - Clearing 5-5 unlocks SUPER mode: S1-1+ replays layouts with 2× enemies ✓
 - Boss levels use the same enemy set as their zone (for now) ✓
 - Extra life on X-4 clears; no lives cap, unlimited stacking ✓
+- **Continuous movement:** marker travels continuously; never stops except at level begin; pressing the opposite direction reverses ✓ (§16)
+- **Hold-to-turn:** holding a direction takes the next available turn at a junction; a fresh press into open space starts a cut ✓ (§16)
+- **Two rideable line types:** the auto network (open frontier + arena wall, always rideable, auto-followed) vs internal seams (cut lines between claimed regions, rideable only when steered onto) ✓ (§16)
+- **T-junction with no input:** carry prior heading (momentum); random left/right if none ✓ (§16)
+- **Claim rule (no enemies):** keep the largest open region, claim the rest ✓ (§13)
 
 ## 15. Still Open (deferred, none block the build)
 
@@ -253,3 +263,30 @@ Section 2's claim/fill algorithm — and the SPLIT detection in Phase 5 — are 
 2. SUPER mode beyond S5-5 — wrap to SS mode (4× enemies)? Or procedural? Decide after SUPER is built.
 3. Whether LONG-cut multiplier has an upper cap or scales unbounded.
 4. Solar Wind vs ZOOM overlap — both move enemies; may merge or differentiate later.
+5. Marker control feel at the current grid resolution (8px) — revisit speed/granularity once enemies and dodging exist (Phase 3).
+
+---
+
+## 16. As-Built: Movement, Controls & the Perimeter Model (Phases 0–2)
+
+How the marker actually moves and what it can ride, as realised while building the core. This is the source of truth for the control feel; it refines §2–§3.
+
+### Movement & controls
+- **Continuous travel.** Press a direction and the marker keeps going on its own — it does **not** stop. The only time it's stationary is at the very start of a level, before the first press.
+- **Opposite reverses.** Pressing the direction opposite to current travel turns the marker around.
+- **Hold a turn in anticipation.** Approaching a junction, hold the direction you want; the marker takes that line the instant it becomes available, so turns don't need frame-perfect taps.
+- **Cutting vs riding.** A **fresh** press that points into open space starts a **cut**. A **held** key only ever rides existing lines — it never surprise-cuts you into the open.
+- Keyboard: arrow keys or WASD. Touch controls are Phase 7.
+
+### The perimeter model (two kinds of rideable line)
+The arena is a grid; the boundary the marker rides is made of grid edges. Edges fall into:
+- **Auto network — always rideable, auto-followed.** The **open frontier** (where unclaimed space meets claimed territory) *and* the **arena wall** (always rideable, even where claimed area is packed against it). When you're not steering, the marker follows this network around corners on its own. Drawn as the **bold** bright line.
+- **Seams — rideable only when you steer onto them.** The internal line left by every cut. Once both sides of it are claimed it becomes a buried seam between two claimed regions. It stays visible (a **thin, dim** internal line) and you can ride it if you deliberately turn onto it, but the cursor never auto-wanders onto it. **This is the structure slow-cut darker regions border on (§5).**
+
+### Junction behaviour
+- At a **corner**, the marker follows the line round (never stops, never needs input).
+- At a **T-junction** with no input, it **carries momentum** — e.g. if it was heading east before turning south, it continues east when the line forks — falling back to a **random** left/right when there's no prior heading to carry.
+- Holding a direction always overrides the automatic choice.
+
+### Rendering hierarchy (Phase 2, pre-polish)
+Dim arena frame < thin dim seams < solid translucent claimed fill < **bold bright open frontier** < cut trail (blue) < marker (magenta). Glass blocks, slow-cut shading, and juice arrive in Phase 9.

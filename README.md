@@ -8,9 +8,11 @@ See [GAME_DESIGN.md](GAME_DESIGN.md) for the full design.
 
 ## Status
 
-**Phase 1** — a marker you can walk around the arena border with the arrow
-keys (or WASD), driven by a real game loop. Built in vertical slices, one new
-concept per phase (see §11 of the design doc).
+**Phase 2 complete** — cut into open space and claim territory with a live %.
+Continuous "ride the rail" movement (arrow keys / WASD), grid + flood-fill
+claim, and a two-tier perimeter model (auto frontier/wall vs rideable internal
+seams). Built in vertical slices, one new concept per phase (see §11 and §16 of
+[GAME_DESIGN.md](GAME_DESIGN.md)). **Next: Phase 3** — enemies, collision, lives.
 
 ## Run locally
 
