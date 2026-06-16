@@ -8,8 +8,9 @@ See [GAME_DESIGN.md](GAME_DESIGN.md) for the full design.
 
 ## Status
 
-**Phase 0** — project skeleton, blank canvas renders, deploys as a web page.
-Built in vertical slices, one new concept per phase (see §11 of the design doc).
+**Phase 1** — a marker you can walk around the arena border with the arrow
+keys (or WASD), driven by a real game loop. Built in vertical slices, one new
+concept per phase (see §11 of the design doc).
 
 ## Run locally
 
