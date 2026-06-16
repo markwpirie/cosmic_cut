@@ -195,8 +195,8 @@ Each phase is a working, runnable thing. One concept per phase.
 | **0** | Project skeleton on GitHub, blank canvas renders, deploys as a web page. | Repo, tooling, deploy pipeline | ✅ Done |
 | **1** | A marker you can move around the arena border with keyboard. | Input, the game loop, drawing to canvas | ✅ Done (continuous "ride the rail" movement — see §16) |
 | **2** | Cut a line into open space and claim the enclosed area. Show %. | The core algorithm — the heart of the game | ✅ Done (grid + flood fill; perimeter model in §16) |
-| **3** | Add one Blob enemy + collision = lose a life. 3 lives, game over. | Enemies, collision, game state | ◻ Next |
-| **4** | Zones + level table + win condition + progression. | Data-driven design |
+| **3** | Add one Blob enemy + collision = lose a life. 3 lives, game over. | Enemies, collision, game state | ✅ Done (bouncing Blob; blob-aware claim; frontier-priority corners — see §14, §16) |
+| **4** | Zones + level table + win condition + progression. | Data-driven design | ◻ Next |
 | **5** | Cut mechanics: BLOCK OUT, MEGA-CUT, SPLIT, LONG, MULTI STACK + scoring. | Geometry checks, reward logic |
 | **6** | First power-up (Freeze), then the rest, ZOOM last. | Timed effects/state |
 | **7** | Touch controls for mobile. | Input abstraction (key step for iPhone) |
@@ -229,7 +229,9 @@ Why not Godot now: the core logic is small, learning JS + Canvas teaches transfe
 
 Section 2's claim/fill algorithm — and the SPLIT detection in Phase 5 — are the genuinely tricky bits. Cutting the arena, working out which enclosed region to claim, and detecting which enemies ended up on which side of a cut (and which side is smaller) is real geometry/flood-fill work. LONG-cut length tracking is easier but needs the cut path recorded. Everything else is more forgiving. Phases 2 and 5 are where the real learning lands — walk through the logic rather than just pasting code.
 
-**As built (Phase 2):** the arena is a grid; a cut records a trail of grid edges; closing the loop runs a flood fill that labels the open cells into regions and **claims everything except the largest open region** (so you keep the big space to play in). With no enemy yet (Phase 3 adds them), that just means the smaller side is claimed. The same flood fill is what Phase 5's SPLIT will reuse to decide which side enemies are on. See §16 for the rideable-perimeter model that fell out of this.
+**As built (Phase 2):** the arena is a grid; a cut records a trail of grid edges; closing the loop runs a flood fill that labels the open cells into regions. In Phase 2, with no enemy, it kept the **largest** open region and claimed the rest. The same flood fill is what Phase 5's SPLIT will reuse to decide which side enemies are on. See §16 for the rideable-perimeter model that fell out of this.
+
+**As built (Phase 3):** the claim is now **enemy-aware** (the real Qix rule): it keeps open the region the Blob is in and claims the rest — you can never bury the enemy. (No enemy → falls back to keeping the largest region, e.g. in headless tests.) Cutting *around* the Blob to trap it on the small side therefore claims the large side — the seed of the Phase 5 SPLIT.
 
 ---
 
@@ -255,6 +257,9 @@ Section 2's claim/fill algorithm — and the SPLIT detection in Phase 5 — are 
 - **Hold-to-turn:** holding a direction takes the next available turn at a junction; a fresh press into open space starts a cut ✓ (§16)
 - **Two rideable line types:** the auto network (open frontier + arena wall, always rideable, auto-followed) vs internal seams (cut lines between claimed regions, rideable only when steered onto) ✓ (§16)
 - **T-junction with no input:** carry prior heading (momentum); random left/right if none ✓ (§16)
+- **Frontier beats buried wall at corners:** auto-following ranks exits — the bright open frontier (BOUNDARY) is preferred over a buried arena wall (claimed packed against it), so a turning perimeter follows the bold line forward and never doubles back onto the wall. Momentum/random only break ties between *equal*-rank exits (a true frontier T-junction) ✓ (§16)
+- **Blob enemy (Phase 3):** one free-floating orb bouncing through open space (reflects off wall + claimed cells); no chasing yet. Touching the marker or the in-progress cut = lose a life; 3 lives; game over → any key restarts. Claim keeps the Blob's region open ✓
+- **Blob-aware claim:** keep the region the enemy occupies, claim the rest (replaces Phase 2's "keep largest"); largest-region is the no-enemy fallback ✓ (§13)
 - **Claim rule (no enemies):** keep the largest open region, claim the rest ✓ (§13)
 
 ## 15. Still Open (deferred, none block the build)

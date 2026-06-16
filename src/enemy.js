@@ -38,6 +38,15 @@ export function radius() {
   return BLOB.radius + Math.sin(blob.t * 4) * BLOB.pulse;
 }
 
+// The grid cell the blob currently sits in — the region the claim must keep
+// open (you can't claim the side the enemy is on, §13).
+export function cell() {
+  return {
+    col: Math.floor((blob.x - field.x) / CELL),
+    row: Math.floor((blob.y - field.y) / CELL),
+  };
+}
+
 // Is the pixel point inside a solid cell? Off-field maps to off-grid cells,
 // which cellSolid() already treats as the arena wall.
 function solidAt(px, py) {

@@ -96,6 +96,23 @@ export function rideTypeOf(col, row, dx, dy) {
   return null;
 }
 
+// Ride-preference rank for auto-following the perimeter (lower = preferred):
+//   0  frontier   — a BOUNDARY edge: the bright, open-facing bold line
+//   1  buried wall — the arena wall with claimed territory packed against it
+//   2  seam        — an internal cut line between claimed regions
+//   Infinity       — not rideable (open space or off-arena)
+// Preferring 0 over 1 means a turning perimeter follows the frontier and never
+// doubles back onto a wall; seams (2) are only taken when deliberately steered.
+export function rideRank(col, row, dx, dy) {
+  const cls = classifyEdge(col, row, dx, dy);
+  if (cls === "BOUNDARY") return 0;
+  if (cls === "INTERIOR") {
+    if (isArenaBorder(col, row, dx, dy)) return 1;
+    if (seams.has(edgeKey(col, row, dx, dy))) return 2;
+  }
+  return Infinity;
+}
+
 // A cut may travel through open space or hug a boundary, but never along an
 // interior (both-solid) edge.
 export function canCut(col, row, dx, dy) {
@@ -105,9 +122,11 @@ export function canCut(col, row, dx, dy) {
 
 // --- The claim (flood fill) ------------------------------------------------
 // Given a cut's trail (a list of lattice nodes from safe ground back to safe
-// ground), fill the enclosed territory: keep the largest open region and claim
-// everything else. Also remembers the trail as a permanent seam line.
-export function applyClaim(trail) {
+// ground), fill the enclosed territory. You can never claim the region an enemy
+// is in (real Qix rule, §13): keepCell is the blob's {col,row}; we keep that
+// region open and claim the rest. Without a valid keepCell (enemy-free tests) we
+// fall back to keeping the largest region. Also records the trail as a seam.
+export function applyClaim(trail, keepCell) {
   // 1. Turn the trail into a set of "walls" between cells.
   const walls = new Set();
   for (let i = 0; i < trail.length - 1; i++) {
@@ -141,13 +160,23 @@ export function applyClaim(trail) {
     }
   }
 
-  // 3. Keep the largest open region; claim all the others.
+  // 3. Decide which open region to KEEP, then claim all the others. Keep the
+  //    one holding the enemy (keepCell) if given and valid; else the largest.
   if (sizes.length > 1) {
-    let largest = 0;
-    for (let i = 1; i < sizes.length; i++) if (sizes[i] > sizes[largest]) largest = i;
+    let keep = -1;
+    if (keepCell) {
+      const { col, row } = keepCell;
+      if (row >= 0 && row < ROWS && col >= 0 && col < COLS && comp[row][col] !== -1) {
+        keep = comp[row][col];
+      }
+    }
+    if (keep === -1) {
+      keep = 0;
+      for (let i = 1; i < sizes.length; i++) if (sizes[i] > sizes[keep]) keep = i;
+    }
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
-        if (comp[r][c] !== -1 && comp[r][c] !== largest) grid[r][c] = FILLED;
+        if (comp[r][c] !== -1 && comp[r][c] !== keep) grid[r][c] = FILLED;
       }
     }
   }

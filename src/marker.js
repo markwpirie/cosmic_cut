@@ -5,8 +5,9 @@
 // it's drivable headlessly in tests.
 
 import { MARKER, nodeX, nodeY } from "./config.js";
-import { classifyEdge, rideTypeOf, canCut, nodeIsSafe, applyClaim } from "./grid.js";
+import { classifyEdge, rideTypeOf, rideRank, canCut, nodeIsSafe, applyClaim } from "./grid.js";
 import { peekPending, clearPending, currentDesired } from "./control.js";
+import { cell as blobCell } from "./enemy.js";
 
 export const marker = {
   col: MARKER.startCol,
@@ -75,39 +76,49 @@ function decideRiding() {
   }
   // Stopped with no usable input → stay put (only ever at level begin).
   if (!dir) return;
-  // 3. Keep going straight if the line carries on. Riding the auto network we
-  //    only continue along auto edges (so we follow the outer perimeter round
-  //    corners rather than drifting onto a seam); riding a seam we continue
-  //    along whatever rideable edge lies straight ahead.
-  const straight = rideTypeOf(marker.col, marker.row, dir.dx, dir.dy);
-  if (straight && (rideType !== "auto" || straight === "auto")) {
-    rideType = straight;
+  // 3. Keep going straight if the line carries on. On the AUTO network we only
+  //    continue along auto edges (frontier rank 0 or buried wall rank 1), so we
+  //    follow the perimeter round corners rather than drifting onto a seam;
+  //    riding a SEAM we continue along whatever rideable edge lies ahead.
+  const rev = { dx: -dir.dx, dy: -dir.dy };
+  const straightRank = rideRank(marker.col, marker.row, dir.dx, dir.dy);
+  const straightOk =
+    rideType === "auto" ? straightRank === 0 || straightRank === 1 : straightRank !== Infinity;
+  if (straightOk) {
+    rideType = straightRank === 2 ? "seam" : "auto";
     return;
   }
-  // 4. Forced turn (corner or T-junction). Gather rideable non-reverse exits,
-  //    preferring the auto network over seams.
-  const rev = { dx: -dir.dx, dy: -dir.dy };
-  const opts = [];
+  // 4. Forced turn (corner or T-junction). Gather non-reverse rideable exits and
+  //    keep only the most-preferred rank: the bright frontier (0) beats a buried
+  //    arena wall (1), so a turning perimeter never doubles back onto the wall.
+  //    Among equal-rank exits, carry momentum through the junction, else random.
+  //    (On a seam every rideable exit ranks equally — we just flow along it.)
+  const cands = [];
+  let best = Infinity;
   for (const d of ALL_DIRS) {
     if (d.dx === rev.dx && d.dy === rev.dy) continue;
-    const t = rideTypeOf(marker.col, marker.row, d.dx, d.dy);
-    if (t) opts.push({ d, t });
+    let rank = rideRank(marker.col, marker.row, d.dx, d.dy);
+    if (rank === Infinity) continue;
+    if (rideType === "auto" && rank === 2) continue; // auto network ignores seams
+    if (rideType === "seam") rank = 0;               // on a seam, exits are equal
+    if (rank < best) { best = rank; cands.length = 0; cands.push(d); }
+    else if (rank === best) cands.push(d);
   }
-  if (opts.length) {
-    const autos = opts.filter((o) => o.t === "auto");
-    const pool = autos.length ? autos : opts;
-    // Carry momentum through the junction; random left/right if there's none.
+  if (cands.length) {
     let pick = prevDir
-      ? pool.find((o) => o.d.dx === prevDir.dx && o.d.dy === prevDir.dy)
+      ? cands.find((d) => d.dx === prevDir.dx && d.dy === prevDir.dy)
       : null;
-    if (!pick) pick = pool[Math.floor(Math.random() * pool.length)];
-    setDir(pick.d.dx, pick.d.dy);
-    rideType = pick.t;
+    if (!pick) pick = cands[Math.floor(Math.random() * cands.length)];
+    setDir(pick.dx, pick.dy);
+    rideType = rideRank(marker.col, marker.row, pick.dx, pick.dy) === 2 ? "seam" : "auto";
     return;
   }
   // Only the way we came is rideable — ride back (never stop).
-  const rt = rideTypeOf(marker.col, marker.row, rev.dx, rev.dy);
-  if (rt) { setDir(rev.dx, rev.dy); rideType = rt; return; }
+  if (rideRank(marker.col, marker.row, rev.dx, rev.dy) !== Infinity) {
+    setDir(rev.dx, rev.dy);
+    rideType = rideRank(marker.col, marker.row, rev.dx, rev.dy) === 2 ? "seam" : "auto";
+    return;
+  }
   dir = null; // only reachable at level begin with no input yet
 }
 
@@ -132,7 +143,7 @@ function decideCutting() {
 }
 
 function finishCut() {
-  applyClaim(trail);
+  applyClaim(trail, blobCell()); // keep the blob's region open; claim the rest
   trail = [];
   mode = "riding";
 }
