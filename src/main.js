@@ -115,6 +115,15 @@ let mode = "riding"; // "riding" | "cutting"
 let trail = []; // nodes of the in-progress cut
 let percent = 0;
 
+// Every cut leaves a permanent line. Once both sides of that line are claimed
+// it becomes an internal SEAM (e.g. the border between a slow-cut darker region
+// and a normal one, §5). Seams are still rideable if the player steers onto
+// them, but they are NOT the cursor's default auto-path. We remember them here.
+const seams = new Set();
+// What the marker is currently riding, so auto-follow stays on the frontier
+// instead of wandering onto a seam.
+let rideType = "frontier"; // "frontier" | "seam"
+
 // --- Input -----------------------------------------------------------------
 // `pending` is the player's most recent intent, applied at the next grid
 // intersection (a buffered turn, like Pac-Man). We dedupe OS key-repeat so a
@@ -141,6 +150,24 @@ window.addEventListener("keyup", (e) => down.delete(e.key));
 // --- Movement decisions (run at each grid intersection) --------------------
 function setDir(dx, dy) { dir = { dx, dy }; }
 
+// Canonical key for the edge leaving (col,row) in direction (dx,dy), matching
+// the wall keys recorded in finishCut().
+function edgeKey(col, row, dx, dy) {
+  if (dx !== 0) return `h:${row}:${Math.min(col, col + dx)}`;
+  return `v:${col}:${Math.min(row, row + dy)}`;
+}
+
+// Can the marker ride the edge leaving (col,row) in (dx,dy), and how?
+//   "frontier" — open meets solid (the default auto-path)
+//   "seam"     — buried between two claimed cells, but a remembered cut line
+//   null       — not rideable (open space, raw interior, or off-arena)
+function rideTypeOf(col, row, dx, dy) {
+  const cls = classifyEdge(col, row, dx, dy);
+  if (cls === "BOUNDARY") return "frontier";
+  if (cls === "INTERIOR" && seams.has(edgeKey(col, row, dx, dy))) return "seam";
+  return null;
+}
+
 function startCut(dx, dy) {
   mode = "cutting";
   trail = [{ col: marker.col, row: marker.row }];
@@ -148,38 +175,50 @@ function startCut(dx, dy) {
 }
 
 function decideRiding() {
-  // 1. Honour a fresh player intent.
+  // 1. Honour a fresh player intent. The player may steer onto a seam.
   if (pending) {
     const cls = classifyEdge(marker.col, marker.row, pending.dx, pending.dy);
     const p = pending;
     pending = null;
     if (cls === "OPEN") { startCut(p.dx, p.dy); return; } // push into space = cut
-    if (cls === "BOUNDARY") { setDir(p.dx, p.dy); return; } // ride along boundary
-    // INVALID: ignore
+    const t = rideTypeOf(marker.col, marker.row, p.dx, p.dy);
+    if (t) { setDir(p.dx, p.dy); rideType = t; return; } // frontier OR seam
+    // not rideable: ignore
   }
   // Stopped and no usable input → stay put. The marker is only ever still at
   // level begin; it must NOT auto-start before the player picks a direction.
   if (!dir) return;
-  // 2. Keep going straight if still on boundary.
-  if (classifyEdge(marker.col, marker.row, dir.dx, dir.dy) === "BOUNDARY") {
+  // 2. Keep going straight if the line carries on. Riding the frontier we only
+  //    continue along the frontier (so we follow the outer perimeter round
+  //    corners rather than drifting onto an internal seam). Riding a seam we
+  //    continue along whatever rideable edge lies straight ahead.
+  const straight = rideTypeOf(marker.col, marker.row, dir.dx, dir.dy);
+  if (straight && (rideType !== "frontier" || straight === "frontier")) {
+    rideType = straight;
     return;
   }
-  // 3. Hit a corner — auto-turn to follow the boundary loop (never reverse if
-  //    another option exists; never stop).
-  const rev = dir ? { dx: -dir.dx, dy: -dir.dy } : null;
+  // 3. Forced turn (corner). Prefer the frontier — the default auto-path — then
+  //    a seam, never reversing unless nothing else is rideable. Never stop.
+  const rev = { dx: -dir.dx, dy: -dir.dy };
   const all = [
     { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 },
   ];
-  for (const d of all) {
-    if (rev && d.dx === rev.dx && d.dy === rev.dy) continue;
-    if (classifyEdge(marker.col, marker.row, d.dx, d.dy) === "BOUNDARY") {
-      setDir(d.dx, d.dy);
-      return;
+  for (const want of ["frontier", "seam"]) {
+    for (const d of all) {
+      if (d.dx === rev.dx && d.dy === rev.dy) continue;
+      if (rideTypeOf(marker.col, marker.row, d.dx, d.dy) === want) {
+        setDir(d.dx, d.dy);
+        rideType = want;
+        return;
+      }
     }
   }
-  if (rev && classifyEdge(marker.col, marker.row, rev.dx, rev.dy) === "BOUNDARY") {
-    setDir(rev.dx, rev.dy);
-    return;
+  for (const want of ["frontier", "seam"]) {
+    if (rideTypeOf(marker.col, marker.row, rev.dx, rev.dy) === want) {
+      setDir(rev.dx, rev.dy);
+      rideType = want;
+      return;
+    }
   }
   dir = null; // only reachable at level begin with no input yet
 }
@@ -238,6 +277,8 @@ function finishCut() {
       walls.add(`v:${a.col}:${Math.min(a.row, b.row)}`); // vertical grid-line
     }
   }
+  // Remember the trail permanently as a perimeter/seam line.
+  for (const w of walls) seams.add(w);
 
   // 2. Label every empty cell into connected regions. The trail walls and the
   //    existing claimed cells act as barriers, so the cut splits the open space.
@@ -326,6 +367,34 @@ function drawClaimed() {
   }
 }
 
+function drawSeams() {
+  // Internal perimeters: remembered cut lines that are now buried between two
+  // claimed cells. Drawn thin and dim — visible and rideable, but clearly not
+  // the bold open frontier. (Future slow-cut regions border on these, §5.)
+  ctx.strokeStyle = "rgba(125, 249, 255, 0.4)";
+  ctx.lineWidth = 1.25;
+  ctx.beginPath();
+  for (const key of seams) {
+    const [kind, a, b] = key.split(":");
+    const p = Number(a);
+    const q = Number(b);
+    if (kind === "h") {
+      // horizontal grid-line at row=p, cell column q; flanks rows p-1 and p
+      if (!(cellSolid(p - 1, q) && cellSolid(p, q))) continue; // only when buried
+      const x = field.x + q * CELL;
+      const y = field.y + p * CELL;
+      ctx.moveTo(x, y); ctx.lineTo(x + CELL, y);
+    } else {
+      // vertical grid-line at col=p, cell row q; flanks cols p-1 and p
+      if (!(cellSolid(q, p - 1) && cellSolid(q, p))) continue;
+      const x = field.x + p * CELL;
+      const y = field.y + q * CELL;
+      ctx.moveTo(x, y); ctx.lineTo(x, y + CELL);
+    }
+  }
+  ctx.stroke();
+}
+
 function drawPerimeter() {
   // The frontier of the OPEN region — every edge where empty space meets solid
   // (claimed territory or the arena wall). This is exactly the path the marker
@@ -401,6 +470,7 @@ function drawHUD() {
 function render() {
   drawBackground();
   drawClaimed();
+  drawSeams();
   drawArena();
   drawPerimeter();
   drawTrail();
