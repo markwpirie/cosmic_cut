@@ -25,7 +25,7 @@ export function nodeY(row) { return field.y + row * CELL; }
 
 // Marker tuning.
 export const MARKER = {
-  speed: 240, // px/sec — "standard speed is FAST" (§3)
+  speed: 200, // px/sec — "standard speed is FAST" (§3)
   radius: 7,
   startCol: COLS / 2, // bottom-centre (classic Qix spot)
   startRow: ROWS,
