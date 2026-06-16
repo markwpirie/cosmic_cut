@@ -31,6 +31,14 @@ export const MARKER = {
   startRow: ROWS,
 };
 
+// Blob enemy tuning (Phase 3). One bouncing orb; slower than the marker so it's
+// dodgeable. The expanding/contracting line-shape (§9) is a Phase 9 visual.
+export const BLOB = {
+  speed: 120,  // px/sec — under MARKER.speed so the player can outrun it
+  radius: 10,  // base radius; pulses ±pulse
+  pulse: 2,    // breathing amount (cheap nod to "expanding/contracting")
+};
+
 // Neon palette (§10). Glass blocks / slow-cut shading arrive in Phase 9.
 export const COLORS = {
   bg: "#05030f",
@@ -40,6 +48,7 @@ export const COLORS = {
   frontier: "#7df9ff",
   trail: "#5ad6ff",
   marker: "#ff3df0",
+  blob: "#ff5a3c",       // red-orange — reads as danger vs cyan rails / magenta marker
   hud: "#ffffff",
   hudAccent: "#ff3df0",
 };

@@ -6,6 +6,8 @@
 import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, MARKER, nodeX, nodeY } from "./config.js";
 import { grid, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
 import { marker, mode, trail } from "./marker.js";
+import { blob, radius as blobRadius } from "./enemy.js";
+import { lives, state } from "./game.js";
 
 function drawBackground(ctx) {
   ctx.fillStyle = COLORS.bg;
@@ -97,6 +99,16 @@ function drawTrail(ctx) {
   ctx.shadowBlur = 0;
 }
 
+function drawBlob(ctx) {
+  ctx.fillStyle = COLORS.blob;
+  ctx.shadowColor = COLORS.blob;
+  ctx.shadowBlur = 20;
+  ctx.beginPath();
+  ctx.arc(blob.x, blob.y, blobRadius(), 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+}
+
 function drawMarker(ctx) {
   ctx.fillStyle = COLORS.marker;
   ctx.shadowColor = COLORS.marker;
@@ -108,12 +120,31 @@ function drawMarker(ctx) {
 }
 
 function drawHUD(ctx) {
-  ctx.fillStyle = COLORS.hud;
-  ctx.font = "600 18px system-ui, sans-serif";
+  ctx.textAlign = "left";
   ctx.textBaseline = "top";
+  ctx.font = "600 18px system-ui, sans-serif";
+  ctx.fillStyle = COLORS.hud;
   ctx.fillText(`CLAIMED ${percent.toFixed(0)}%`, 12, 10);
   ctx.fillStyle = COLORS.hudAccent;
   ctx.fillText(`TARGET 50%`, 150, 10); // win condition arrives in Phase 4
+  ctx.fillStyle = COLORS.marker;
+  ctx.fillText(`LIVES ${"♥".repeat(lives)}`, 270, 10);
+}
+
+function drawGameOver(ctx) {
+  if (state !== "gameover") return;
+  ctx.fillStyle = "rgba(5, 3, 15, 0.78)";
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = COLORS.hudAccent;
+  ctx.font = "700 48px system-ui, sans-serif";
+  ctx.fillText("GAME OVER", WIDTH / 2, HEIGHT / 2 - 24);
+  ctx.fillStyle = COLORS.hud;
+  ctx.font = "500 20px system-ui, sans-serif";
+  ctx.fillText("press any key to restart", WIDTH / 2, HEIGHT / 2 + 28);
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
 }
 
 export function render(ctx) {
@@ -123,6 +154,8 @@ export function render(ctx) {
   drawArena(ctx);
   drawPerimeter(ctx);
   drawTrail(ctx);
+  drawBlob(ctx);
   drawMarker(ctx);
   drawHUD(ctx);
+  drawGameOver(ctx);
 }
