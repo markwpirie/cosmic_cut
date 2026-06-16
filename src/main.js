@@ -1,18 +1,19 @@
-// COSMIC CUT — Phase 1
-// New concepts: keyboard input, the game loop, and animating the canvas.
+// COSMIC CUT — Phase 2
+// New concept: the core claim algorithm — cut into open space, close the loop,
+// flood-fill the enclosed area, show the live percentage (§2, §13).
 //
-// The marker rides the SAFE border of the arena (§2). Pushing OUT into the
-// open field to "cut" is Phase 2; here the marker is locked to the perimeter.
+// THE MODEL CHANGE
+// Phase 1's marker rode a smooth perimeter line. To claim *area*, the arena is
+// now a GRID of cells, each EMPTY or FILLED (claimed). The marker travels on
+// the grid LINES (the lattice between cells), still moving continuously and
+// turning at intersections — the same "ride the rail, never stop" feel.
 //
-// Movement model (per design feedback): the marker is a train on a loop of
-// track. Press a direction and it travels that way CONTINUOUSLY, rounding
-// corners by itself, until you press the OPPOSITE direction to reverse. It is
-// only ever stopped at the very start of a level.
-//
-// The trick that makes this simple: instead of an (x, y) we track a single
-// number `t` — the distance travelled CLOCKWISE around the perimeter from the
-// top-left corner. Moving is just `t += direction`, and wrapping `t` past the
-// end of the loop turns the corners for free.
+// A cell-edge between two cells is "safe boundary" if a FILLED cell (or the
+// arena wall) sits on either side; it's "open" if both sides are empty. Riding
+// hugs safe boundary. Pushing into open space starts a CUT — a trail of edges
+// through empty cells. When the trail returns to safe ground, the trail plus
+// the existing walls enclose the empty space into regions; we keep the largest
+// open region to play in and CLAIM everything else (flood fill).
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -21,86 +22,275 @@ const WIDTH = canvas.width;
 const HEIGHT = canvas.height;
 const MARGIN = 40;
 
-// The play field rectangle. Its perimeter is the track the marker rides.
 const field = {
   x: MARGIN,
   y: MARGIN,
-  w: WIDTH - MARGIN * 2,
-  h: HEIGHT - MARGIN * 2,
+  w: WIDTH - MARGIN * 2, // 720
+  h: HEIGHT - MARGIN * 2, // 520
 };
-const LEFT = field.x;
-const RIGHT = field.x + field.w;
-const TOP = field.y;
-const BOTTOM = field.y + field.h;
 
-// Total length of the perimeter loop.
-const PERIMETER = 2 * (field.w + field.h);
+// Grid of cells covering the field. CELL must divide field.w and field.h.
+const CELL = 20;
+const COLS = field.w / CELL; // 36
+const ROWS = field.h / CELL; // 26
 
+// Cell states. The grid holds the CLAIMED territory; the arena wall is implicit
+// (anything off the grid counts as solid — see cellSolid()).
+const EMPTY = 0;
+const FILLED = 1;
+const grid = Array.from({ length: ROWS }, () => new Array(COLS).fill(EMPTY));
+
+// --- Geometry helpers ------------------------------------------------------
+// Lattice point (col, row) -> pixel position. col: 0..COLS, row: 0..ROWS.
+function nodeX(col) { return field.x + col * CELL; }
+function nodeY(row) { return field.y + row * CELL; }
+
+// Is cell (cr, cc) solid? Off-grid = the arena wall = solid.
+function cellSolid(cr, cc) {
+  if (cr < 0 || cr >= ROWS || cc < 0 || cc >= COLS) return true;
+  return grid[cr][cc] === FILLED;
+}
+
+// A lattice point is "safe" if any of the four cells touching it is solid —
+// i.e. it sits on the arena wall or against claimed territory.
+function nodeIsSafe(col, row) {
+  return (
+    cellSolid(row - 1, col - 1) ||
+    cellSolid(row - 1, col) ||
+    cellSolid(row, col - 1) ||
+    cellSolid(row, col)
+  );
+}
+
+// Classify the edge leaving (col,row) in direction (dx,dy):
+//   "INVALID"  — leaves the arena
+//   "BOUNDARY" — runs alongside solid (safe to ride)
+//   "OPEN"     — runs through empty space on both sides (a cut)
+function classifyEdge(col, row, dx, dy) {
+  const nc = col + dx;
+  const nr = row + dy;
+  if (nc < 0 || nc > COLS || nr < 0 || nr > ROWS) return "INVALID";
+  if (dx !== 0) {
+    // horizontal edge along grid-line row=row, spanning the cell column c
+    const c = Math.min(col, nc);
+    const solid = cellSolid(row - 1, c) || cellSolid(row, c);
+    return solid ? "BOUNDARY" : "OPEN";
+  } else {
+    // vertical edge along grid-line col=col, spanning the cell row r
+    const r = Math.min(row, nr);
+    const solid = cellSolid(r, col - 1) || cellSolid(r, col);
+    return solid ? "BOUNDARY" : "OPEN";
+  }
+}
+
+// --- Marker & state --------------------------------------------------------
 const marker = {
+  col: COLS / 2, // start bottom-centre (classic Qix spot)
+  row: ROWS,
   x: 0,
   y: 0,
-  speed: 260, // pixels per second — "standard speed is FAST" (§3)
+  speed: 240, // px/sec — "standard speed is FAST" (§3)
   radius: 7,
 };
+marker.x = nodeX(marker.col);
+marker.y = nodeY(marker.row);
 
-// `t` = distance clockwise around the perimeter from the top-left corner.
-// `dir` = travel direction: +1 clockwise, -1 anticlockwise, 0 stopped.
-// Start at the bottom-centre (classic Qix spot) and STOPPED — the only time
-// the marker is ever still (§ feedback: "never stopped except on level begin").
-let t = field.w + field.h + field.w / 2;
-let dir = 0;
-
-// Map a perimeter distance to an actual point on the rectangle's edge.
-function pointAt(d) {
-  d = ((d % PERIMETER) + PERIMETER) % PERIMETER; // wrap into [0, PERIMETER)
-  const { w, h } = field;
-  if (d < w) return { x: LEFT + d, y: TOP };                 // top edge,  →
-  if (d < w + h) return { x: RIGHT, y: TOP + (d - w) };       // right edge, ↓
-  if (d < w + h + w) return { x: RIGHT - (d - w - h), y: BOTTOM }; // bottom, ←
-  return { x: LEFT, y: BOTTOM - (d - 2 * w - h) };            // left edge,  ↑
-}
-
-// Which screen direction is "clockwise / forward" on the edge at distance d?
-// (Top: right, Right: down, Bottom: left, Left: up.)
-function forwardDirAt(d) {
-  d = ((d % PERIMETER) + PERIMETER) % PERIMETER;
-  const { w, h } = field;
-  if (d < w) return "right";
-  if (d < w + h) return "down";
-  if (d < w + h + w) return "left";
-  return "up";
-}
+let dir = null; // {dx,dy}; null only at level begin (§ "never stop")
+let mode = "riding"; // "riding" | "cutting"
+let trail = []; // nodes of the in-progress cut
+let percent = 0;
 
 // --- Input -----------------------------------------------------------------
-// Direction changes are discrete events, so we act on keydown rather than
-// polling a held-keys set. A press along the current edge sets the travel
-// direction; pressing the opposite of the current travel reverses it.
-const OPPOSITE = { left: "right", right: "left", up: "down", down: "up" };
-const KEY_TO_DIR = {
-  ArrowRight: "right", d: "right", D: "right",
-  ArrowLeft: "left", a: "left", A: "left",
-  ArrowUp: "up", w: "up", W: "up",
-  ArrowDown: "down", s: "down", S: "down",
+// `pending` is the player's most recent intent, applied at the next grid
+// intersection (a buffered turn, like Pac-Man). We dedupe OS key-repeat so a
+// held key doesn't keep re-triggering cuts.
+let pending = null;
+const down = new Set();
+const KEY_VEC = {
+  ArrowRight: { dx: 1, dy: 0 }, d: { dx: 1, dy: 0 }, D: { dx: 1, dy: 0 },
+  ArrowLeft: { dx: -1, dy: 0 }, a: { dx: -1, dy: 0 }, A: { dx: -1, dy: 0 },
+  ArrowDown: { dx: 0, dy: 1 }, s: { dx: 0, dy: 1 }, S: { dx: 0, dy: 1 },
+  ArrowUp: { dx: 0, dy: -1 }, w: { dx: 0, dy: -1 }, W: { dx: 0, dy: -1 },
 };
 
 window.addEventListener("keydown", (e) => {
-  const want = KEY_TO_DIR[e.key];
-  if (!want) return;
-  e.preventDefault(); // stop arrow keys scrolling the page
-
-  const forward = forwardDirAt(t);
-  if (want === forward) dir = 1; // go clockwise along this edge
-  else if (want === OPPOSITE[forward]) dir = -1; // go anticlockwise
-  // A press PERPENDICULAR to the current edge does nothing on the border —
-  // that input becomes "start a cut" in Phase 2.
+  const v = KEY_VEC[e.key];
+  if (!v) return;
+  e.preventDefault();
+  if (down.has(e.key)) return; // ignore auto-repeat
+  down.add(e.key);
+  pending = v;
 });
+window.addEventListener("keyup", (e) => down.delete(e.key));
+
+// --- Movement decisions (run at each grid intersection) --------------------
+function setDir(dx, dy) { dir = { dx, dy }; }
+
+function startCut(dx, dy) {
+  mode = "cutting";
+  trail = [{ col: marker.col, row: marker.row }];
+  setDir(dx, dy);
+}
+
+function decideRiding() {
+  // 1. Honour a fresh player intent.
+  if (pending) {
+    const cls = classifyEdge(marker.col, marker.row, pending.dx, pending.dy);
+    const p = pending;
+    pending = null;
+    if (cls === "OPEN") { startCut(p.dx, p.dy); return; } // push into space = cut
+    if (cls === "BOUNDARY") { setDir(p.dx, p.dy); return; } // ride along boundary
+    // INVALID: ignore
+  }
+  // Stopped and no usable input → stay put. The marker is only ever still at
+  // level begin; it must NOT auto-start before the player picks a direction.
+  if (!dir) return;
+  // 2. Keep going straight if still on boundary.
+  if (classifyEdge(marker.col, marker.row, dir.dx, dir.dy) === "BOUNDARY") {
+    return;
+  }
+  // 3. Hit a corner — auto-turn to follow the boundary loop (never reverse if
+  //    another option exists; never stop).
+  const rev = dir ? { dx: -dir.dx, dy: -dir.dy } : null;
+  const all = [
+    { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 },
+  ];
+  for (const d of all) {
+    if (rev && d.dx === rev.dx && d.dy === rev.dy) continue;
+    if (classifyEdge(marker.col, marker.row, d.dx, d.dy) === "BOUNDARY") {
+      setDir(d.dx, d.dy);
+      return;
+    }
+  }
+  if (rev && classifyEdge(marker.col, marker.row, rev.dx, rev.dy) === "BOUNDARY") {
+    setDir(rev.dx, rev.dy);
+    return;
+  }
+  dir = null; // only reachable at level begin with no input yet
+}
+
+function decideCutting() {
+  const rev = { dx: -dir.dx, dy: -dir.dy };
+  // A perpendicular/forward press steers the cut; reversing into our own trail
+  // is disallowed.
+  if (pending && !(pending.dx === rev.dx && pending.dy === rev.dy)) {
+    const cls = classifyEdge(marker.col, marker.row, pending.dx, pending.dy);
+    const p = pending;
+    pending = null;
+    if (cls !== "INVALID") { setDir(p.dx, p.dy); return; }
+  }
+  // Otherwise carry straight on.
+  if (classifyEdge(marker.col, marker.row, dir.dx, dir.dy) !== "INVALID") return;
+  // Forward leaves the arena: turn to any non-reverse valid edge.
+  const all = [
+    { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 },
+  ];
+  for (const d of all) {
+    if (d.dx === rev.dx && d.dy === rev.dy) continue;
+    if (classifyEdge(marker.col, marker.row, d.dx, d.dy) !== "INVALID") {
+      setDir(d.dx, d.dy);
+      return;
+    }
+  }
+  setDir(rev.dx, rev.dy);
+}
+
+// Called the instant the marker lands on a grid intersection.
+function onArrive() {
+  if (mode === "cutting") {
+    trail.push({ col: marker.col, row: marker.row });
+    if (nodeIsSafe(marker.col, marker.row)) {
+      finishCut(); // claim, back to riding
+      decideRiding();
+      return;
+    }
+    decideCutting();
+    return;
+  }
+  decideRiding();
+}
+
+// --- The claim (flood fill) ------------------------------------------------
+function finishCut() {
+  // 1. Turn the trail into a set of "walls" between cells.
+  const walls = new Set();
+  for (let i = 0; i < trail.length - 1; i++) {
+    const a = trail[i];
+    const b = trail[i + 1];
+    if (a.row === b.row) {
+      walls.add(`h:${a.row}:${Math.min(a.col, b.col)}`); // horizontal grid-line
+    } else {
+      walls.add(`v:${a.col}:${Math.min(a.row, b.row)}`); // vertical grid-line
+    }
+  }
+
+  // 2. Label every empty cell into connected regions. The trail walls and the
+  //    existing claimed cells act as barriers, so the cut splits the open space.
+  const comp = Array.from({ length: ROWS }, () => new Array(COLS).fill(-1));
+  const sizes = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (grid[r][c] === FILLED || comp[r][c] !== -1) continue;
+      const id = sizes.length;
+      let size = 0;
+      const stack = [[r, c]];
+      comp[r][c] = id;
+      while (stack.length) {
+        const [cr, cc] = stack.pop();
+        size++;
+        // up / down / left / right, blocked by trail walls or solid cells
+        if (cr - 1 >= 0 && grid[cr - 1][cc] === EMPTY && comp[cr - 1][cc] === -1 && !walls.has(`h:${cr}:${cc}`)) { comp[cr - 1][cc] = id; stack.push([cr - 1, cc]); }
+        if (cr + 1 < ROWS && grid[cr + 1][cc] === EMPTY && comp[cr + 1][cc] === -1 && !walls.has(`h:${cr + 1}:${cc}`)) { comp[cr + 1][cc] = id; stack.push([cr + 1, cc]); }
+        if (cc - 1 >= 0 && grid[cr][cc - 1] === EMPTY && comp[cr][cc - 1] === -1 && !walls.has(`v:${cc}:${cr}`)) { comp[cr][cc - 1] = id; stack.push([cr, cc - 1]); }
+        if (cc + 1 < COLS && grid[cr][cc + 1] === EMPTY && comp[cr][cc + 1] === -1 && !walls.has(`v:${cc + 1}:${cr}`)) { comp[cr][cc + 1] = id; stack.push([cr, cc + 1]); }
+      }
+      sizes.push(size);
+    }
+  }
+
+  // 3. Keep the largest open region; claim all the others.
+  if (sizes.length > 1) {
+    let largest = 0;
+    for (let i = 1; i < sizes.length; i++) if (sizes[i] > sizes[largest]) largest = i;
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (comp[r][c] !== -1 && comp[r][c] !== largest) grid[r][c] = FILLED;
+      }
+    }
+  }
+
+  trail = [];
+  mode = "riding";
+  recomputePercent();
+}
+
+function recomputePercent() {
+  let filled = 0;
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (grid[r][c] === FILLED) filled++;
+  percent = (filled / (ROWS * COLS)) * 100;
+}
 
 // --- Update ----------------------------------------------------------------
 function update(dt) {
-  t += dir * marker.speed * dt; // travel; wrapping in pointAt turns corners
-  const p = pointAt(t);
-  marker.x = p.x;
-  marker.y = p.y;
+  if (!dir) { decideRiding(); if (!dir) return; } // start moving on first input
+  let remaining = marker.speed * dt;
+  while (remaining > 0 && dir) {
+    const tx = nodeX(marker.col + dir.dx);
+    const ty = nodeY(marker.row + dir.dy);
+    const distToNode = Math.hypot(tx - marker.x, ty - marker.y);
+    if (remaining >= distToNode) {
+      marker.x = tx;
+      marker.y = ty;
+      marker.col += dir.dx;
+      marker.row += dir.dy;
+      remaining -= distToNode;
+      onArrive(); // pick the next direction (may claim)
+    } else {
+      marker.x += dir.dx * remaining;
+      marker.y += dir.dy * remaining;
+      remaining = 0;
+    }
+  }
 }
 
 // --- Render ----------------------------------------------------------------
@@ -109,12 +299,42 @@ function drawBackground() {
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
 }
 
+function drawClaimed() {
+  // Glass-like blocks come in Phase 9; for now a simple translucent fill.
+  ctx.fillStyle = "rgba(25, 230, 255, 0.18)";
+  ctx.strokeStyle = "rgba(25, 230, 255, 0.35)";
+  ctx.lineWidth = 1;
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (grid[r][c] !== FILLED) continue;
+      const x = field.x + c * CELL;
+      const y = field.y + r * CELL;
+      ctx.fillRect(x, y, CELL, CELL);
+      ctx.strokeRect(x + 0.5, y + 0.5, CELL - 1, CELL - 1);
+    }
+  }
+}
+
 function drawArena() {
   ctx.lineWidth = 3;
   ctx.strokeStyle = "#19e6ff";
   ctx.shadowColor = "#19e6ff";
   ctx.shadowBlur = 16;
   ctx.strokeRect(field.x, field.y, field.w, field.h);
+  ctx.shadowBlur = 0;
+}
+
+function drawTrail() {
+  if (mode !== "cutting" || trail.length === 0) return;
+  ctx.strokeStyle = "#5ad6ff"; // cut line is blue (§10); LONG colours = Phase 5
+  ctx.lineWidth = 3;
+  ctx.shadowColor = "#5ad6ff";
+  ctx.shadowBlur = 10;
+  ctx.beginPath();
+  ctx.moveTo(nodeX(trail[0].col), nodeY(trail[0].row));
+  for (let i = 1; i < trail.length; i++) ctx.lineTo(nodeX(trail[i].col), nodeY(trail[i].row));
+  ctx.lineTo(marker.x, marker.y); // up to the live marker position
+  ctx.stroke();
   ctx.shadowBlur = 0;
 }
 
@@ -128,28 +348,31 @@ function drawMarker() {
   ctx.shadowBlur = 0;
 }
 
-function render() {
-  drawBackground();
-  drawArena();
-  drawMarker();
+function drawHUD() {
+  ctx.fillStyle = "#fff";
+  ctx.font = "600 18px system-ui, sans-serif";
+  ctx.textBaseline = "top";
+  ctx.fillText(`CLAIMED ${percent.toFixed(0)}%`, 12, 10);
+  ctx.fillStyle = "#ff3df0";
+  ctx.fillText(`TARGET 50%`, 150, 10); // win condition arrives in Phase 4
 }
 
-// --- The game loop ---------------------------------------------------------
-// requestAnimationFrame runs our loop ~60×/sec. We measure the real seconds
-// between frames (dt) and scale movement by it, so speed is the same on any
-// machine regardless of frame rate.
-let lastTime = performance.now();
+function render() {
+  drawBackground();
+  drawClaimed();
+  drawArena();
+  drawTrail();
+  drawMarker();
+  drawHUD();
+}
 
+// --- Game loop -------------------------------------------------------------
+let lastTime = performance.now();
 function loop(now) {
   const dt = (now - lastTime) / 1000;
   lastTime = now;
-
   update(dt);
   render();
-
   requestAnimationFrame(loop);
 }
-
-// Place the marker at its starting point before the first frame.
-({ x: marker.x, y: marker.y } = pointAt(t));
 requestAnimationFrame(loop);
