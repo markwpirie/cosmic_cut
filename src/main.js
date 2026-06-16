@@ -63,25 +63,39 @@ function nodeIsSafe(col, row) {
   );
 }
 
-// Classify the edge leaving (col,row) in direction (dx,dy):
+// Classify the edge leaving (col,row) in direction (dx,dy) by looking at the
+// two cells it runs between:
 //   "INVALID"  — leaves the arena
-//   "BOUNDARY" — runs alongside solid (safe to ride)
-//   "OPEN"     — runs through empty space on both sides (a cut)
+//   "OPEN"     — empty on BOTH sides (open space; pushing here starts a cut)
+//   "BOUNDARY" — empty on one side, solid on the other (the true perimeter —
+//                the only thing the marker may ride)
+//   "INTERIOR" — solid on BOTH sides (buried inside claimed territory or wall;
+//                NOT rideable — this is what stops the marker slicing through
+//                a claimed area)
 function classifyEdge(col, row, dx, dy) {
   const nc = col + dx;
   const nr = row + dy;
   if (nc < 0 || nc > COLS || nr < 0 || nr > ROWS) return "INVALID";
+  let sa, sb; // the two cells flanking the edge
   if (dx !== 0) {
-    // horizontal edge along grid-line row=row, spanning the cell column c
-    const c = Math.min(col, nc);
-    const solid = cellSolid(row - 1, c) || cellSolid(row, c);
-    return solid ? "BOUNDARY" : "OPEN";
+    const c = Math.min(col, nc); // horizontal edge along grid-line row
+    sa = cellSolid(row - 1, c);
+    sb = cellSolid(row, c);
   } else {
-    // vertical edge along grid-line col=col, spanning the cell row r
-    const r = Math.min(row, nr);
-    const solid = cellSolid(r, col - 1) || cellSolid(r, col);
-    return solid ? "BOUNDARY" : "OPEN";
+    const r = Math.min(row, nr); // vertical edge along grid-line col
+    sa = cellSolid(r, col - 1);
+    sb = cellSolid(r, col);
   }
+  if (sa && sb) return "INTERIOR";
+  if (!sa && !sb) return "OPEN";
+  return "BOUNDARY";
+}
+
+// A cut may travel through open space or hug a perimeter, but never along an
+// interior (both-solid) edge.
+function canCut(col, row, dx, dy) {
+  const cls = classifyEdge(col, row, dx, dy);
+  return cls === "OPEN" || cls === "BOUNDARY";
 }
 
 // --- Marker & state --------------------------------------------------------
@@ -175,20 +189,20 @@ function decideCutting() {
   // A perpendicular/forward press steers the cut; reversing into our own trail
   // is disallowed.
   if (pending && !(pending.dx === rev.dx && pending.dy === rev.dy)) {
-    const cls = classifyEdge(marker.col, marker.row, pending.dx, pending.dy);
     const p = pending;
     pending = null;
-    if (cls !== "INVALID") { setDir(p.dx, p.dy); return; }
+    if (canCut(marker.col, marker.row, p.dx, p.dy)) { setDir(p.dx, p.dy); return; }
   }
   // Otherwise carry straight on.
-  if (classifyEdge(marker.col, marker.row, dir.dx, dir.dy) !== "INVALID") return;
-  // Forward leaves the arena: turn to any non-reverse valid edge.
+  if (canCut(marker.col, marker.row, dir.dx, dir.dy)) return;
+  // Forward is blocked (arena edge or claimed interior): turn to any non-reverse
+  // direction we can still cut along.
   const all = [
     { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 },
   ];
   for (const d of all) {
     if (d.dx === rev.dx && d.dy === rev.dy) continue;
-    if (classifyEdge(marker.col, marker.row, d.dx, d.dy) !== "INVALID") {
+    if (canCut(marker.col, marker.row, d.dx, d.dy)) {
       setDir(d.dx, d.dy);
       return;
     }
@@ -312,36 +326,41 @@ function drawClaimed() {
   }
 }
 
-function drawClaimedOutline() {
-  // The perimeter of each claimed region — every edge where a claimed cell
-  // meets open space. This is exactly the boundary the marker can ride, so we
-  // draw it as a neon line. Edges against the arena wall are covered by the
-  // arena border, so we skip them. Batched into one path for speed.
-  ctx.strokeStyle = "#19e6ff";
-  ctx.lineWidth = 2;
-  ctx.shadowColor = "#19e6ff";
-  ctx.shadowBlur = 8;
+function drawPerimeter() {
+  // The frontier of the OPEN region — every edge where empty space meets solid
+  // (claimed territory or the arena wall). This is exactly the path the marker
+  // can ride, so we draw it BOLD and bright. Drawn over the dimmer arena frame
+  // so the live, rideable perimeter always stands out, hugging claimed areas
+  // rather than the outer rectangle. Batched into one path for speed.
+  ctx.strokeStyle = "#7df9ff";
+  ctx.lineWidth = 3.5;
+  ctx.lineCap = "round";
+  ctx.shadowColor = "#7df9ff";
+  ctx.shadowBlur = 12;
   ctx.beginPath();
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
-      if (grid[r][c] !== FILLED) continue;
+      if (grid[r][c] !== EMPTY) continue;
       const x = field.x + c * CELL;
       const y = field.y + r * CELL;
-      if (r - 1 >= 0 && grid[r - 1][c] === EMPTY) { ctx.moveTo(x, y); ctx.lineTo(x + CELL, y); }
-      if (r + 1 < ROWS && grid[r + 1][c] === EMPTY) { ctx.moveTo(x, y + CELL); ctx.lineTo(x + CELL, y + CELL); }
-      if (c - 1 >= 0 && grid[r][c - 1] === EMPTY) { ctx.moveTo(x, y); ctx.lineTo(x, y + CELL); }
-      if (c + 1 < COLS && grid[r][c + 1] === EMPTY) { ctx.moveTo(x + CELL, y); ctx.lineTo(x + CELL, y + CELL); }
+      if (cellSolid(r - 1, c)) { ctx.moveTo(x, y); ctx.lineTo(x + CELL, y); }
+      if (cellSolid(r + 1, c)) { ctx.moveTo(x, y + CELL); ctx.lineTo(x + CELL, y + CELL); }
+      if (cellSolid(r, c - 1)) { ctx.moveTo(x, y); ctx.lineTo(x, y + CELL); }
+      if (cellSolid(r, c + 1)) { ctx.moveTo(x + CELL, y); ctx.lineTo(x + CELL, y + CELL); }
     }
   }
   ctx.stroke();
   ctx.shadowBlur = 0;
+  ctx.lineCap = "butt";
 }
 
 function drawArena() {
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = "#19e6ff";
-  ctx.shadowColor = "#19e6ff";
-  ctx.shadowBlur = 16;
+  // The outer frame, drawn dim/thin so the bold open-region frontier (which
+  // overlays it where the border is still open) reads as the bolder line.
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "#1f8fa3";
+  ctx.shadowColor = "#1f8fa3";
+  ctx.shadowBlur = 6;
   ctx.strokeRect(field.x, field.y, field.w, field.h);
   ctx.shadowBlur = 0;
 }
@@ -382,8 +401,8 @@ function drawHUD() {
 function render() {
   drawBackground();
   drawClaimed();
-  drawClaimedOutline();
   drawArena();
+  drawPerimeter();
   drawTrail();
   drawMarker();
   drawHUD();
