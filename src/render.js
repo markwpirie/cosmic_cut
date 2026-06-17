@@ -1,33 +1,44 @@
 // COSMIC CUT — render (all drawing)
-// Reads the world (grid) and player (marker) state and paints a frame. Knows
-// nothing about input or game rules. Render hierarchy (§16): dim arena frame <
-// thin seams < solid claimed fill < bold open frontier < cut trail < marker.
+// Reads the world (grid), player (marker), enemies (enemy) and game state and
+// paints a frame. Knows nothing about input or rules. Per state it draws: the
+// start menu, a level intro banner, the play field, the level-complete wipe, and
+// the game-over / campaign-complete overlays.
 
 import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, MARKER, nodeX, nodeY } from "./config.js";
 import { grid, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
 import { marker, mode, trail } from "./marker.js";
-import { blob, radius as blobRadius } from "./enemy.js";
-import { lives, state } from "./game.js";
+import { blobs, radius as blobRadius } from "./enemy.js";
+import * as game from "./game.js";
+import { zoneCount } from "./levels.js";
+
+const CX = field.x + field.w / 2;
+const CY = field.y + field.h / 2;
+const MAXR = Math.hypot(field.w / 2, field.h / 2);
+const WIPE_TIME = 0.85; // seconds for the level-complete circle to cover the field
 
 function drawBackground(ctx) {
   ctx.fillStyle = COLORS.bg;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
 }
 
-function drawClaimed(ctx) {
-  // Claimed cells fill as one solid translucent mass (no internal grid lines).
+// Claimed cells as one solid translucent mass. During the level-complete wipe,
+// cells within the expanding circle (radius wipeR) vanish inside-out.
+function drawClaimed(ctx, wipeR = -1) {
   ctx.fillStyle = COLORS.claimedFill;
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       if (grid[r][c] !== FILLED) continue;
+      if (wipeR >= 0) {
+        const px = field.x + (c + 0.5) * CELL;
+        const py = field.y + (r + 0.5) * CELL;
+        if (Math.hypot(px - CX, py - CY) <= wipeR) continue; // wiped away
+      }
       ctx.fillRect(field.x + c * CELL, field.y + r * CELL, CELL, CELL);
     }
   }
 }
 
 function drawSeams(ctx) {
-  // Internal perimeters: remembered cut lines now buried between two claimed
-  // cells. Thin and dim — visible and rideable, clearly not the open frontier.
   ctx.strokeStyle = COLORS.seam;
   ctx.lineWidth = 1.25;
   ctx.beginPath();
@@ -51,7 +62,6 @@ function drawSeams(ctx) {
 }
 
 function drawArena(ctx) {
-  // Dim outer frame, so the bold frontier overlaying it reads as the bolder line.
   ctx.lineWidth = 2;
   ctx.strokeStyle = COLORS.arena;
   ctx.shadowColor = COLORS.arena;
@@ -61,8 +71,6 @@ function drawArena(ctx) {
 }
 
 function drawPerimeter(ctx) {
-  // The open frontier — every edge where empty space meets solid. The bold,
-  // bright, rideable line the marker follows. Batched into one path.
   ctx.strokeStyle = COLORS.frontier;
   ctx.lineWidth = 3.5;
   ctx.lineCap = "round";
@@ -99,13 +107,15 @@ function drawTrail(ctx) {
   ctx.shadowBlur = 0;
 }
 
-function drawBlob(ctx) {
-  ctx.fillStyle = COLORS.blob;
-  ctx.shadowColor = COLORS.blob;
-  ctx.shadowBlur = 20;
-  ctx.beginPath();
-  ctx.arc(blob.x, blob.y, blobRadius(), 0, Math.PI * 2);
-  ctx.fill();
+function drawBlobs(ctx) {
+  for (const b of blobs) {
+    ctx.fillStyle = b.color;
+    ctx.shadowColor = b.color;
+    ctx.shadowBlur = 20;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, blobRadius(b), 0, Math.PI * 2);
+    ctx.fill();
+  }
   ctx.shadowBlur = 0;
 }
 
@@ -120,42 +130,135 @@ function drawMarker(ctx) {
 }
 
 function drawHUD(ctx) {
+  const L = game.currentLevel();
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
   ctx.font = "600 18px system-ui, sans-serif";
-  ctx.fillStyle = COLORS.hud;
-  ctx.fillText(`CLAIMED ${percent.toFixed(0)}%`, 12, 10);
   ctx.fillStyle = COLORS.hudAccent;
-  ctx.fillText(`TARGET 50%`, 150, 10); // win condition arrives in Phase 4
+  ctx.fillText(`ZONE ${L.label}`, 12, 10);
+  ctx.fillStyle = COLORS.hud;
+  ctx.fillText(`CLAIMED ${percent.toFixed(0)}%`, 130, 10);
+  ctx.fillStyle = COLORS.hudAccent;
+  ctx.fillText(`TARGET ${L.target}%`, 290, 10);
   ctx.fillStyle = COLORS.marker;
-  ctx.fillText(`LIVES ${"♥".repeat(lives)}`, 270, 10);
+  ctx.fillText(`LIVES ${"♥".repeat(game.lives)}`, 440, 10);
 }
 
-function drawGameOver(ctx) {
-  if (state !== "gameover") return;
-  ctx.fillStyle = "rgba(5, 3, 15, 0.78)";
-  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+// --- overlays / screens ----------------------------------------------------
+function centerText(ctx, text, y, font, color, alpha = 1) {
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.font = font;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillStyle = COLORS.hudAccent;
-  ctx.font = "700 48px system-ui, sans-serif";
-  ctx.fillText("GAME OVER", WIDTH / 2, HEIGHT / 2 - 24);
-  ctx.fillStyle = COLORS.hud;
-  ctx.font = "500 20px system-ui, sans-serif";
-  ctx.fillText("press any key to restart", WIDTH / 2, HEIGHT / 2 + 28);
+  ctx.fillText(text, WIDTH / 2, y);
+  ctx.globalAlpha = 1;
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
 }
 
-export function render(ctx) {
+function drawMenu(ctx, menuSel) {
+  centerText(ctx, "COSMIC CUT", 150, "700 56px system-ui, sans-serif", COLORS.frontier);
+  centerText(ctx, "select a starting zone", 210, "500 20px system-ui, sans-serif", COLORS.hud);
+
+  const n = zoneCount;
+  const gap = 110;
+  const startX = WIDTH / 2 - ((n - 1) * gap) / 2;
+  const y = HEIGHT / 2 + 20;
+  for (let z = 1; z <= n; z++) {
+    const x = startX + (z - 1) * gap;
+    const locked = z > game.unlockedZone;
+    const selected = z === menuSel;
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    // chip
+    ctx.lineWidth = selected ? 3 : 1.5;
+    ctx.strokeStyle = locked ? COLORS.locked : selected ? COLORS.hudAccent : COLORS.arena;
+    if (selected && !locked) { ctx.shadowColor = COLORS.hudAccent; ctx.shadowBlur = 16; }
+    ctx.strokeRect(x - 40, y - 40, 80, 80);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = locked ? COLORS.locked : selected ? COLORS.hudAccent : COLORS.frontier;
+    ctx.font = "700 30px system-ui, sans-serif";
+    ctx.fillText(String(z), x, y - 6);
+    ctx.font = "500 13px system-ui, sans-serif";
+    ctx.fillText(locked ? "LOCKED" : `${z}-1`, x, y + 22);
+    ctx.restore();
+  }
+  centerText(ctx, "← →  select        ENTER  start", HEIGHT - 70,
+    "500 18px system-ui, sans-serif", COLORS.hud);
+}
+
+function drawIntro(ctx, transT) {
+  const L = game.currentLevel();
+  centerText(ctx, `ZONE ${L.label}`, CY - 24, "700 52px system-ui, sans-serif", COLORS.frontier);
+  centerText(ctx, L.boss ? `BOSS — CLAIM ${L.target}%` : `CLAIM ${L.target}%`, CY + 30,
+    "600 26px system-ui, sans-serif", COLORS.hudAccent);
+}
+
+function drawLevelComplete(ctx, transT) {
+  // expanding ring tracing the wipe edge
+  const t = Math.min(transT / WIPE_TIME, 1);
+  const wipeR = (1 - (1 - t) * (1 - t)) * (MAXR + 30); // easeOut
+  if (t < 1) {
+    ctx.strokeStyle = COLORS.frontier;
+    ctx.lineWidth = 4;
+    ctx.shadowColor = COLORS.frontier;
+    ctx.shadowBlur = 18;
+    ctx.beginPath();
+    ctx.arc(CX, CY, wipeR, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+  const pop = Math.min(1, transT / 0.25);
+  ctx.save();
+  ctx.translate(WIDTH / 2, CY);
+  ctx.scale(pop, pop);
+  centerText(ctx, "LEVEL COMPLETE", 0, "700 46px system-ui, sans-serif", COLORS.marker);
+  ctx.restore();
+}
+
+function drawGameOver(ctx) {
+  ctx.fillStyle = "rgba(5, 3, 15, 0.78)";
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  centerText(ctx, "GAME OVER", CY - 24, "700 48px system-ui, sans-serif", COLORS.hudAccent);
+  centerText(ctx, "press any key — start screen", CY + 28, "500 20px system-ui, sans-serif", COLORS.hud);
+}
+
+function drawCampaignComplete(ctx) {
+  ctx.fillStyle = "rgba(5, 3, 15, 0.82)";
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  centerText(ctx, "CAMPAIGN COMPLETE", CY - 24, "700 46px system-ui, sans-serif", COLORS.frontier);
+  centerText(ctx, "you cleared all five zones — press any key", CY + 28,
+    "500 20px system-ui, sans-serif", COLORS.hud);
+}
+
+export function render(ctx, transT = 0, menuSel = 1) {
   drawBackground(ctx);
+
+  if (game.state === "menu") { drawMenu(ctx, menuSel); return; }
+
+  if (game.state === "levelcomplete") {
+    const t = Math.min(transT / WIPE_TIME, 1);
+    const wipeR = (1 - (1 - t) * (1 - t)) * (MAXR + 30);
+    drawClaimed(ctx, wipeR);
+    drawArena(ctx);
+    drawMarker(ctx);
+    drawHUD(ctx);
+    drawLevelComplete(ctx, transT);
+    return;
+  }
+
   drawClaimed(ctx);
   drawSeams(ctx);
   drawArena(ctx);
   drawPerimeter(ctx);
   drawTrail(ctx);
-  drawBlob(ctx);
+  drawBlobs(ctx);
   drawMarker(ctx);
   drawHUD(ctx);
-  drawGameOver(ctx);
+
+  if (game.state === "intro") drawIntro(ctx, transT);
+  else if (game.state === "gameover") drawGameOver(ctx);
+  else if (game.state === "campaigncomplete") drawCampaignComplete(ctx);
 }

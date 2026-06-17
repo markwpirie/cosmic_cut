@@ -196,8 +196,8 @@ Each phase is a working, runnable thing. One concept per phase.
 | **1** | A marker you can move around the arena border with keyboard. | Input, the game loop, drawing to canvas | ✅ Done (continuous "ride the rail" movement — see §16) |
 | **2** | Cut a line into open space and claim the enclosed area. Show %. | The core algorithm — the heart of the game | ✅ Done (grid + flood fill; perimeter model in §16) |
 | **3** | Add one Blob enemy + collision = lose a life. 3 lives, game over. | Enemies, collision, game state | ✅ Done (bouncing Blob; blob-aware claim; frontier-priority corners — see §14, §16) |
-| **4** | Zones + level table + win condition + progression. | Data-driven design | ◻ Next |
-| **5** | Cut mechanics: BLOCK OUT, MEGA-CUT, SPLIT, LONG, MULTI STACK + scoring. | Geometry checks, reward logic |
+| **4** | Zones + level table + win condition + progression. | Data-driven design | ✅ Done (levels.js table; start screen + zone unlocks; level-complete wipe; blue→red Blob spectrum — see §14) |
+| **5** | Cut mechanics: BLOCK OUT, MEGA-CUT, SPLIT, LONG, MULTI STACK + scoring. | Geometry checks, reward logic | ◻ Next |
 | **6** | First power-up (Freeze), then the rest, ZOOM last. | Timed effects/state |
 | **7** | Touch controls for mobile. | Input abstraction (key step for iPhone) |
 | **8** | Make it a PWA — installable on iPhone home screen. | Deployment/packaging |
@@ -260,6 +260,10 @@ Section 2's claim/fill algorithm — and the SPLIT detection in Phase 5 — are 
 - **Frontier beats buried wall (at every node):** auto-following ranks exits — the bright open frontier (BOUNDARY, rank 0) is preferred over a buried arena wall (claimed packed against it, rank 1), *even when the wall runs straight ahead*. So the marker hugs the bold line both rounding corners and while travelling along an edge, and never glides along the outer wall when a frontier is there to take. Momentum/random only break ties between *equal*-rank exits (a true frontier T-junction). Seams (rank 2) are never auto-taken ✓ (§16)
 - **Blob enemy (Phase 3):** one free-floating orb bouncing through open space (reflects off wall + claimed cells); no chasing yet. Touching the marker or the in-progress cut = lose a life; 3 lives; game over → any key restarts. Claim keeps the Blob's region open; on death it respawns in open space farthest from the player (never inside claimed territory) ✓
 - **Blob-aware claim:** keep the region the enemy occupies, claim the rest (replaces Phase 2's "keep largest"); largest-region is the no-enemy fallback ✓ (§13)
+- **Data-driven levels (Phase 4):** `levels.js` is the single source of truth — 25 levels (zones 1-1…5-5), each with a claim **target %** and a list of Blobs. Difficulty = rising target + more Blobs + redder Blobs. Win = `percent ≥ target` ✓
+- **Blob spectrum (Phase 4):** Blobs vary along **blue→red**: blue is BIG and SLOW, ramping to red SMALL and FAST (`config.BLOB_TYPES`). All speeds stay under the marker's so it's always outrunnable. Multiple Blobs supported; the claim keeps *every* Blob's region open ✓
+- **Progression & start screen (Phase 4):** clear a level → "LEVEL COMPLETE" beat (marker returns to start & holds, claimed area clears with an expanding wipe, brief pause) → next level. Game over → **start screen** with selectable starting zones (1-1, 2-1, …); a zone unlocks once reached in normal play; unlocks persist (localStorage). Extra life on X-4; after 5-5 → CAMPAIGN COMPLETE ✓
+- **SUPER mode: deferred** — wired conceptually (clear 5-5 → 2× enemies) but not built in Phase 4; for now 5-5 ends at the campaign-complete screen ✓
 - **Claim rule (no enemies):** keep the largest open region, claim the rest ✓ (§13)
 
 ## 15. Still Open (deferred, none block the build)

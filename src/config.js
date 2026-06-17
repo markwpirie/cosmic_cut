@@ -31,13 +31,18 @@ export const MARKER = {
   startRow: ROWS,
 };
 
-// Blob enemy tuning (Phase 3). One bouncing orb; slower than the marker so it's
-// dodgeable. The expanding/contracting line-shape (§9) is a Phase 9 visual.
-export const BLOB = {
-  speed: 120,  // px/sec — under MARKER.speed so the player can outrun it
-  radius: 10,  // base radius; pulses ±pulse
-  pulse: 2,    // breathing amount (cheap nod to "expanding/contracting")
-};
+// Blob enemy tuning. Each level (levels.js) spawns Blobs by index into this
+// spectrum: blue is BIG and SLOW, ramping to red SMALL and FAST. All speeds stay
+// under MARKER.speed (200) so the player can always outrun them. The pulse is a
+// cheap nod to the design's "expanding/contracting" Blob (full shape in Phase 9).
+export const BLOB = { pulse: 2 };
+export const BLOB_TYPES = [
+  { name: "blue",  color: "#3c6cff", radius: 13, speed: 85 },
+  { name: "cyan",  color: "#3cf0ff", radius: 11, speed: 105 },
+  { name: "green", color: "#57ff8f", radius: 10, speed: 130 },
+  { name: "amber", color: "#ffb83c", radius: 8,  speed: 155 },
+  { name: "red",   color: "#ff4d3c", radius: 7,  speed: 182 },
+];
 
 // Neon palette (§10). Glass blocks / slow-cut shading arrive in Phase 9.
 export const COLORS = {
@@ -48,7 +53,7 @@ export const COLORS = {
   frontier: "#7df9ff",
   trail: "#5ad6ff",
   marker: "#ff3df0",
-  blob: "#ff5a3c",       // red-orange — reads as danger vs cyan rails / magenta marker
   hud: "#ffffff",
   hudAccent: "#ff3df0",
+  locked: "#3a3550",      // dimmed zone chip on the start screen
 };

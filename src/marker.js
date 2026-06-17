@@ -7,7 +7,7 @@
 import { MARKER, nodeX, nodeY } from "./config.js";
 import { classifyEdge, rideTypeOf, rideRank, canCut, nodeIsSafe, applyClaim } from "./grid.js";
 import { peekPending, clearPending, currentDesired } from "./control.js";
-import { cell as blobCell } from "./enemy.js";
+import { cells as blobCells } from "./enemy.js";
 
 export const marker = {
   col: MARKER.startCol,
@@ -138,7 +138,7 @@ function decideCutting() {
 }
 
 function finishCut() {
-  applyClaim(trail, blobCell()); // keep the blob's region open; claim the rest
+  applyClaim(trail, blobCells()); // keep every blob's region open; claim the rest
   trail = [];
   mode = "riding";
 }

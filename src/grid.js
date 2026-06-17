@@ -122,11 +122,12 @@ export function canCut(col, row, dx, dy) {
 
 // --- The claim (flood fill) ------------------------------------------------
 // Given a cut's trail (a list of lattice nodes from safe ground back to safe
-// ground), fill the enclosed territory. You can never claim the region an enemy
-// is in (real Qix rule, §13): keepCell is the blob's {col,row}; we keep that
-// region open and claim the rest. Without a valid keepCell (enemy-free tests) we
-// fall back to keeping the largest region. Also records the trail as a seam.
-export function applyClaim(trail, keepCell) {
+// ground), fill the enclosed territory. You can never claim a region an enemy is
+// in (real Qix rule, §13): keepCells is a list of blob {col,row} cells; we keep
+// every region holding a blob and claim the rest. With no valid keepCells
+// (enemy-free tests) we fall back to keeping the largest region. Also records the
+// trail as a permanent seam line.
+export function applyClaim(trail, keepCells) {
   // 1. Turn the trail into a set of "walls" between cells.
   const walls = new Set();
   for (let i = 0; i < trail.length - 1; i++) {
@@ -160,23 +161,25 @@ export function applyClaim(trail, keepCell) {
     }
   }
 
-  // 3. Decide which open region to KEEP, then claim all the others. Keep the
-  //    one holding the enemy (keepCell) if given and valid; else the largest.
+  // 3. Decide which open regions to KEEP, then claim all the others. Keep every
+  //    region holding a blob (keepCells); if none are valid, keep the largest.
   if (sizes.length > 1) {
-    let keep = -1;
-    if (keepCell) {
-      const { col, row } = keepCell;
-      if (row >= 0 && row < ROWS && col >= 0 && col < COLS && comp[row][col] !== -1) {
-        keep = comp[row][col];
+    const keep = new Set();
+    if (keepCells) {
+      for (const { col, row } of keepCells) {
+        if (row >= 0 && row < ROWS && col >= 0 && col < COLS && comp[row][col] !== -1) {
+          keep.add(comp[row][col]);
+        }
       }
     }
-    if (keep === -1) {
-      keep = 0;
-      for (let i = 1; i < sizes.length; i++) if (sizes[i] > sizes[keep]) keep = i;
+    if (keep.size === 0) {
+      let largest = 0;
+      for (let i = 1; i < sizes.length; i++) if (sizes[i] > sizes[largest]) largest = i;
+      keep.add(largest);
     }
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
-        if (comp[r][c] !== -1 && comp[r][c] !== keep) grid[r][c] = FILLED;
+        if (comp[r][c] !== -1 && !keep.has(comp[r][c])) grid[r][c] = FILLED;
       }
     }
   }

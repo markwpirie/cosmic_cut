@@ -1,111 +1,116 @@
-// COSMIC CUT — enemy (the Blob)
-// One free-floating orb that drifts through the OPEN space and bounces off the
-// arena wall and any claimed territory. No targeting, no AI — a pure bouncer
-// (the Hunter that chases you is a later level). Touching the marker or the
-// in-progress cut trail is death; main.js owns that consequence. No DOM, so the
-// bounce and collision are unit-testable in Node.
+// COSMIC CUT — enemy (the Blobs)
+// One or more free-floating orbs bouncing through OPEN space, reflecting off the
+// arena wall and claimed territory. Each Blob has its own size/speed/colour from
+// config.BLOB_TYPES (blue big/slow → red small/fast). No targeting yet — pure
+// bouncers. Touching the marker or the in-progress cut is death (main.js owns
+// the consequence). No DOM, so bounce + collision are unit-testable in Node.
 
-import { field, CELL, COLS, ROWS, BLOB, MARKER, nodeX, nodeY } from "./config.js";
+import { field, CELL, COLS, ROWS, BLOB, BLOB_TYPES, MARKER, nodeX, nodeY } from "./config.js";
 import { cellSolid } from "./grid.js";
 
-export const blob = {
-  x: field.x + field.w / 2,
-  y: field.y + field.h / 2,
-  vx: 0,
-  vy: 0,
-  t: 0, // pulse clock (seconds)
-};
+// Live list of active blobs. Each: {x,y,vx,vy,t,radius,speed,color}.
+export const blobs = [];
 
-// Launch on a fixed diagonal (up-right). Constant speed; only the sign of each
-// component ever changes, when it bounces.
-function launch() {
-  const k = Math.SQRT1_2; // 1/√2 — equal x/y so |v| === BLOB.speed
-  blob.vx = BLOB.speed * k;
-  blob.vy = -BLOB.speed * k;
+const DIAGS = [
+  [Math.SQRT1_2, -Math.SQRT1_2],
+  [-Math.SQRT1_2, -Math.SQRT1_2],
+  [Math.SQRT1_2, Math.SQRT1_2],
+  [-Math.SQRT1_2, Math.SQRT1_2],
+];
+
+// Launch a blob on a diagonal at its own speed. Only the sign of each component
+// ever changes after this (on a bounce), so |v| stays constant.
+function launch(b, i) {
+  const [ux, uy] = DIAGS[i % DIAGS.length];
+  b.vx = b.speed * ux;
+  b.vy = b.speed * uy;
 }
 
-// A safe spawn: an OPEN cell, never inside claimed territory (or the blob would
-// be stuck). Prefer the field centre; otherwise the open cell farthest from the
-// player's start, so we don't drop on top of them after a death-respawn.
-function spawnPoint() {
-  const cc = Math.floor(COLS / 2);
-  const cr = Math.floor(ROWS / 2);
-  if (!cellSolid(cr, cc)) {
-    return { x: field.x + (cc + 0.5) * CELL, y: field.y + (cr + 0.5) * CELL };
-  }
-  let bestD = -1;
-  let bx = field.x + field.w / 2;
-  let by = field.y + field.h / 2;
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      if (cellSolid(r, c)) continue;
+// Every currently-open cell.
+function openCells() {
+  const out = [];
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (!cellSolid(r, c)) out.push([r, c]);
+  return out;
+}
+
+// Pick n open spawn cells: far from the player's start (so a death-respawn never
+// drops onto them) and spread apart from each other. Never inside claimed area.
+function spawnCells(n) {
+  const open = openCells();
+  const chosen = [];
+  for (let i = 0; i < n; i++) {
+    let best = null;
+    let bestScore = -1;
+    for (const [r, c] of open) {
       const dr = r - MARKER.startRow;
       const dc = c - MARKER.startCol;
-      const d = dr * dr + dc * dc;
-      if (d > bestD) {
-        bestD = d;
-        bx = field.x + (c + 0.5) * CELL;
-        by = field.y + (r + 0.5) * CELL;
+      let score = dr * dr + dc * dc; // distance² from the player
+      for (const ch of chosen) {
+        const d = (r - ch[0]) ** 2 + (c - ch[1]) ** 2;
+        if (d * 3 < score) score = d * 3; // keep clear of already-placed blobs
       }
+      if (score > bestScore) { bestScore = score; best = [r, c]; }
     }
+    chosen.push(best || [Math.floor(ROWS / 2), Math.floor(COLS / 2)]);
   }
-  return { x: bx, y: by };
+  return chosen;
 }
 
-export function reset() {
-  const p = spawnPoint();
-  blob.x = p.x;
-  blob.y = p.y;
-  blob.t = 0;
-  launch();
+// (Re)spawn the blobs for a level. typeIndices is a list of BLOB_TYPES indices.
+export function reset(typeIndices = [0]) {
+  blobs.length = 0;
+  const cells = spawnCells(typeIndices.length);
+  typeIndices.forEach((ti, i) => {
+    const type = BLOB_TYPES[ti] || BLOB_TYPES[0];
+    const [r, c] = cells[i];
+    const b = {
+      x: field.x + (c + 0.5) * CELL,
+      y: field.y + (r + 0.5) * CELL,
+      vx: 0, vy: 0, t: 0,
+      radius: type.radius, speed: type.speed, color: type.color,
+    };
+    launch(b, i);
+    blobs.push(b);
+  });
 }
 reset();
 
-// The pulsing on-screen radius. Collision uses the steady BLOB.radius (fairer);
-// the pulse is purely visual.
-export function radius() {
-  return BLOB.radius + Math.sin(blob.t * 4) * BLOB.pulse;
+// Pulsing on-screen radius (visual only; collision uses the steady b.radius).
+export function radius(b) {
+  return b.radius + Math.sin(b.t * 4) * BLOB.pulse;
 }
 
-// The grid cell the blob currently sits in — the region the claim must keep
-// open (you can't claim the side the enemy is on, §13).
-export function cell() {
-  return {
-    col: Math.floor((blob.x - field.x) / CELL),
-    row: Math.floor((blob.y - field.y) / CELL),
-  };
-}
-
-// Is the pixel point inside a solid cell? Off-field maps to off-grid cells,
-// which cellSolid() already treats as the arena wall.
+// Pixel point inside a solid cell? Off-field maps to off-grid cells, which
+// cellSolid() already treats as the arena wall.
 function solidAt(px, py) {
-  const c = Math.floor((px - field.x) / CELL);
-  const r = Math.floor((py - field.y) / CELL);
-  return cellSolid(r, c);
+  return cellSolid(Math.floor((py - field.y) / CELL), Math.floor((px - field.x) / CELL));
 }
 
-// Advance the blob, reflecting off solids. X and Y are tested separately (with
-// the radius as a margin) so corners and walls both bounce cleanly.
+// Advance every blob, reflecting off solids (X/Y tested separately, the blob's
+// own radius as the margin, so corners and walls both bounce cleanly).
 export function update(dt) {
-  blob.t += dt;
-  const r = BLOB.radius;
-
-  let nx = blob.x + blob.vx * dt;
-  if (solidAt(nx + Math.sign(blob.vx) * r, blob.y)) {
-    blob.vx = -blob.vx; // reflect; stay put this axis so we never sink into the wall
-  } else {
-    blob.x = nx;
-  }
-
-  let ny = blob.y + blob.vy * dt;
-  if (solidAt(blob.x, ny + Math.sign(blob.vy) * r)) {
-    blob.vy = -blob.vy;
-  } else {
-    blob.y = ny;
+  for (const b of blobs) {
+    b.t += dt;
+    const r = b.radius;
+    const nx = b.x + b.vx * dt;
+    if (solidAt(nx + Math.sign(b.vx) * r, b.y)) b.vx = -b.vx;
+    else b.x = nx;
+    const ny = b.y + b.vy * dt;
+    if (solidAt(b.x, ny + Math.sign(b.vy) * r)) b.vy = -b.vy;
+    else b.y = ny;
   }
 }
 
-// Distance from point (px,py) to the segment (ax,ay)-(bx,by).
+// The grid cell each blob sits in — the regions the claim must keep open (you
+// can't claim a side an enemy is on, §13).
+export function cells() {
+  return blobs.map((b) => ({
+    col: Math.floor((b.x - field.x) / CELL),
+    row: Math.floor((b.y - field.y) / CELL),
+  }));
+}
+
+// Distance from point (px,py) to segment (ax,ay)-(bx,by).
 function distToSeg(px, py, ax, ay, bx, by) {
   const dx = bx - ax;
   const dy = by - ay;
@@ -115,21 +120,20 @@ function distToSeg(px, py, ax, ay, bx, by) {
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
-// Does the blob touch the marker, or (while cutting) the exposed cut trail?
+// Does any blob touch the marker, or (while cutting) the exposed cut trail?
 export function collides(marker, mode, trail) {
-  if (Math.hypot(blob.x - marker.x, blob.y - marker.y) < BLOB.radius + MARKER.radius) {
-    return true;
-  }
-  if (mode === "cutting" && trail.length) {
-    const thr = BLOB.radius + 2;
-    for (let i = 0; i < trail.length - 1; i++) {
-      const a = trail[i];
-      const b = trail[i + 1];
-      if (distToSeg(blob.x, blob.y, nodeX(a.col), nodeY(a.row), nodeX(b.col), nodeY(b.row)) < thr) return true;
+  for (const b of blobs) {
+    if (Math.hypot(b.x - marker.x, b.y - marker.y) < b.radius + MARKER.radius) return true;
+    if (mode === "cutting" && trail.length) {
+      const thr = b.radius + 2;
+      for (let i = 0; i < trail.length - 1; i++) {
+        const a = trail[i];
+        const c = trail[i + 1];
+        if (distToSeg(b.x, b.y, nodeX(a.col), nodeY(a.row), nodeX(c.col), nodeY(c.row)) < thr) return true;
+      }
+      const last = trail[trail.length - 1];
+      if (distToSeg(b.x, b.y, nodeX(last.col), nodeY(last.row), marker.x, marker.y) < thr) return true;
     }
-    // The live segment from the last laid node to the marker's current position.
-    const last = trail[trail.length - 1];
-    if (distToSeg(blob.x, blob.y, nodeX(last.col), nodeY(last.row), marker.x, marker.y) < thr) return true;
   }
   return false;
 }
