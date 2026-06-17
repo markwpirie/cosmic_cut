@@ -9,6 +9,7 @@ import { POINTS, ROWS } from "./config.js";
 
 const START_LIVES = 3;
 const UNLOCK_KEY = "cosmiccut.unlockedZone";
+const HIGH_KEY = "cosmiccut.highScore";
 
 // state: "menu" | "intro" | "playing" | "dead" | "levelcomplete" | "gameover" | "campaigncomplete"
 export let state = "menu";
@@ -17,6 +18,8 @@ export let levelIndex = 0;
 export let score = 0;
 export let levelMult = 1; // per-level score multiplier; each SPLIT doubles it
 export let unlockedZone = loadUnlock(); // highest zone whose X-1 has been reached
+export let highScore = loadHigh();
+export let newHigh = false; // did this run just beat the high score?
 
 export function currentLevel() {
   return LEVELS[levelIndex];
@@ -71,6 +74,24 @@ function unlock(zone) {
   if (zone > unlockedZone) { unlockedZone = zone; saveUnlock(); }
 }
 
+function loadHigh() {
+  try {
+    if (typeof localStorage !== "undefined") {
+      const v = parseInt(localStorage.getItem(HIGH_KEY), 10);
+      if (v > 0) return v;
+    }
+  } catch (e) { /* ignore */ }
+  return 0;
+}
+// Commit the run's score to the high-score table at the end of a run.
+function recordScore() {
+  if (score > highScore) {
+    highScore = score;
+    newHigh = true;
+    try { if (typeof localStorage !== "undefined") localStorage.setItem(HIGH_KEY, String(highScore)); } catch (e) { /* ignore */ }
+  }
+}
+
 // --- run flow ---------------------------------------------------------------
 // Start a fresh run from a chosen (unlocked) zone's first level.
 export function startRun(zone) {
@@ -78,6 +99,7 @@ export function startRun(zone) {
   lives = START_LIVES;
   score = 0;
   levelMult = 1;
+  newHigh = false;
   levelIndex = zoneStart(z);
   state = "intro";
 }
@@ -97,7 +119,7 @@ export function completeLevel() {
 // per-level multiplier, then the next level — or the campaign-complete screen.
 export function advance() {
   if (currentLevel().extraLife) lives += 1;
-  if (levelIndex >= levelCount - 1) { state = "campaigncomplete"; return; }
+  if (levelIndex >= levelCount - 1) { recordScore(); state = "campaigncomplete"; return; }
   levelIndex += 1;
   levelMult = 1;
   unlock(currentLevel().zone);
@@ -108,7 +130,7 @@ export function advance() {
 // death spot ("dead") until the player presses a key to respawn.
 export function loseLife() {
   lives -= 1;
-  if (lives <= 0) { lives = 0; state = "gameover"; }
+  if (lives <= 0) { lives = 0; recordScore(); state = "gameover"; }
   else state = "dead";
 }
 
@@ -116,7 +138,11 @@ export function toMenu() {
   state = "menu";
 }
 
-// Test-only reset of unlock progress (used by headless tests).
+// Test-only resets (used by headless tests).
 export function _resetUnlock() {
   unlockedZone = 1;
+}
+export function _resetHigh() {
+  highScore = 0;
+  newHigh = false;
 }

@@ -124,6 +124,47 @@ function distToSeg(px, py, ax, ay, bx, by) {
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
+// Gap (px) between one blob's surface and the exposed trail (incl. the live
+// segment to the marker). Negative ≈ touching.
+function blobGap(b, marker, trail) {
+  let d = Math.hypot(b.x - marker.x, b.y - marker.y) - b.radius;
+  for (let i = 0; i < trail.length - 1; i++) {
+    const a = trail[i];
+    const c = trail[i + 1];
+    d = Math.min(d, distToSeg(b.x, b.y, nodeX(a.col), nodeY(a.row), nodeX(c.col), nodeY(c.row)) - b.radius);
+  }
+  if (trail.length) {
+    const last = trail[trail.length - 1];
+    d = Math.min(d, distToSeg(b.x, b.y, nodeX(last.col), nodeY(last.row), marker.x, marker.y) - b.radius);
+  }
+  return d;
+}
+
+// Smallest gap between any blob and the trail while cutting (Infinity if not) —
+// drives the danger glow + music intensity.
+export function threatGap(marker, mode, trail) {
+  if (mode !== "cutting") return Infinity;
+  let min = Infinity;
+  for (const b of blobs) min = Math.min(min, blobGap(b, marker, trail));
+  return min;
+}
+
+// Count blobs that just GRAZED the trail (entered the near band without hitting),
+// debounced per blob so one fly-by scores once. Clears when not cutting.
+export function pollNearMiss(marker, mode, trail, band = 14) {
+  if (mode !== "cutting") { for (const b of blobs) b.near = false; return 0; }
+  let n = 0;
+  for (const b of blobs) {
+    const gap = blobGap(b, marker, trail);
+    if (gap < band && gap > 2) {
+      if (!b.near) { n++; b.near = true; }
+    } else if (gap > band + 8) {
+      b.near = false;
+    }
+  }
+  return n;
+}
+
 // You're only vulnerable while CUTTING out in open space — riding the perimeter
 // (or a claimed edge) is safe, even if a blob brushes the marker there. While
 // cutting, a blob touching the marker OR the exposed trail is fatal. Returns the

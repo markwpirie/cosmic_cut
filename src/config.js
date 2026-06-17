@@ -84,6 +84,7 @@ export const POINTS = {
   longMult: 1.5, superLongMult: 2, megaLongMult: 3,
   splitMult: 2,        // each SPLIT grants ×2 to the level multiplier (§14)
   perKill: 500,        // points per Blob destroyed (juicy, §"nice points on kill")
+  nearMiss: 150,       // points when a blob grazes your trail without hitting
   levelClear: 1000,    // bonus for clearing a level
   lifeBonus: 250,      // per remaining life at clear
 };

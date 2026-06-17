@@ -8,6 +8,15 @@ See [GAME_DESIGN.md](GAME_DESIGN.md) for the full design.
 
 ## Status
 
+**Phase 5 + Game-Feel pass** — the game now has its soul on: **procedural audio**
+(retro Web-Audio SFX, a rising cut-tension tone, "doof doof doof" bonus stingers,
+and a generative synthwave loop), **juice** (screen shake + particle bursts on
+claims / kills / death), **danger telegraphing** (the marker flashes hot while
+you're cutting, the trail reddens as it nears LONG, and a red edge-glow when a
+blob is near your line), a **NEAR MISS** bonus, a **drifting starfield**, and a
+persistent **high score** (with "★ NEW HIGH SCORE ★"). Mute with **M**, music
+with **N**. All procedural — no asset files — and headless-safe.
+
 **Phase 5 complete** — scoring & cut rewards on top of the Phase 4 campaign.
 A finished cut scores base points per % claimed, multiplied by **BLOCK OUT**
 (≥30%), **MEGA-CUT** (≥50%), **LONG** tiers (by cut length) and a per-level
@@ -29,7 +38,8 @@ Play it at <https://markwpirie.github.io/cosmic_cut/>.
 - **Controls:** **Arrow keys** or **WASD**. Movement is continuous "ride the rail" — press a direction and you keep going until you turn or reverse (press the opposite). Hold a direction approaching a junction to take that turn. Push **into open space** to start a **cut**.
 - **Cutting & risk:** while riding the bright perimeter (or a claimed edge) you're **safe**. The moment you cut into open space you're exposed — a Blob touching your **marker or your trail** costs a life. Close the loop back to safe ground to **claim** the enclosed area.
 - **Scoring:** bigger, bolder cuts pay off — **BLOCK OUT** (≥30%), **MEGA-CUT** (≥50%), **LONG** tiers (long cuts), and **SPLIT** (trap a Blob on the smaller side: it dies, you score, and the level multiplier ×2). Stacked bonuses → **MULTI STACK**.
-- **Flow:** the level starts when you press a direction; on a hit you freeze on the spot — press any key to respawn; out of lives → start screen (pick any zone you've reached).
+- **Flow:** the level starts when you press a direction; on a hit you freeze on the spot — press any key to respawn; out of lives → start screen (pick any zone you've reached, beat the **high score**).
+- **Audio:** **M** mutes all sound, **N** toggles the music (both remembered).
 
 ## Code layout
 
@@ -43,15 +53,19 @@ job, so a given fix lands in one place:
 | [`control.js`](src/control.js) | Keyboard input → movement intents | changing controls (Phase 7 touch) |
 | [`grid.js`](src/grid.js) | The world: cells, what's rideable, flood-fill claim | claim logic / geometry (§13, §16) |
 | [`marker.js`](src/marker.js) | The player: movement, cutting, the update step | movement feel, cut behaviour |
-| [`enemy.js`](src/enemy.js) | The Blobs: bouncing, spawn, collision | enemy behaviour |
-| [`game.js`](src/game.js) | State machine: lives, level/zone, win/advance, unlocks | progression flow / screens |
-| [`render.js`](src/render.js) | All drawing (incl. menu, intro, level-complete) | anything visual |
-| [`main.js`](src/main.js) | Wiring + the game loop / state routing | rarely |
+| [`enemy.js`](src/enemy.js) | The Blobs: bouncing, spawn, collision, threat/near-miss | enemy behaviour |
+| [`game.js`](src/game.js) | State machine: lives, level/zone, score, high score, win/advance, unlocks | progression flow / screens |
+| [`audio.js`](src/audio.js) | Procedural Web-Audio SFX + generative music | sound design |
+| [`fx.js`](src/fx.js) | Particle bursts + screen shake (pure maths) | juice / feedback |
+| [`render.js`](src/render.js) | All drawing (starfield, menu, HUD, read-out, overlays) | anything visual |
+| [`main.js`](src/main.js) | Wiring + the game loop / state routing / event→audio+fx | rarely |
 
-Everything except `render.js` and `main.js` is DOM-free (no canvas), so the pure
-game logic stays separate from the rendering (design principle §1.2) — `game.js`
-guards its `localStorage` use so it still imports headlessly. This keeps a future
-native/Godot port realistic and lets tests import the real engine.
+The pure game logic (`grid`, `marker`, `enemy`, `game`, `levels`, `fx`) is
+browser-API-free, so it stays separate from presentation (design principle §1.2)
+and imports cleanly in Node for tests. The modules that *do* touch the browser
+(`render`/canvas, `main`/DOM, `audio`/Web-Audio, plus `game`'s `localStorage`)
+guard every access so they still import headlessly. This keeps a future
+native/Godot port realistic and lets tests drive the real engine.
 
 ## Run locally
 

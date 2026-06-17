@@ -10,10 +10,12 @@ import { marker, mode, trail } from "./marker.js";
 import { blobs, radius as blobRadius } from "./enemy.js";
 import * as game from "./game.js";
 import { zoneCount } from "./levels.js";
+import * as fx from "./fx.js";
 
 const CX = field.x + field.w / 2;
 const CY = field.y + field.h / 2;
 const MAXR = Math.hypot(field.w / 2, field.h / 2);
+const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
 
 // Active play-field palette for the current zone (zone 1 cyan → 2 orange → …).
 function theme() {
@@ -29,8 +31,69 @@ function wipeRadius(transT) {
   return (1 - (1 - t) * (1 - t)) * (MAXR + 30); // easeOut
 }
 
+// Drifting starfield + faint nebula, for the "cosmic" in COSMIC CUT.
+let stars = null;
+let nebula = null;
+let starLast = 0;
+function ensureStars() {
+  if (stars) return;
+  stars = [];
+  for (let i = 0; i < 110; i++) {
+    stars.push({
+      x: Math.random() * WIDTH,
+      y: Math.random() * HEIGHT,
+      size: Math.random() < 0.15 ? 2 : 1,
+      v: 4 + Math.random() * 16,
+      a: 0.25 + Math.random() * 0.6,
+    });
+  }
+  nebula = [
+    { x: WIDTH * 0.25, y: HEIGHT * 0.3, r: 260, c: "rgba(80,40,160,0.10)" },
+    { x: WIDTH * 0.78, y: HEIGHT * 0.7, r: 300, c: "rgba(20,90,150,0.10)" },
+  ];
+}
 function drawBackground(ctx) {
   ctx.fillStyle = COLORS.bg;
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  ensureStars();
+  for (const n of nebula) {
+    const g = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r);
+    g.addColorStop(0, n.c);
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  }
+  const t = now();
+  const dt = Math.min(0.05, (t - starLast) / 1000);
+  starLast = t;
+  ctx.fillStyle = "#cfeaff";
+  for (const s of stars) {
+    s.y += s.v * dt;
+    if (s.y > HEIGHT) { s.y = 0; s.x = Math.random() * WIDTH; }
+    ctx.globalAlpha = s.a;
+    ctx.fillRect(s.x, s.y, s.size, s.size);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawParticles(ctx) {
+  for (const p of fx.getParticles()) {
+    const k = Math.max(0, p.life / p.max);
+    ctx.globalAlpha = k;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Pulsing red vignette when a blob is near your exposed trail (danger 0..1).
+function drawDangerEdge(ctx, danger) {
+  if (!danger || danger <= 0.02) return;
+  const pulse = 0.6 + 0.4 * Math.sin(now() / 90);
+  const g = ctx.createRadialGradient(CX, CY, Math.min(WIDTH, HEIGHT) * 0.35, CX, CY, Math.max(WIDTH, HEIGHT) * 0.62);
+  g.addColorStop(0, "rgba(255,40,40,0)");
+  g.addColorStop(1, `rgba(255,30,30,${0.5 * danger * pulse})`);
+  ctx.fillStyle = g;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
 }
 
@@ -110,11 +173,14 @@ function drawPerimeter(ctx) {
 
 function drawTrail(ctx) {
   if (mode !== "cutting" || trail.length === 0) return;
-  const t = theme();
-  ctx.strokeStyle = t.trail;
-  ctx.lineWidth = 3;
-  ctx.shadowColor = t.trail;
-  ctx.shadowBlur = 10;
+  // Heat builds toward the LONG threshold (2× field height): the trail brightens,
+  // thickens and reddens, telegraphing both the building bonus and the risk.
+  const heat = Math.min(1, trail.length / (2 * ROWS));
+  const color = heat > 0.85 ? "#ff5a3c" : heat > 0.5 ? "#ffae3c" : theme().trail;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3 + heat * 2.5;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 10 + heat * 16;
   ctx.beginPath();
   ctx.moveTo(nodeX(trail[0].col), nodeY(trail[0].row));
   for (let i = 1; i < trail.length; i++) ctx.lineTo(nodeX(trail[i].col), nodeY(trail[i].row));
@@ -136,11 +202,19 @@ function drawBlobs(ctx) {
 }
 
 function drawMarker(ctx) {
-  ctx.fillStyle = COLORS.marker;
-  ctx.shadowColor = COLORS.marker;
+  // While cutting you're vulnerable — the marker flashes hot to telegraph it.
+  let color = COLORS.marker;
+  let r = MARKER.radius;
+  if (mode === "cutting") {
+    const pulse = 0.5 + 0.5 * Math.sin(now() / 70);
+    color = pulse > 0.5 ? "#ffffff" : "#ff4d4d";
+    r = MARKER.radius + pulse * 1.6;
+  }
+  ctx.fillStyle = color;
+  ctx.shadowColor = color;
   ctx.shadowBlur = 18;
   ctx.beginPath();
-  ctx.arc(marker.x, marker.y, MARKER.radius, 0, Math.PI * 2);
+  ctx.arc(marker.x, marker.y, r, 0, Math.PI * 2);
   ctx.fill();
   ctx.shadowBlur = 0;
 }
@@ -188,8 +262,9 @@ function centerText(ctx, text, y, font, color, alpha = 1) {
 }
 
 function drawMenu(ctx, menuSel) {
-  centerText(ctx, "COSMIC CUT", 150, "700 56px system-ui, sans-serif", COLORS.frontier);
-  centerText(ctx, "select a starting zone", 210, "500 20px system-ui, sans-serif", COLORS.hud);
+  centerText(ctx, "COSMIC CUT", 140, "700 56px system-ui, sans-serif", COLORS.frontier);
+  if (game.highScore > 0) centerText(ctx, `HI  ${fmt(game.highScore)}`, 192, "700 22px system-ui, sans-serif", COLORS.hudAccent);
+  centerText(ctx, "select a starting zone", 234, "500 20px system-ui, sans-serif", COLORS.hud);
 
   const n = zoneCount;
   const gap = 110;
@@ -215,8 +290,10 @@ function drawMenu(ctx, menuSel) {
     ctx.fillText(locked ? "LOCKED" : `${z}-1`, x, y + 22);
     ctx.restore();
   }
-  centerText(ctx, "← →  select        ENTER  start", HEIGHT - 70,
+  centerText(ctx, "← →  select        ENTER  start", HEIGHT - 78,
     "500 18px system-ui, sans-serif", COLORS.hud);
+  centerText(ctx, "M  mute     ·     N  music", HEIGHT - 48,
+    "500 15px system-ui, sans-serif", COLORS.locked);
 }
 
 function drawIntro(ctx) {
@@ -402,30 +479,47 @@ function drawDeathFlash(ctx, p, blob, transT) {
 function drawGameOver(ctx) {
   ctx.fillStyle = "rgba(5, 3, 15, 0.78)";
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
-  centerText(ctx, "GAME OVER", CY - 40, "700 48px system-ui, sans-serif", COLORS.hudAccent);
-  centerText(ctx, `SCORE ${game.score}`, CY + 14, "700 26px system-ui, sans-serif", COLORS.hud);
-  centerText(ctx, "press any key — start screen", CY + 56, "500 20px system-ui, sans-serif", COLORS.hud);
+  centerText(ctx, "GAME OVER", CY - 56, "700 48px system-ui, sans-serif", COLORS.hudAccent);
+  centerText(ctx, `SCORE ${fmt(game.score)}`, CY - 6, "700 28px system-ui, sans-serif", COLORS.hud);
+  if (game.newHigh) {
+    const p = 0.6 + 0.4 * Math.sin(now() / 140);
+    ctx.globalAlpha = p;
+    centerText(ctx, "★ NEW HIGH SCORE ★", CY + 36, "800 26px system-ui, sans-serif", theme().frontier);
+    ctx.globalAlpha = 1;
+  } else {
+    centerText(ctx, `HI  ${fmt(game.highScore)}`, CY + 36, "600 22px system-ui, sans-serif", COLORS.locked);
+  }
+  centerText(ctx, "press any key — start screen", CY + 78, "500 20px system-ui, sans-serif", COLORS.hud);
 }
 
 function drawCampaignComplete(ctx) {
   ctx.fillStyle = "rgba(5, 3, 15, 0.82)";
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
-  centerText(ctx, "CAMPAIGN COMPLETE", CY - 44, "700 46px system-ui, sans-serif", COLORS.frontier);
-  centerText(ctx, `FINAL SCORE ${game.score}`, CY + 8, "700 28px system-ui, sans-serif", COLORS.hudAccent);
-  centerText(ctx, "you cleared all five zones — press any key", CY + 50,
+  centerText(ctx, "CAMPAIGN COMPLETE", CY - 60, "700 46px system-ui, sans-serif", COLORS.frontier);
+  centerText(ctx, `FINAL SCORE ${fmt(game.score)}`, CY - 8, "700 28px system-ui, sans-serif", COLORS.hudAccent);
+  if (game.newHigh) centerText(ctx, "★ NEW HIGH SCORE ★", CY + 32, "800 24px system-ui, sans-serif", theme().frontier);
+  else centerText(ctx, `HI  ${fmt(game.highScore)}`, CY + 32, "600 22px system-ui, sans-serif", COLORS.locked);
+  centerText(ctx, "you cleared all five zones — press any key", CY + 72,
     "500 20px system-ui, sans-serif", COLORS.hud);
 }
 
 export function render(ctx, view = {}) {
-  const { transT = 0, menuSel = 1, popups = [], reward = null, deathPoint = null, deathBlob = null, scorePulseT = 99 } = view;
+  const { transT = 0, menuSel = 1, popups = [], reward = null, deathPoint = null, deathBlob = null, scorePulseT = 99, danger = 0 } = view;
   drawBackground(ctx);
 
   if (game.state === "menu") { drawMenu(ctx, menuSel); return; }
 
+  // The play field shakes (screen-shake); overlays/HUD stay steady and readable.
+  const off = fx.shakeOffset();
+  ctx.save();
+  ctx.translate(off.x, off.y);
+
   if (game.state === "levelcomplete") {
     drawClaimed(ctx, wipeRadius(transT));
     drawArena(ctx);
+    drawParticles(ctx);
     drawMarker(ctx);
+    ctx.restore();
     drawHUD(ctx);
     drawLevelComplete(ctx, transT);
     return;
@@ -438,6 +532,10 @@ export function render(ctx, view = {}) {
   drawTrail(ctx);
   drawBlobs(ctx);
   drawMarker(ctx);
+  drawParticles(ctx);
+  ctx.restore();
+
+  drawDangerEdge(ctx, danger);
   drawPopups(ctx, popups);
   drawReward(ctx, reward);
   drawHUD(ctx, scorePulseT);
