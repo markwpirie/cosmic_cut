@@ -150,7 +150,7 @@ function drawHUD(ctx) {
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
   ctx.font = "600 18px system-ui, sans-serif";
-  ctx.fillStyle = COLORS.hudAccent;
+  ctx.fillStyle = theme().frontier; // match the zone's border colour
   ctx.fillText(`ZONE ${L.label}`, 12, 10);
   ctx.fillStyle = COLORS.hud;
   ctx.fillText(`CLAIMED ${percent.toFixed(0)}%`, 130, 10);
@@ -207,7 +207,7 @@ function drawMenu(ctx, menuSel) {
 
 function drawIntro(ctx) {
   const L = game.currentLevel();
-  centerText(ctx, `ZONE ${L.label}`, CY - 30, "700 52px system-ui, sans-serif", COLORS.frontier);
+  centerText(ctx, `ZONE ${L.label}`, CY - 30, "700 52px system-ui, sans-serif", theme().frontier);
   centerText(ctx, L.boss ? `BOSS — CLAIM ${L.target}%` : `CLAIM ${L.target}%`, CY + 24,
     "600 26px system-ui, sans-serif", COLORS.hudAccent);
   centerText(ctx, "press a direction to begin", CY + 72, "500 17px system-ui, sans-serif", COLORS.hud);
@@ -285,6 +285,33 @@ function drawBanner(ctx, banner) {
   ctx.textBaseline = "top";
 }
 
+// Frozen-on-death overlay: a pulsing highlight at the contact point, held until
+// the player presses a key. (A fuller explosion can replace this later.)
+function drawDeathFlash(ctx, p, transT) {
+  if (p) {
+    const blink = 0.5 + 0.5 * Math.sin(transT * 12);
+    const r = 12 + 6 * blink;
+    ctx.save();
+    ctx.globalAlpha = 0.45 + 0.55 * blink;
+    ctx.fillStyle = COLORS.marker;
+    ctx.shadowColor = COLORS.marker;
+    ctx.shadowBlur = 24;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r + 7, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+  }
+  centerText(ctx, "CAUGHT!", field.y + 64, "700 40px system-ui, sans-serif", COLORS.marker);
+  centerText(ctx, "press any key to continue", field.y + 100, "500 18px system-ui, sans-serif", COLORS.hud);
+}
+
 function drawGameOver(ctx) {
   ctx.fillStyle = "rgba(5, 3, 15, 0.78)";
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
@@ -300,7 +327,8 @@ function drawCampaignComplete(ctx) {
     "500 20px system-ui, sans-serif", COLORS.hud);
 }
 
-export function render(ctx, transT = 0, menuSel = 1, popups = [], banner = null) {
+export function render(ctx, view = {}) {
+  const { transT = 0, menuSel = 1, popups = [], banner = null, deathPoint = null } = view;
   drawBackground(ctx);
 
   if (game.state === "menu") { drawMenu(ctx, menuSel); return; }
@@ -326,6 +354,7 @@ export function render(ctx, transT = 0, menuSel = 1, popups = [], banner = null)
   drawHUD(ctx);
 
   if (game.state === "intro") drawIntro(ctx);
+  else if (game.state === "dead") drawDeathFlash(ctx, deathPoint, transT);
   else if (game.state === "gameover") drawGameOver(ctx);
   else if (game.state === "campaigncomplete") drawCampaignComplete(ctx);
 }

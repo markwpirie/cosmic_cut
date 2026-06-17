@@ -9,7 +9,7 @@ import { LEVELS, levelCount, zoneCount, zoneStart } from "./levels.js";
 const START_LIVES = 3;
 const UNLOCK_KEY = "cosmiccut.unlockedZone";
 
-// state: "menu" | "intro" | "playing" | "levelcomplete" | "gameover" | "campaigncomplete"
+// state: "menu" | "intro" | "playing" | "dead" | "levelcomplete" | "gameover" | "campaigncomplete"
 export let state = "menu";
 export let lives = START_LIVES;
 export let levelIndex = 0;
@@ -67,9 +67,12 @@ export function advance() {
   state = "intro";
 }
 
+// A blob hit. Lose a life; out of lives → game over, otherwise freeze on the
+// death spot ("dead") until the player presses a key to respawn.
 export function loseLife() {
   lives -= 1;
   if (lives <= 0) { lives = 0; state = "gameover"; }
+  else state = "dead";
 }
 
 export function toMenu() {

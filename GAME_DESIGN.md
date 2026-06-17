@@ -268,7 +268,9 @@ Section 2's claim/fill algorithm — and the SPLIT detection in Phase 5 — are 
 - **Per-zone themes (Phase 4):** each zone re-themes the play field (`config.THEMES`): zone 1 cyan → 2 orange → 3 green → 4 violet → 5 gold. Marker, HUD and Blob colours stay constant ✓
 - **Random Blob spawns (Phase 4):** position and launch direction are randomised each level/respawn (kept away from the player and spread apart) ✓
 - **Targets 70–90% (Phase 4):** levels start at 70% and climb to 90%; Blob counts ramp fast (2 by 1-2, 3 by 1-3). All in `levels.js` — tune freely ✓
-- **SPLIT text + timed ripple (Phase 4):** a "SPLIT!" flash when a split kills a Blob; level-complete holds (`config.TIMING.completeHold`) before the ripple ✓
+- **SPLIT text + timed ripple (Phase 4):** a "SPLIT!" flash when a split kills a Blob; level-complete *holds* on the cleared board (`config.TIMING.completeHold`) so you feel the win, then the ripple ✓
+- **Death beat (Phase 4):** a blob hit freezes the game in a `"dead"` state with the contact point pulsing ("CAUGHT!") and **waits for a key** before respawning (a fuller explosion is a later visual pass). Out of lives still → game over ✓
+- **Readability (Phase 4):** the "+N%" pop-up is nudged toward the field centre so it isn't hidden by the cut line or border; the HUD/intro ZONE label uses the zone's frontier colour ✓
 - **SUPER mode: deferred** — wired conceptually (clear 5-5 → 2× enemies) but not built in Phase 4; for now 5-5 ends at the campaign-complete screen ✓
 - **Claim rule (no enemies):** keep the largest open region, claim the rest ✓ (§13)
 

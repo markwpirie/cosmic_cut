@@ -11,21 +11,24 @@ import { marker, mode, trail, update as updateMarker, reset as resetMarker } fro
 import * as enemy from "./enemy.js";
 import * as game from "./game.js";
 import { render } from "./render.js";
-import { TIMING } from "./config.js";
+import { TIMING, field } from "./config.js";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
 // Total level-complete beat: hold on the text, ripple, then a short tail.
 const COMPLETE_TIME = TIMING.completeHold + TIMING.completeWipe + TIMING.completeTail;
+const FCX = field.x + field.w / 2;
+const FCY = field.y + field.h / 2;
 
 const DIR_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
   "w", "a", "s", "d", "W", "A", "S", "D"]);
 
-let transT = 0;        // clock for intro / levelcomplete transitions
+let transT = 0;        // clock for intro / levelcomplete / dead transitions
 let menuSel = 1;       // selected starting zone on the menu
 let popups = [];       // floating "+N%" claim pop-ups
 let banner = null;     // central reward flash ("SPLIT!")
+let deathPoint = null; // where the last fatal contact happened (flashed while "dead")
 let prevPercent = 0;   // to detect how much a claim just added
 
 // Load the current level's world: clear the arena, home the marker, spawn the
@@ -38,6 +41,7 @@ function loadLevel() {
   prevPercent = 0;
   popups = [];
   banner = null;
+  deathPoint = null;
 }
 
 // Lost a life but still alive: forfeit the cut, re-home marker + Blobs, keep the
@@ -46,6 +50,7 @@ function respawn() {
   resetMarker();
   enemy.reset(game.currentLevel().blobs);
   control.reset();
+  deathPoint = null;
 }
 
 // React to entering a new state.
@@ -68,6 +73,12 @@ window.addEventListener("keydown", (e) => {
     if (DIR_KEYS.has(e.key)) game.beginPlay();
     return;
   }
+  if (game.state === "dead") {
+    // Frozen on the death spot until a key — then respawn and carry on.
+    respawn();
+    game.beginPlay();
+    return;
+  }
   if (game.state === "gameover" || game.state === "campaigncomplete") {
     game.toMenu();
     menuSel = Math.min(menuSel, game.unlockedZone);
@@ -87,20 +98,28 @@ function loop(now) {
     const prevCount = enemy.blobs.length;
     updateMarker(dt);
     enemy.update(dt);
-    // A claim just landed → float a "+N%" pop-up at the marker.
+    // A claim just landed → float a "+N%" pop-up, nudged toward the field centre
+    // so it isn't hidden under the freshly-drawn line or the border.
     const gained = grid.percent - prevPercent;
-    if (gained >= 0.5) popups.push({ text: `+${Math.max(1, Math.round(gained))}%`, x: marker.x, y: marker.y, t: 0 });
+    if (gained >= 0.5) {
+      const a = Math.atan2(FCY - marker.y, FCX - marker.x);
+      popups.push({ text: `+${Math.max(1, Math.round(gained))}%`, x: marker.x + Math.cos(a) * 34, y: marker.y + Math.sin(a) * 34, t: 0 });
+    }
     prevPercent = grid.percent;
     // A blob died on a claimed side → that was a SPLIT.
     if (enemy.blobs.length < prevCount) banner = { text: "SPLIT!", t: 0 };
     if (enemy.collides(marker, mode, trail)) {
-      game.loseLife();
-      if (game.state === "playing") respawn();
+      deathPoint = { x: marker.x, y: marker.y };
+      game.loseLife(); // → "dead" (freeze until keypress) or "gameover"
+      transT = 0;
     } else if (grid.percent >= game.currentLevel().target) {
       game.completeLevel();
+      transT = 0;
     }
   } else if (game.state === "intro") {
     transT += dt; // banner only; play begins on the first direction press
+  } else if (game.state === "dead") {
+    transT += dt; // drives the contact-point flash
   } else if (game.state === "levelcomplete") {
     transT += dt;
     if (transT >= COMPLETE_TIME) game.advance();
@@ -110,7 +129,7 @@ function loop(now) {
   popups = popups.filter((p) => p.t < TIMING.popupLife);
   if (banner) { banner.t += dt; if (banner.t >= TIMING.splitFlash) banner = null; }
 
-  render(ctx, transT, menuSel, popups, banner);
+  render(ctx, { transT, menuSel, popups, banner, deathPoint });
   requestAnimationFrame(loop);
 }
 

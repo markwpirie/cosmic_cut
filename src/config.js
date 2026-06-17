@@ -75,7 +75,7 @@ export const THEMES = [
 export const TIMING = {
   popupLife: 1.6,      // how long a "+N%" claim pop-up lingers
   splitFlash: 1.2,     // how long the "SPLIT!" reward text shows
-  completeHold: 1.0,   // pause on LEVEL COMPLETE *before* the ripple starts (§7)
-  completeWipe: 0.85,  // the expanding-ripple duration
-  completeTail: 0.4,   // pause after the ripple before the next level loads
+  completeHold: 1.8,   // savour the cleared board on LEVEL COMPLETE *before* the ripple (§7)
+  completeWipe: 0.9,   // the expanding-ripple duration
+  completeTail: 0.7,   // pause after the ripple before the next level loads
 };
