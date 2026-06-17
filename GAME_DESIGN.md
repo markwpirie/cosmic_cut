@@ -197,8 +197,8 @@ Each phase is a working, runnable thing. One concept per phase.
 | **2** | Cut a line into open space and claim the enclosed area. Show %. | The core algorithm — the heart of the game | ✅ Done (grid + flood fill; perimeter model in §16) |
 | **3** | Add one Blob enemy + collision = lose a life. 3 lives, game over. | Enemies, collision, game state | ✅ Done (bouncing Blob; blob-aware claim; frontier-priority corners — see §14, §16) |
 | **4** | Zones + level table + win condition + progression. | Data-driven design | ✅ Done (levels.js table; start screen + zone unlocks; level-complete wipe; blue→red Blob spectrum — see §14) |
-| **5** | Cut mechanics: BLOCK OUT, MEGA-CUT, SPLIT, LONG, MULTI STACK + scoring. | Geometry checks, reward logic | ◻ Next |
-| **6** | First power-up (Freeze), then the rest, ZOOM last. | Timed effects/state |
+| **5** | Cut mechanics: BLOCK OUT, MEGA-CUT, SPLIT, LONG, MULTI STACK + scoring. | Geometry checks, reward logic | ✅ Done (score + multipliers in `config.POINTS`; perimeter-safe collision — see §14) |
+| **6** | First power-up (Freeze), then the rest, ZOOM last. | Timed effects/state | ◻ Next |
 | **7** | Touch controls for mobile. | Input abstraction (key step for iPhone) |
 | **8** | Make it a PWA — installable on iPhone home screen. | Deployment/packaging |
 | **9** | Swap in Pixi.js, real sprites, glass blocks, neon, particles, juice. | Graphics layer, polish |
@@ -271,6 +271,8 @@ Section 2's claim/fill algorithm — and the SPLIT detection in Phase 5 — are 
 - **SPLIT text + timed ripple (Phase 4):** a "SPLIT!" flash when a split kills a Blob; level-complete *holds* on the cleared board (`config.TIMING.completeHold`) so you feel the win, then the ripple ✓
 - **Death beat (Phase 4):** a blob hit freezes the game in a `"dead"` state with the contact point pulsing ("CAUGHT!") and **waits for a key** before respawning (a fuller explosion is a later visual pass). Out of lives still → game over ✓
 - **Readability (Phase 4):** the "+N%" pop-up is nudged toward the field centre so it isn't hidden by the cut line or border; the HUD/intro ZONE label uses the zone's frontier colour ✓
+- **Perimeter-safe collision (Phase 5):** Blobs only kill while you're **cutting** in open space — riding the perimeter / claimed edges is safe even if a blob brushes the marker. The death also flashes the offending blob (the real kill point on a line contact) ✓
+- **Scoring (Phase 5):** base points per % claimed × size bonus (**BLOCK OUT** ≥30% ×2, **MEGA-CUT** ≥50% ×4) × length bonus (**LONG/SUPER/MEGA** by cut length vs field height) × the per-level multiplier; **SPLIT** adds per-kill points and grants ×2 to the level multiplier; ≥2 bonuses on one cut → **MULTI STACK!**. Clearing a level adds a flat bonus + per-remaining-life bonus. All values in `config.POINTS`. Slow-cut bonus and ZOOM scoring stay deferred ✓
 - **SUPER mode: deferred** — wired conceptually (clear 5-5 → 2× enemies) but not built in Phase 4; for now 5-5 ends at the campaign-complete screen ✓
 - **Claim rule (no enemies):** keep the largest open region, claim the rest ✓ (§13)
 

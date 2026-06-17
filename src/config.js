@@ -71,6 +71,21 @@ export const THEMES = [
   { frontier: "#ffd24d", claimedFill: "rgba(255, 205, 60, 0.15)", trail: "#ffdf80", seam: "rgba(255, 220, 120, 0.4)", arena: "#a3851f" }, // 5 gold
 ];
 
+// Scoring (Phase 5, §9). Point values are deliberately gathered here so they're
+// easy to balance once the game is played. A cut scores base points per % it
+// claims, multiplied by any bonuses it triggers (BLOCK OUT / MEGA-CUT by size,
+// LONG tiers by length), times the level multiplier (SPLITs grant ×2 each).
+export const POINTS = {
+  perPercent: 100,     // base points per 1% of the arena claimed in a cut
+  blockOutPct: 30, blockOutMult: 2,   // single cut ≥30% → ×2 (§4)
+  megaCutPct: 50,  megaCutMult: 4,    // single cut ≥50% → ×4 (§4)
+  longMult: 1.5, superLongMult: 2, megaLongMult: 3, // by cut length vs field height
+  splitMult: 2,        // each SPLIT grants ×2 to the level multiplier (§14)
+  perKill: 500,        // points per Blob destroyed (juicy, §"nice points on kill")
+  levelClear: 1000,    // bonus for clearing a level
+  lifeBonus: 250,      // per remaining life at clear
+};
+
 // Animation / feel timings (seconds), gathered so feel is tunable in one place.
 export const TIMING = {
   popupLife: 1.6,      // how long a "+N%" claim pop-up lingers

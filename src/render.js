@@ -147,17 +147,23 @@ function drawMarker(ctx) {
 
 function drawHUD(ctx) {
   const L = game.currentLevel();
-  ctx.textAlign = "left";
   ctx.textBaseline = "top";
   ctx.font = "600 18px system-ui, sans-serif";
+  ctx.textAlign = "left";
   ctx.fillStyle = theme().frontier; // match the zone's border colour
   ctx.fillText(`ZONE ${L.label}`, 12, 10);
   ctx.fillStyle = COLORS.hud;
-  ctx.fillText(`CLAIMED ${percent.toFixed(0)}%`, 130, 10);
-  ctx.fillStyle = COLORS.hudAccent;
-  ctx.fillText(`TARGET ${L.target}%`, 290, 10);
+  ctx.fillText(`${percent.toFixed(0)}/${L.target}%`, 110, 10);
   ctx.fillStyle = COLORS.marker;
-  ctx.fillText(`LIVES ${"♥".repeat(game.lives)}`, 440, 10);
+  ctx.fillText(`${"♥".repeat(game.lives)}`, 220, 10);
+  if (game.levelMult > 1) {
+    ctx.fillStyle = COLORS.hudAccent;
+    ctx.fillText(`×${game.levelMult}`, 330, 10);
+  }
+  ctx.textAlign = "right";
+  ctx.fillStyle = COLORS.hud;
+  ctx.fillText(`SCORE ${game.score}`, WIDTH - 12, 10);
+  ctx.textAlign = "left";
 }
 
 // --- overlays / screens ----------------------------------------------------
@@ -287,9 +293,9 @@ function drawBanner(ctx, banner) {
 
 // Frozen-on-death overlay: a pulsing highlight at the contact point, held until
 // the player presses a key. (A fuller explosion can replace this later.)
-function drawDeathFlash(ctx, p, transT) {
+function drawDeathFlash(ctx, p, blob, transT) {
+  const blink = 0.5 + 0.5 * Math.sin(transT * 12);
   if (p) {
-    const blink = 0.5 + 0.5 * Math.sin(transT * 12);
     const r = 12 + 6 * blink;
     ctx.save();
     ctx.globalAlpha = 0.45 + 0.55 * blink;
@@ -308,6 +314,21 @@ function drawDeathFlash(ctx, p, transT) {
     ctx.globalAlpha = 1;
     ctx.shadowBlur = 0;
   }
+  if (blob) {
+    // ring the blob that caught you — shows the real kill point on a line contact
+    ctx.save();
+    ctx.globalAlpha = 0.4 + 0.6 * blink;
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 3;
+    ctx.shadowColor = "#ffffff";
+    ctx.shadowBlur = 16;
+    ctx.beginPath();
+    ctx.arc(blob.x, blob.y, blob.radius + 8, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+  }
   centerText(ctx, "CAUGHT!", field.y + 64, "700 40px system-ui, sans-serif", COLORS.marker);
   centerText(ctx, "press any key to continue", field.y + 100, "500 18px system-ui, sans-serif", COLORS.hud);
 }
@@ -315,20 +336,22 @@ function drawDeathFlash(ctx, p, transT) {
 function drawGameOver(ctx) {
   ctx.fillStyle = "rgba(5, 3, 15, 0.78)";
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
-  centerText(ctx, "GAME OVER", CY - 24, "700 48px system-ui, sans-serif", COLORS.hudAccent);
-  centerText(ctx, "press any key — start screen", CY + 28, "500 20px system-ui, sans-serif", COLORS.hud);
+  centerText(ctx, "GAME OVER", CY - 40, "700 48px system-ui, sans-serif", COLORS.hudAccent);
+  centerText(ctx, `SCORE ${game.score}`, CY + 14, "700 26px system-ui, sans-serif", COLORS.hud);
+  centerText(ctx, "press any key — start screen", CY + 56, "500 20px system-ui, sans-serif", COLORS.hud);
 }
 
 function drawCampaignComplete(ctx) {
   ctx.fillStyle = "rgba(5, 3, 15, 0.82)";
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
-  centerText(ctx, "CAMPAIGN COMPLETE", CY - 24, "700 46px system-ui, sans-serif", COLORS.frontier);
-  centerText(ctx, "you cleared all five zones — press any key", CY + 28,
+  centerText(ctx, "CAMPAIGN COMPLETE", CY - 44, "700 46px system-ui, sans-serif", COLORS.frontier);
+  centerText(ctx, `FINAL SCORE ${game.score}`, CY + 8, "700 28px system-ui, sans-serif", COLORS.hudAccent);
+  centerText(ctx, "you cleared all five zones — press any key", CY + 50,
     "500 20px system-ui, sans-serif", COLORS.hud);
 }
 
 export function render(ctx, view = {}) {
-  const { transT = 0, menuSel = 1, popups = [], banner = null, deathPoint = null } = view;
+  const { transT = 0, menuSel = 1, popups = [], banner = null, deathPoint = null, deathBlob = null } = view;
   drawBackground(ctx);
 
   if (game.state === "menu") { drawMenu(ctx, menuSel); return; }
@@ -354,7 +377,7 @@ export function render(ctx, view = {}) {
   drawHUD(ctx);
 
   if (game.state === "intro") drawIntro(ctx);
-  else if (game.state === "dead") drawDeathFlash(ctx, deathPoint, transT);
+  else if (game.state === "dead") drawDeathFlash(ctx, deathPoint, deathBlob, transT);
   else if (game.state === "gameover") drawGameOver(ctx);
   else if (game.state === "campaigncomplete") drawCampaignComplete(ctx);
 }

@@ -8,16 +8,18 @@ See [GAME_DESIGN.md](GAME_DESIGN.md) for the full design.
 
 ## Status
 
-**Phase 4 complete** — a playable campaign. A start screen lets you pick an
-unlocked starting zone; each level has a claim **target %** to hit, then a
-**level-complete** beat (wipe + pause) and on to the next, harder level through
-zones 1-1 … 5-5. Difficulty is data-driven (see [`levels.js`](src/levels.js)):
-rising targets and **Blobs** that escalate along a blue→red spectrum (big/slow →
-small/fast). Lives, extra life on X-4, game over → back to the start screen with
-your reached zone unlocked (persisted). Built on Phases 0–3: continuous "ride the
-rail" movement, grid + flood-fill claim, the two-tier perimeter model, and the
-bouncing Blob. **Next: Phase 5** — cut scoring (BLOCK OUT, MEGA-CUT, SPLIT, LONG)
-and the Sparx/Hunter enemy types. See §11 and §16 of [GAME_DESIGN.md](GAME_DESIGN.md).
+**Phase 5 complete** — scoring & cut rewards on top of the Phase 4 campaign.
+A finished cut scores base points per % claimed, multiplied by **BLOCK OUT**
+(≥30%), **MEGA-CUT** (≥50%), **LONG** tiers (by cut length) and a per-level
+multiplier; a **SPLIT** (trapping/killing a blob on the smaller side) adds kill
+points and grants ×2 for the rest of the level; stacking bonuses flash
+**MULTI STACK!**. You're only vulnerable while *cutting* — riding the perimeter
+is safe. All point values live in [`config.js`](src/config.js) `POINTS`.
+Underneath: the Phase 4 campaign (start screen + zone select, data-driven levels
+in [`levels.js`](src/levels.js), per-zone themes, target %, level-complete beat,
+lives) and Phases 0–3 (ride-the-rail movement, flood-fill claim, perimeter model,
+bouncing Blobs). **Next: Phase 6** — power-ups (Freeze first, ZOOM last) plus the
+special extra-life and slow-down Blobs. See §11/§16 of [GAME_DESIGN.md](GAME_DESIGN.md).
 
 ## Code layout
 

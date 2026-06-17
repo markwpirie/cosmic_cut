@@ -124,20 +124,24 @@ function distToSeg(px, py, ax, ay, bx, by) {
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
-// Does any blob touch the marker, or (while cutting) the exposed cut trail?
+// You're only vulnerable while CUTTING out in open space — riding the perimeter
+// (or a claimed edge) is safe, even if a blob brushes the marker there. While
+// cutting, a blob touching the marker OR the exposed trail is fatal. Returns the
+// offending blob (so the caller can flash it), or null.
 export function collides(marker, mode, trail) {
+  if (mode !== "cutting") return null; // safe on the perimeter
   for (const b of blobs) {
-    if (Math.hypot(b.x - marker.x, b.y - marker.y) < b.radius + MARKER.radius) return true;
-    if (mode === "cutting" && trail.length) {
+    if (Math.hypot(b.x - marker.x, b.y - marker.y) < b.radius + MARKER.radius) return b;
+    if (trail.length) {
       const thr = b.radius + 2;
       for (let i = 0; i < trail.length - 1; i++) {
         const a = trail[i];
         const c = trail[i + 1];
-        if (distToSeg(b.x, b.y, nodeX(a.col), nodeY(a.row), nodeX(c.col), nodeY(c.row)) < thr) return true;
+        if (distToSeg(b.x, b.y, nodeX(a.col), nodeY(a.row), nodeX(c.col), nodeY(c.row)) < thr) return b;
       }
       const last = trail[trail.length - 1];
-      if (distToSeg(b.x, b.y, nodeX(last.col), nodeY(last.row), marker.x, marker.y) < thr) return true;
+      if (distToSeg(b.x, b.y, nodeX(last.col), nodeY(last.row), marker.x, marker.y) < thr) return b;
     }
   }
-  return false;
+  return null;
 }

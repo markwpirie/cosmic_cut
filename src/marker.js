@@ -21,6 +21,7 @@ export let prevDir = null;   // previous (different) heading, for T-junction mom
 export let mode = "riding";  // "riding" | "cutting"
 export let rideType = "auto"; // "auto" (frontier/wall) | "seam"
 export let trail = [];       // nodes of the in-progress cut
+export let lastCutLength = 0; // node count of the just-finished cut (for LONG scoring)
 
 // Reset to the start position (level start / restart).
 export function reset() {
@@ -140,6 +141,7 @@ function decideCutting() {
 function finishCut() {
   // Keep the survivors' region open, claim the rest; blobs trapped on a claimed
   // (smaller) side die — the SPLIT.
+  lastCutLength = trail.length;
   const killed = applyClaim(trail, blobCells());
   if (killed.length) removeBlobs(killed);
   trail = [];
