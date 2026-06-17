@@ -89,7 +89,9 @@ export const POINTS = {
 // Animation / feel timings (seconds), gathered so feel is tunable in one place.
 export const TIMING = {
   popupLife: 1.6,      // how long a "+N%" claim pop-up lingers
-  splitFlash: 1.2,     // how long the "SPLIT!" reward text shows
+  rewardLife: 2.2,     // how long the central score read-out (labels + total) shows
+  rewardStep: 0.15,    // delay between each bonus label popping in (the "doof doof doof")
+  scorePulse: 0.35,    // how long the HUD score stays enlarged after it jumps
   completeHold: 1.8,   // savour the cleared board on LEVEL COMPLETE *before* the ripple (§7)
   completeWipe: 0.9,   // the expanding-ripple duration
   completeTail: 0.7,   // pause after the ripple before the next level loads

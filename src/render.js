@@ -145,7 +145,7 @@ function drawMarker(ctx) {
   ctx.shadowBlur = 0;
 }
 
-function drawHUD(ctx) {
+function drawHUD(ctx, scorePulseT = 99) {
   const L = game.currentLevel();
   ctx.textBaseline = "top";
   ctx.font = "600 18px system-ui, sans-serif";
@@ -160,9 +160,17 @@ function drawHUD(ctx) {
     ctx.fillStyle = COLORS.hudAccent;
     ctx.fillText(`×${game.levelMult}`, 330, 10);
   }
+  // Score, right-aligned, pulsing briefly (bigger + accent) whenever it jumps.
+  const p = scorePulseT < TIMING.scorePulse ? 1 - scorePulseT / TIMING.scorePulse : 0;
+  ctx.save();
+  ctx.translate(WIDTH - 12, 10);
+  ctx.scale(1 + 0.4 * p, 1 + 0.4 * p);
   ctx.textAlign = "right";
-  ctx.fillStyle = COLORS.hud;
-  ctx.fillText(`SCORE ${game.score}`, WIDTH - 12, 10);
+  ctx.textBaseline = "top";
+  ctx.fillStyle = p > 0 ? theme().frontier : COLORS.hud;
+  ctx.font = "700 18px system-ui, sans-serif";
+  ctx.fillText(`SCORE ${fmt(game.score)}`, 0, 0);
+  ctx.restore();
   ctx.textAlign = "left";
 }
 
@@ -268,25 +276,62 @@ function drawPopups(ctx, popups) {
   ctx.restore();
 }
 
-// Big central reward flash, e.g. "SPLIT!". Pops in and fades.
-function drawBanner(ctx, banner) {
-  if (!banner) return;
-  const k = Math.min(1, banner.t / TIMING.splitFlash);
-  const pop = Math.min(1, banner.t / 0.18);
+function fmt(n) { return Math.round(n).toLocaleString(); }
+function fmtMult(m) { return Number.isInteger(m) ? `${m}` : m.toFixed(1); }
+
+// Central score read-out for a scored cut: the bonus labels pop in one at a time
+// (the "doof doof doof"), then "base × mult [+kills] = +total". Holds, then fades.
+function drawReward(ctx, r) {
+  if (!r) return;
+  const life = TIMING.rewardLife;
   ctx.save();
-  ctx.globalAlpha = 1 - k * k;
-  ctx.translate(WIDTH / 2, CY - 60);
-  ctx.scale(pop, pop);
-  ctx.fillStyle = COLORS.marker;
-  ctx.shadowColor = COLORS.marker;
-  ctx.shadowBlur = 20;
-  ctx.font = "800 56px system-ui, sans-serif";
+  ctx.globalAlpha = r.t < life * 0.8 ? 1 : Math.max(0, (life - r.t) / (life * 0.2));
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(banner.text, 0, 0);
+  const cx = WIDTH / 2;
+  const cy = CY - 56;
+  const accent = theme().frontier;
+
+  if (r.labels.length) {
+    ctx.font = "800 26px system-ui, sans-serif";
+    const widths = r.labels.map((l) => ctx.measureText(l).width);
+    const sep = 22;
+    const totalW = widths.reduce((s, w) => s + w, 0) + sep * (r.labels.length - 1);
+    let x = cx - totalW / 2;
+    for (let i = 0; i < r.labels.length; i++) {
+      const lk = (r.t - i * TIMING.rewardStep) / TIMING.rewardStep; // this label's pop progress
+      if (lk > 0) {
+        const sc = 0.5 + 0.5 * Math.min(1, lk);
+        ctx.save();
+        ctx.translate(x + widths[i] / 2, cy);
+        ctx.scale(sc, sc);
+        ctx.fillStyle = COLORS.hudAccent;
+        ctx.shadowColor = COLORS.hudAccent;
+        ctx.shadowBlur = 12;
+        ctx.fillText(r.labels[i], 0, 0);
+        ctx.restore();
+      }
+      x += widths[i] + sep;
+    }
+    ctx.shadowBlur = 0;
+  }
+
+  if (r.t >= r.labels.length * TIMING.rewardStep) {
+    let mathStr = `${fmt(r.base)}  ×${fmtMult(r.mult)}`;
+    if (r.killPts > 0) mathStr += `  +${fmt(r.killPts)}`;
+    ctx.fillStyle = COLORS.hud;
+    ctx.font = "600 22px system-ui, sans-serif";
+    ctx.fillText(mathStr, cx, cy + 42);
+    ctx.fillStyle = accent;
+    ctx.shadowColor = accent;
+    ctx.shadowBlur = 16;
+    ctx.font = "800 52px system-ui, sans-serif";
+    ctx.fillText(`+${fmt(r.total)}`, cx, cy + 90);
+    ctx.shadowBlur = 0;
+  }
+
   ctx.restore();
   ctx.globalAlpha = 1;
-  ctx.shadowBlur = 0;
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
 }
@@ -351,7 +396,7 @@ function drawCampaignComplete(ctx) {
 }
 
 export function render(ctx, view = {}) {
-  const { transT = 0, menuSel = 1, popups = [], banner = null, deathPoint = null, deathBlob = null } = view;
+  const { transT = 0, menuSel = 1, popups = [], reward = null, deathPoint = null, deathBlob = null, scorePulseT = 99 } = view;
   drawBackground(ctx);
 
   if (game.state === "menu") { drawMenu(ctx, menuSel); return; }
@@ -373,8 +418,8 @@ export function render(ctx, view = {}) {
   drawBlobs(ctx);
   drawMarker(ctx);
   drawPopups(ctx, popups);
-  drawBanner(ctx, banner);
-  drawHUD(ctx);
+  drawReward(ctx, reward);
+  drawHUD(ctx, scorePulseT);
 
   if (game.state === "intro") drawIntro(ctx);
   else if (game.state === "dead") drawDeathFlash(ctx, deathPoint, deathBlob, transT);

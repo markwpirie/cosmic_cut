@@ -20,6 +20,7 @@ const ctx = canvas.getContext("2d");
 const COMPLETE_TIME = TIMING.completeHold + TIMING.completeWipe + TIMING.completeTail;
 const FCX = field.x + field.w / 2;
 const FCY = field.y + field.h / 2;
+const REWARD_MIN = 2500; // show the big central read-out for bonuses, or any cut over this
 
 const DIR_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
   "w", "a", "s", "d", "W", "A", "S", "D"]);
@@ -27,10 +28,11 @@ const DIR_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
 let transT = 0;        // clock for intro / levelcomplete / dead transitions
 let menuSel = 1;       // selected starting zone on the menu
 let popups = [];       // floating "+N%" claim pop-ups
-let banner = null;     // central reward flash ("SPLIT!", "MEGA-CUT!", …)
+let reward = null;     // central score read-out (bonus labels + base × mult = total)
 let deathPoint = null; // where the last fatal contact happened (flashed while "dead")
 let deathBlob = null;  // the blob that caught the player (also flashed)
 let prevPercent = 0;   // to detect how much a claim just added
+let scorePulseT = 99;  // time since the HUD score last jumped (drives a brief pulse)
 
 // Load the current level's world: clear the arena, home the marker, spawn the
 // level's Blobs, drop any held input, pop-ups and banner.
@@ -41,7 +43,7 @@ function loadLevel() {
   control.reset();
   prevPercent = 0;
   popups = [];
-  banner = null;
+  reward = null;
   deathPoint = null;
   deathBlob = null;
 }
@@ -110,8 +112,9 @@ function loop(now) {
       popups.push({ text: `+${Math.max(1, Math.round(gained))}%`, x: marker.x + Math.cos(a) * 34, y: marker.y + Math.sin(a) * 34, t: 0 });
     }
     if (gained >= 0.5 || kills > 0) {
-      const label = game.scoreCut(gained, lastCutLength, kills);
-      if (label) banner = { text: label, t: 0 };
+      const res = game.scoreCut(gained, lastCutLength, kills);
+      if (res.labels.length > 0 || res.total >= REWARD_MIN) reward = { ...res, t: 0 };
+      scorePulseT = 0; // make the HUD score pulse
     }
     prevPercent = grid.percent;
     const hit = enemy.collides(marker, mode, trail);
@@ -135,9 +138,10 @@ function loop(now) {
 
   for (const p of popups) p.t += dt;
   popups = popups.filter((p) => p.t < TIMING.popupLife);
-  if (banner) { banner.t += dt; if (banner.t >= TIMING.splitFlash) banner = null; }
+  if (reward) { reward.t += dt; if (reward.t >= TIMING.rewardLife) reward = null; }
+  scorePulseT += dt;
 
-  render(ctx, { transT, menuSel, popups, banner, deathPoint, deathBlob });
+  render(ctx, { transT, menuSel, popups, reward, deathPoint, deathBlob, scorePulseT });
   requestAnimationFrame(loop);
 }
 

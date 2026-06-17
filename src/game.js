@@ -25,10 +25,13 @@ export function currentLevel() {
 export function addScore(n) { score += Math.round(n); }
 export function addLevelMult(m) { levelMult *= m; }
 
-// Score a finished cut and return a banner label to flash (or null). Base points
-// per % claimed × size bonus (BLOCK OUT/MEGA-CUT) × length bonus (LONG tiers) ×
-// the level multiplier; plus per-kill points, and a fresh ×2 to the level
-// multiplier on a SPLIT. Two or more bonus names → "MULTI STACK!".
+// Score a finished cut and return the full breakdown for the on-screen read-out:
+//   { labels, base, mult, killPts, total }
+// base = points per % claimed; mult = size bonus (BLOCK OUT/MEGA-CUT) × length
+// bonus (LONG tiers) × the current level multiplier; killPts = per-Blob kill
+// points (also ×level mult). A SPLIT additionally grants ×2 to the level
+// multiplier for the rest of the level. labels are the bonus names, in stack
+// order, for the staggered "doof doof doof" reveal.
 export function scoreCut(gainedPct, length, kills) {
   const labels = [];
   let mult = 1;
@@ -37,15 +40,16 @@ export function scoreCut(gainedPct, length, kills) {
   if (length >= 3 * ROWS) { mult *= POINTS.megaLongMult; labels.push("MEGA LONG"); }
   else if (length >= 2 * ROWS) { mult *= POINTS.superLongMult; labels.push("SUPER LONG"); }
   else if (length >= ROWS) { mult *= POINTS.longMult; labels.push("LONG"); }
+  if (kills > 0) labels.push("SPLIT");
 
-  let pts = gainedPct * POINTS.perPercent * mult * levelMult;
-  if (kills > 0) { pts += kills * POINTS.perKill * levelMult; labels.push("SPLIT"); }
-  addScore(pts);
+  const appliedMult = mult * levelMult;
+  const base = gainedPct * POINTS.perPercent;
+  const killPts = kills > 0 ? kills * POINTS.perKill * levelMult : 0;
+  const total = Math.round(base * appliedMult + killPts);
+  addScore(total);
   if (kills > 0) levelMult *= POINTS.splitMult; // ×2 for the rest of the level
 
-  if (labels.length >= 2) return "MULTI STACK!";
-  if (labels.length === 1) return labels[0] + "!";
-  return null;
+  return { labels, base: Math.round(base), mult: appliedMult, killPts: Math.round(killPts), total };
 }
 
 // --- unlock persistence (guarded) ------------------------------------------
