@@ -45,15 +45,37 @@ export const BLOB_TYPES = [
 ];
 
 // Neon palette (§10). Glass blocks / slow-cut shading arrive in Phase 9.
+// COLORS holds the constants that DON'T change per zone (player, HUD, menu);
+// the play-field palette is themed per zone (THEMES below).
 export const COLORS = {
   bg: "#05030f",
-  claimedFill: "rgba(25, 230, 255, 0.16)",
-  seam: "rgba(125, 249, 255, 0.4)",
-  arena: "#1f8fa3",
-  frontier: "#7df9ff",
-  trail: "#5ad6ff",
   marker: "#ff3df0",
   hud: "#ffffff",
   hudAccent: "#ff3df0",
   locked: "#3a3550",      // dimmed zone chip on the start screen
+  // defaults (zone-1 cyan) used by menu/fallback
+  frontier: "#7df9ff",
+  claimedFill: "rgba(25, 230, 255, 0.16)",
+  seam: "rgba(125, 249, 255, 0.4)",
+  arena: "#1f8fa3",
+  trail: "#5ad6ff",
+};
+
+// Per-zone field palette — each zone re-themes the frontier/claim/trail/seam/
+// arena so the world's mood shifts as you climb (zone 1 cyan → 2 orange → …).
+export const THEMES = [
+  { frontier: "#7df9ff", claimedFill: "rgba(25, 230, 255, 0.16)", trail: "#5ad6ff", seam: "rgba(125, 249, 255, 0.4)", arena: "#1f8fa3" }, // 1 cyan
+  { frontier: "#ffb24d", claimedFill: "rgba(255, 150, 40, 0.16)", trail: "#ffc266", seam: "rgba(255, 185, 110, 0.4)", arena: "#a3631f" }, // 2 orange
+  { frontier: "#79ff9e", claimedFill: "rgba(60, 255, 140, 0.15)", trail: "#7affb0", seam: "rgba(130, 255, 180, 0.4)", arena: "#1fa35a" }, // 3 green
+  { frontier: "#bb8cff", claimedFill: "rgba(165, 120, 255, 0.16)", trail: "#c9a6ff", seam: "rgba(190, 160, 255, 0.4)", arena: "#5a2fa3" }, // 4 violet
+  { frontier: "#ffd24d", claimedFill: "rgba(255, 205, 60, 0.15)", trail: "#ffdf80", seam: "rgba(255, 220, 120, 0.4)", arena: "#a3851f" }, // 5 gold
+];
+
+// Animation / feel timings (seconds), gathered so feel is tunable in one place.
+export const TIMING = {
+  popupLife: 1.6,      // how long a "+N%" claim pop-up lingers
+  splitFlash: 1.2,     // how long the "SPLIT!" reward text shows
+  completeHold: 1.0,   // pause on LEVEL COMPLETE *before* the ripple starts (§7)
+  completeWipe: 0.85,  // the expanding-ripple duration
+  completeTail: 0.4,   // pause after the ripple before the next level loads
 };

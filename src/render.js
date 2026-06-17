@@ -4,7 +4,7 @@
 // start menu, a level intro banner, the play field, the level-complete wipe, and
 // the game-over / campaign-complete overlays.
 
-import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, MARKER, nodeX, nodeY } from "./config.js";
+import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, MARKER, nodeX, nodeY } from "./config.js";
 import { grid, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
 import { marker, mode, trail } from "./marker.js";
 import { blobs, radius as blobRadius } from "./enemy.js";
@@ -14,7 +14,20 @@ import { zoneCount } from "./levels.js";
 const CX = field.x + field.w / 2;
 const CY = field.y + field.h / 2;
 const MAXR = Math.hypot(field.w / 2, field.h / 2);
-const WIPE_TIME = 0.85; // seconds for the level-complete circle to cover the field
+
+// Active play-field palette for the current zone (zone 1 cyan → 2 orange → …).
+function theme() {
+  return THEMES[game.currentLevel().zone - 1] || THEMES[0];
+}
+
+// Level-complete ripple radius for a given elapsed transition time: it holds
+// (radius 0) for completeHold, then expands over completeWipe.
+function wipeRadius(transT) {
+  const w = (transT - TIMING.completeHold) / TIMING.completeWipe;
+  if (w <= 0) return 0;
+  const t = Math.min(w, 1);
+  return (1 - (1 - t) * (1 - t)) * (MAXR + 30); // easeOut
+}
 
 function drawBackground(ctx) {
   ctx.fillStyle = COLORS.bg;
@@ -24,7 +37,7 @@ function drawBackground(ctx) {
 // Claimed cells as one solid translucent mass. During the level-complete wipe,
 // cells within the expanding circle (radius wipeR) vanish inside-out.
 function drawClaimed(ctx, wipeR = -1) {
-  ctx.fillStyle = COLORS.claimedFill;
+  ctx.fillStyle = theme().claimedFill;
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       if (grid[r][c] !== FILLED) continue;
@@ -39,7 +52,7 @@ function drawClaimed(ctx, wipeR = -1) {
 }
 
 function drawSeams(ctx) {
-  ctx.strokeStyle = COLORS.seam;
+  ctx.strokeStyle = theme().seam;
   ctx.lineWidth = 1.25;
   ctx.beginPath();
   for (const key of seams) {
@@ -62,19 +75,21 @@ function drawSeams(ctx) {
 }
 
 function drawArena(ctx) {
+  const t = theme();
   ctx.lineWidth = 2;
-  ctx.strokeStyle = COLORS.arena;
-  ctx.shadowColor = COLORS.arena;
+  ctx.strokeStyle = t.arena;
+  ctx.shadowColor = t.arena;
   ctx.shadowBlur = 6;
   ctx.strokeRect(field.x, field.y, field.w, field.h);
   ctx.shadowBlur = 0;
 }
 
 function drawPerimeter(ctx) {
-  ctx.strokeStyle = COLORS.frontier;
+  const t = theme();
+  ctx.strokeStyle = t.frontier;
   ctx.lineWidth = 3.5;
   ctx.lineCap = "round";
-  ctx.shadowColor = COLORS.frontier;
+  ctx.shadowColor = t.frontier;
   ctx.shadowBlur = 12;
   ctx.beginPath();
   for (let r = 0; r < ROWS; r++) {
@@ -95,9 +110,10 @@ function drawPerimeter(ctx) {
 
 function drawTrail(ctx) {
   if (mode !== "cutting" || trail.length === 0) return;
-  ctx.strokeStyle = COLORS.trail;
+  const t = theme();
+  ctx.strokeStyle = t.trail;
   ctx.lineWidth = 3;
-  ctx.shadowColor = COLORS.trail;
+  ctx.shadowColor = t.trail;
   ctx.shadowBlur = 10;
   ctx.beginPath();
   ctx.moveTo(nodeX(trail[0].col), nodeY(trail[0].row));
@@ -198,13 +214,13 @@ function drawIntro(ctx) {
 }
 
 function drawLevelComplete(ctx, transT) {
-  // expanding ring tracing the wipe edge
-  const t = Math.min(transT / WIPE_TIME, 1);
-  const wipeR = (1 - (1 - t) * (1 - t)) * (MAXR + 30); // easeOut
-  if (t < 1) {
-    ctx.strokeStyle = COLORS.frontier;
+  // expanding ring tracing the wipe edge (after the hold)
+  const wipeR = wipeRadius(transT);
+  if (wipeR > 0 && wipeR < MAXR + 30) {
+    const col = theme().frontier;
+    ctx.strokeStyle = col;
     ctx.lineWidth = 4;
-    ctx.shadowColor = COLORS.frontier;
+    ctx.shadowColor = col;
     ctx.shadowBlur = 18;
     ctx.beginPath();
     ctx.arc(CX, CY, wipeR, 0, Math.PI * 2);
@@ -225,26 +241,48 @@ function drawLevelComplete(ctx, transT) {
   ctx.textBaseline = "top";
 }
 
-const POPUP_LIFE = 1.1; // keep in sync with main.js
-
 function drawPopups(ctx, popups) {
+  const col = theme().frontier;
   ctx.save();
-  ctx.font = "700 20px system-ui, sans-serif";
+  ctx.font = "700 28px system-ui, sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillStyle = COLORS.frontier;
-  ctx.shadowColor = COLORS.frontier;
-  ctx.shadowBlur = 8;
+  ctx.fillStyle = col;
+  ctx.shadowColor = col;
+  ctx.shadowBlur = 10;
   for (const p of popups) {
-    const k = Math.min(1, p.t / POPUP_LIFE);
-    ctx.globalAlpha = 1 - k;
-    ctx.fillText(p.text, p.x, p.y - 16 - k * 28); // rise as it fades
+    const k = Math.min(1, p.t / TIMING.popupLife);
+    ctx.globalAlpha = 1 - k * k; // hold bright, fade late
+    ctx.fillText(p.text, p.x, p.y - 18 - k * 30); // rise as it fades
   }
   ctx.globalAlpha = 1;
   ctx.shadowBlur = 0;
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
   ctx.restore();
+}
+
+// Big central reward flash, e.g. "SPLIT!". Pops in and fades.
+function drawBanner(ctx, banner) {
+  if (!banner) return;
+  const k = Math.min(1, banner.t / TIMING.splitFlash);
+  const pop = Math.min(1, banner.t / 0.18);
+  ctx.save();
+  ctx.globalAlpha = 1 - k * k;
+  ctx.translate(WIDTH / 2, CY - 60);
+  ctx.scale(pop, pop);
+  ctx.fillStyle = COLORS.marker;
+  ctx.shadowColor = COLORS.marker;
+  ctx.shadowBlur = 20;
+  ctx.font = "800 56px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(banner.text, 0, 0);
+  ctx.restore();
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
 }
 
 function drawGameOver(ctx) {
@@ -262,15 +300,13 @@ function drawCampaignComplete(ctx) {
     "500 20px system-ui, sans-serif", COLORS.hud);
 }
 
-export function render(ctx, transT = 0, menuSel = 1, popups = []) {
+export function render(ctx, transT = 0, menuSel = 1, popups = [], banner = null) {
   drawBackground(ctx);
 
   if (game.state === "menu") { drawMenu(ctx, menuSel); return; }
 
   if (game.state === "levelcomplete") {
-    const t = Math.min(transT / WIPE_TIME, 1);
-    const wipeR = (1 - (1 - t) * (1 - t)) * (MAXR + 30);
-    drawClaimed(ctx, wipeR);
+    drawClaimed(ctx, wipeRadius(transT));
     drawArena(ctx);
     drawMarker(ctx);
     drawHUD(ctx);
@@ -286,6 +322,7 @@ export function render(ctx, transT = 0, menuSel = 1, popups = []) {
   drawBlobs(ctx);
   drawMarker(ctx);
   drawPopups(ctx, popups);
+  drawBanner(ctx, banner);
   drawHUD(ctx);
 
   if (game.state === "intro") drawIntro(ctx);

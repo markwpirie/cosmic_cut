@@ -11,19 +11,15 @@ import { cellSolid } from "./grid.js";
 // Live list of active blobs. Each: {x,y,vx,vy,t,radius,speed,color}.
 export const blobs = [];
 
-const DIAGS = [
-  [Math.SQRT1_2, -Math.SQRT1_2],
-  [-Math.SQRT1_2, -Math.SQRT1_2],
-  [Math.SQRT1_2, Math.SQRT1_2],
-  [-Math.SQRT1_2, Math.SQRT1_2],
-];
+const MIN_PLAYER = 18; // cells a spawn must be from the player's start
+const MIN_OTHER = 14;  // cells a spawn must be from other blobs
 
-// Launch a blob on a diagonal at its own speed. Only the sign of each component
-// ever changes after this (on a bounce), so |v| stays constant.
-function launch(b, i) {
-  const [ux, uy] = DIAGS[i % DIAGS.length];
-  b.vx = b.speed * ux;
-  b.vy = b.speed * uy;
+// Launch a blob on a RANDOM 45° diagonal (random quadrant) at its own speed.
+// Axis-aligned components keep the bounce clean; only their signs change later.
+function launch(b) {
+  const k = Math.SQRT1_2;
+  b.vx = b.speed * k * (Math.random() < 0.5 ? -1 : 1);
+  b.vy = b.speed * k * (Math.random() < 0.5 ? -1 : 1);
 }
 
 // Every currently-open cell.
@@ -33,26 +29,27 @@ function openCells() {
   return out;
 }
 
-// Pick n open spawn cells: far from the player's start (so a death-respawn never
-// drops onto them) and spread apart from each other. Never inside claimed area.
+// Pick n open spawn cells at RANDOM, kept away from the player's start (so a
+// death-respawn never drops onto them) and spread apart. Never inside claimed
+// area. Relaxes the spacing rules if a tight board can't satisfy them.
 function spawnCells(n) {
   const open = openCells();
-  const chosen = [];
-  for (let i = 0; i < n; i++) {
-    let best = null;
-    let bestScore = -1;
-    for (const [r, c] of open) {
-      const dr = r - MARKER.startRow;
-      const dc = c - MARKER.startCol;
-      let score = dr * dr + dc * dc; // distance² from the player
-      for (const ch of chosen) {
-        const d = (r - ch[0]) ** 2 + (c - ch[1]) ** 2;
-        if (d * 3 < score) score = d * 3; // keep clear of already-placed blobs
-      }
-      if (score > bestScore) { bestScore = score; best = [r, c]; }
-    }
-    chosen.push(best || [Math.floor(ROWS / 2), Math.floor(COLS / 2)]);
+  for (let i = open.length - 1; i > 0; i--) { // shuffle
+    const j = Math.floor(Math.random() * (i + 1));
+    [open[i], open[j]] = [open[j], open[i]];
   }
+  const chosen = [];
+  const tryFill = (minPlayer2, minOther2) => {
+    for (const [r, c] of open) {
+      if (chosen.length >= n) break;
+      if ((r - MARKER.startRow) ** 2 + (c - MARKER.startCol) ** 2 < minPlayer2) continue;
+      if (chosen.some(([cr, cc]) => (r - cr) ** 2 + (c - cc) ** 2 < minOther2)) continue;
+      if (!chosen.some(([cr, cc]) => cr === r && cc === c)) chosen.push([r, c]);
+    }
+  };
+  tryFill(MIN_PLAYER ** 2, MIN_OTHER ** 2);
+  if (chosen.length < n) tryFill(0, 0); // relax: just need open + distinct
+  while (chosen.length < n) chosen.push([Math.floor(ROWS / 2), Math.floor(COLS / 2)]);
   return chosen;
 }
 
@@ -69,7 +66,7 @@ export function reset(typeIndices = [0]) {
       vx: 0, vy: 0, t: 0,
       radius: type.radius, speed: type.speed, color: type.color,
     };
-    launch(b, i);
+    launch(b);
     blobs.push(b);
   });
 }

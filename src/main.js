@@ -11,12 +11,13 @@ import { marker, mode, trail, update as updateMarker, reset as resetMarker } fro
 import * as enemy from "./enemy.js";
 import * as game from "./game.js";
 import { render } from "./render.js";
+import { TIMING } from "./config.js";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
-const COMPLETE_TIME = 1.6; // seconds the level-complete wipe/pause runs
-const POPUP_LIFE = 1.1;    // seconds a "+N%" claim pop-up lives
+// Total level-complete beat: hold on the text, ripple, then a short tail.
+const COMPLETE_TIME = TIMING.completeHold + TIMING.completeWipe + TIMING.completeTail;
 
 const DIR_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
   "w", "a", "s", "d", "W", "A", "S", "D"]);
@@ -24,10 +25,11 @@ const DIR_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
 let transT = 0;        // clock for intro / levelcomplete transitions
 let menuSel = 1;       // selected starting zone on the menu
 let popups = [];       // floating "+N%" claim pop-ups
+let banner = null;     // central reward flash ("SPLIT!")
 let prevPercent = 0;   // to detect how much a claim just added
 
 // Load the current level's world: clear the arena, home the marker, spawn the
-// level's Blobs, drop any held input and pop-ups.
+// level's Blobs, drop any held input, pop-ups and banner.
 function loadLevel() {
   grid.reset();
   resetMarker();
@@ -35,6 +37,7 @@ function loadLevel() {
   control.reset();
   prevPercent = 0;
   popups = [];
+  banner = null;
 }
 
 // Lost a life but still alive: forfeit the cut, re-home marker + Blobs, keep the
@@ -81,12 +84,15 @@ function loop(now) {
   if (game.state !== prevState) { onEnter(game.state); prevState = game.state; }
 
   if (game.state === "playing") {
+    const prevCount = enemy.blobs.length;
     updateMarker(dt);
     enemy.update(dt);
     // A claim just landed → float a "+N%" pop-up at the marker.
     const gained = grid.percent - prevPercent;
     if (gained >= 0.5) popups.push({ text: `+${Math.max(1, Math.round(gained))}%`, x: marker.x, y: marker.y, t: 0 });
     prevPercent = grid.percent;
+    // A blob died on a claimed side → that was a SPLIT.
+    if (enemy.blobs.length < prevCount) banner = { text: "SPLIT!", t: 0 };
     if (enemy.collides(marker, mode, trail)) {
       game.loseLife();
       if (game.state === "playing") respawn();
@@ -101,9 +107,10 @@ function loop(now) {
   }
 
   for (const p of popups) p.t += dt;
-  popups = popups.filter((p) => p.t < POPUP_LIFE);
+  popups = popups.filter((p) => p.t < TIMING.popupLife);
+  if (banner) { banner.t += dt; if (banner.t >= TIMING.splitFlash) banner = null; }
 
-  render(ctx, transT, menuSel, popups);
+  render(ctx, transT, menuSel, popups, banner);
   requestAnimationFrame(loop);
 }
 

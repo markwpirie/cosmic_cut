@@ -18,17 +18,19 @@ function lvl(zone, sub, target, blobs) {
   };
 }
 
+// Targets ramp 70% → 90% (bosses dip a little); Blob counts ramp fast (2 by 1-2,
+// 3 by 1-3) and the spectrum shifts redder by zone. Tune to taste.
 export const LEVELS = [
-  // Zone 1 — learn the ropes (blue/cyan, one slow Blob)
-  lvl(1, 1, 45, [0]), lvl(1, 2, 50, [0]), lvl(1, 3, 52, [1]), lvl(1, 4, 55, [1]), lvl(1, 5, 48, [1]),
-  // Zone 2 — a second Blob appears (cyan/green)
-  lvl(2, 1, 55, [1]), lvl(2, 2, 57, [1, 0]), lvl(2, 3, 58, [2]), lvl(2, 4, 60, [2, 0]), lvl(2, 5, 52, [2, 1]),
-  // Zone 3 — green/amber, quicker
-  lvl(3, 1, 58, [2, 1]), lvl(3, 2, 60, [2, 2]), lvl(3, 3, 62, [3]), lvl(3, 4, 64, [3, 1]), lvl(3, 5, 55, [3, 2]),
-  // Zone 4 — amber pressure, up to three
-  lvl(4, 1, 62, [3, 2]), lvl(4, 2, 64, [3, 2]), lvl(4, 3, 66, [3, 3]), lvl(4, 4, 68, [4, 2]), lvl(4, 5, 58, [4, 3]),
-  // Zone 5 — red, small & fast
-  lvl(5, 1, 65, [4, 3]), lvl(5, 2, 67, [4, 3]), lvl(5, 3, 69, [4, 4]), lvl(5, 4, 70, [4, 4, 2]), lvl(5, 5, 62, [4, 4, 4]),
+  // Zone 1 — cyan; ramps to three Blobs fast
+  lvl(1, 1, 70, [0]), lvl(1, 2, 72, [0, 1]), lvl(1, 3, 74, [0, 1, 2]), lvl(1, 4, 76, [1, 2, 3]), lvl(1, 5, 70, [1, 2, 3]),
+  // Zone 2 — orange; quicker Blobs
+  lvl(2, 1, 78, [1, 2, 3]), lvl(2, 2, 80, [2, 2, 3]), lvl(2, 3, 80, [2, 3, 3]), lvl(2, 4, 82, [2, 3, 4]), lvl(2, 5, 74, [2, 3, 4]),
+  // Zone 3 — green; a fourth Blob appears
+  lvl(3, 1, 80, [2, 3, 4]), lvl(3, 2, 82, [2, 3, 3, 4]), lvl(3, 3, 84, [3, 3, 4]), lvl(3, 4, 84, [3, 3, 4, 4]), lvl(3, 5, 78, [3, 4, 4]),
+  // Zone 4 — violet; amber/red pressure
+  lvl(4, 1, 84, [3, 4, 4]), lvl(4, 2, 86, [3, 3, 4, 4]), lvl(4, 3, 86, [3, 4, 4, 4]), lvl(4, 4, 88, [4, 4, 4, 3]), lvl(4, 5, 80, [4, 4, 4]),
+  // Zone 5 — gold; red swarm
+  lvl(5, 1, 86, [4, 4, 4]), lvl(5, 2, 88, [4, 4, 4, 3]), lvl(5, 3, 90, [4, 4, 4, 4]), lvl(5, 4, 90, [4, 4, 4, 4, 3]), lvl(5, 5, 82, [4, 4, 4, 4]),
 ];
 
 export const levelCount = LEVELS.length;

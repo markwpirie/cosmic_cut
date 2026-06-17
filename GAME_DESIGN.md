@@ -264,7 +264,11 @@ Section 2's claim/fill algorithm — and the SPLIT detection in Phase 5 — are 
 - **Blob spectrum (Phase 4):** Blobs vary along **blue→red**: blue is BIG and SLOW, ramping to red SMALL and FAST (`config.BLOB_TYPES`). All speeds stay under the marker's so it's always outrunnable. Multiple Blobs supported; the claim keeps *every* Blob's region open ✓
 - **Progression & start screen (Phase 4):** clear a level → "LEVEL COMPLETE" beat (marker returns to start & holds, claimed area clears with an expanding wipe, brief pause) → next level. Game over → **start screen** with selectable starting zones (1-1, 2-1, …); a zone unlocks once reached in normal play; unlocks persist (localStorage). Extra life on X-4; after 5-5 → CAMPAIGN COMPLETE ✓
 - **Level start waits for input (Phase 4):** a level (and its Blobs) stays frozen on the "CLAIM N%" banner until the player presses a direction — that press also steers the first move ✓
-- **Claim pop-up (Phase 4):** each successful claim floats a small "+N%" at the marker ✓
+- **Claim pop-up (Phase 4):** each successful claim floats a "+N%" at the marker (size/linger in `config.TIMING`) ✓
+- **Per-zone themes (Phase 4):** each zone re-themes the play field (`config.THEMES`): zone 1 cyan → 2 orange → 3 green → 4 violet → 5 gold. Marker, HUD and Blob colours stay constant ✓
+- **Random Blob spawns (Phase 4):** position and launch direction are randomised each level/respawn (kept away from the player and spread apart) ✓
+- **Targets 70–90% (Phase 4):** levels start at 70% and climb to 90%; Blob counts ramp fast (2 by 1-2, 3 by 1-3). All in `levels.js` — tune freely ✓
+- **SPLIT text + timed ripple (Phase 4):** a "SPLIT!" flash when a split kills a Blob; level-complete holds (`config.TIMING.completeHold`) before the ripple ✓
 - **SUPER mode: deferred** — wired conceptually (clear 5-5 → 2× enemies) but not built in Phase 4; for now 5-5 ends at the campaign-complete screen ✓
 - **Claim rule (no enemies):** keep the largest open region, claim the rest ✓ (§13)
 
