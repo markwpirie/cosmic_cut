@@ -279,56 +279,77 @@ function drawPopups(ctx, popups) {
 function fmt(n) { return Math.round(n).toLocaleString(); }
 function fmtMult(m) { return Number.isInteger(m) ? `${m}` : m.toFixed(1); }
 
-// Central score read-out for a scored cut: the bonus labels pop in one at a time
-// (the "doof doof doof"), then "base × mult [+kills] = +total". Holds, then fades.
+// easeOutBack: 0 → 1 with a slight overshoot, for "expanding" pop-in text.
+function popScale(p) {
+  if (p <= 0) return 0;
+  if (p >= 1) return 1;
+  const c1 = 1.70158;
+  const x = p - 1;
+  return 1 + (c1 + 1) * x * x * x + c1 * x * x;
+}
+
+const POP_DUR = 0.22; // seconds for one element to expand into place
+
+// Central score read-out: the bonus names pop in one-by-one, then the score, the
+// ×multiplier and the total each "doof" in with expanding text. Holds, then fades.
 function drawReward(ctx, r) {
   if (!r) return;
   const life = TIMING.rewardLife;
+  const step = TIMING.rewardStep;
+  const accent = theme().frontier;
+  const cx = WIDTH / 2;
+  const top = CY - 78;
+
   ctx.save();
   ctx.globalAlpha = r.t < life * 0.8 ? 1 : Math.max(0, (life - r.t) / (life * 0.2));
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  const cx = WIDTH / 2;
-  const cy = CY - 56;
-  const accent = theme().frontier;
 
+  // Draw `text` with an expanding pop that begins at reveal index `idx`.
+  const pop = (text, x, y, idx, font, color, glow) => {
+    const sc = popScale((r.t - idx * step) / POP_DUR);
+    if (sc <= 0) return;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(sc, sc);
+    ctx.font = font;
+    ctx.fillStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = glow;
+    ctx.fillText(text, 0, 0);
+    ctx.restore();
+    ctx.shadowBlur = 0;
+  };
+
+  let idx = 0;
+
+  // 1) bonus names, each its own pop
   if (r.labels.length) {
-    ctx.font = "800 26px system-ui, sans-serif";
-    const widths = r.labels.map((l) => ctx.measureText(l).width);
+    ctx.font = "800 28px system-ui, sans-serif";
+    const ws = r.labels.map((l) => ctx.measureText(l).width);
     const sep = 22;
-    const totalW = widths.reduce((s, w) => s + w, 0) + sep * (r.labels.length - 1);
-    let x = cx - totalW / 2;
+    const tw = ws.reduce((s, w) => s + w, 0) + sep * (r.labels.length - 1);
+    let x = cx - tw / 2;
     for (let i = 0; i < r.labels.length; i++) {
-      const lk = (r.t - i * TIMING.rewardStep) / TIMING.rewardStep; // this label's pop progress
-      if (lk > 0) {
-        const sc = 0.5 + 0.5 * Math.min(1, lk);
-        ctx.save();
-        ctx.translate(x + widths[i] / 2, cy);
-        ctx.scale(sc, sc);
-        ctx.fillStyle = COLORS.hudAccent;
-        ctx.shadowColor = COLORS.hudAccent;
-        ctx.shadowBlur = 12;
-        ctx.fillText(r.labels[i], 0, 0);
-        ctx.restore();
-      }
-      x += widths[i] + sep;
+      pop(r.labels[i], x + ws[i] / 2, top, idx, "800 28px system-ui, sans-serif", COLORS.hudAccent, 14);
+      x += ws[i] + sep;
+      idx++;
     }
-    ctx.shadowBlur = 0;
   }
 
-  if (r.t >= r.labels.length * TIMING.rewardStep) {
-    let mathStr = `${fmt(r.base)}  ×${fmtMult(r.mult)}`;
-    if (r.killPts > 0) mathStr += `  +${fmt(r.killPts)}`;
-    ctx.fillStyle = COLORS.hud;
-    ctx.font = "600 22px system-ui, sans-serif";
-    ctx.fillText(mathStr, cx, cy + 42);
-    ctx.fillStyle = accent;
-    ctx.shadowColor = accent;
-    ctx.shadowBlur = 16;
-    ctx.font = "800 52px system-ui, sans-serif";
-    ctx.fillText(`+${fmt(r.total)}`, cx, cy + 90);
-    ctx.shadowBlur = 0;
-  }
+  // 2) score → ×multiplier (each a beat), laid out on a fixed centred row
+  const baseStr = fmt(r.base);
+  const multStr = `×${fmtMult(r.mult)}${r.killPts > 0 ? ` +${fmt(r.killPts)}` : ""}`;
+  ctx.font = "800 30px system-ui, sans-serif";
+  const wB = ctx.measureText(baseStr).width;
+  const wM = ctx.measureText(multStr).width;
+  const gap = 20;
+  const rowL = cx - (wB + gap + wM) / 2;
+  pop(baseStr, rowL + wB / 2, top + 56, idx, "800 30px system-ui, sans-serif", COLORS.hud, 8);
+  pop(multStr, rowL + wB + gap + wM / 2, top + 56, idx + 1, "800 30px system-ui, sans-serif", COLORS.hudAccent, 14);
+
+  // 3) the total — biggest beat
+  pop(`+${fmt(r.total)}`, cx, top + 118, idx + 2, "900 60px system-ui, sans-serif", accent, 22);
 
   ctx.restore();
   ctx.globalAlpha = 1;

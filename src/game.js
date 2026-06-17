@@ -37,9 +37,9 @@ export function scoreCut(gainedPct, length, kills) {
   let mult = 1;
   if (gainedPct >= POINTS.megaCutPct) { mult *= POINTS.megaCutMult; labels.push("MEGA-CUT"); }
   else if (gainedPct >= POINTS.blockOutPct) { mult *= POINTS.blockOutMult; labels.push("BLOCK OUT"); }
-  if (length >= 3 * ROWS) { mult *= POINTS.megaLongMult; labels.push("MEGA LONG"); }
-  else if (length >= 2 * ROWS) { mult *= POINTS.superLongMult; labels.push("SUPER LONG"); }
-  else if (length >= ROWS) { mult *= POINTS.longMult; labels.push("LONG"); }
+  if (length >= POINTS.megaLongHeights * ROWS) { mult *= POINTS.megaLongMult; labels.push("MEGA LONG"); }
+  else if (length >= POINTS.superLongHeights * ROWS) { mult *= POINTS.superLongMult; labels.push("SUPER LONG"); }
+  else if (length >= POINTS.longHeights * ROWS) { mult *= POINTS.longMult; labels.push("LONG"); }
   if (kills > 0) labels.push("SPLIT");
 
   const appliedMult = mult * levelMult;

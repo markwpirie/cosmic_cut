@@ -79,7 +79,9 @@ export const POINTS = {
   perPercent: 100,     // base points per 1% of the arena claimed in a cut
   blockOutPct: 30, blockOutMult: 2,   // single cut ≥30% → ×2 (§4)
   megaCutPct: 50,  megaCutMult: 4,    // single cut ≥50% → ×4 (§4)
-  longMult: 1.5, superLongMult: 2, megaLongMult: 3, // by cut length vs field height
+  // LONG tiers by cut length, measured in field-heights (×ROWS). LONG starts at 2×.
+  longHeights: 2, superLongHeights: 3, megaLongHeights: 4,
+  longMult: 1.5, superLongMult: 2, megaLongMult: 3,
   splitMult: 2,        // each SPLIT grants ×2 to the level multiplier (§14)
   perKill: 500,        // points per Blob destroyed (juicy, §"nice points on kill")
   levelClear: 1000,    // bonus for clearing a level

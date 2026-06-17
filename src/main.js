@@ -20,7 +20,8 @@ const ctx = canvas.getContext("2d");
 const COMPLETE_TIME = TIMING.completeHold + TIMING.completeWipe + TIMING.completeTail;
 const FCX = field.x + field.w / 2;
 const FCY = field.y + field.h / 2;
-const REWARD_MIN = 2500; // show the big central read-out for bonuses, or any cut over this
+const REWARD_MIN = 2500;  // show the big central read-out for bonuses, or any cut over this
+const POPUP_MIN_PCT = 50; // only float a "+N%" pop-up for a big single-cut claim
 
 const DIR_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
   "w", "a", "s", "d", "W", "A", "S", "D"]);
@@ -97,8 +98,6 @@ function loop(now) {
   const dt = Math.min((now - lastTime) / 1000, 0.05); // clamp big gaps (tab switches)
   lastTime = now;
 
-  if (game.state !== prevState) { onEnter(game.state); prevState = game.state; }
-
   if (game.state === "playing") {
     const prevCount = enemy.blobs.length;
     updateMarker(dt);
@@ -107,9 +106,9 @@ function loop(now) {
     // field centre so it isn't hidden under the fresh line or the border.
     const gained = grid.percent - prevPercent;
     const kills = prevCount - enemy.blobs.length;
-    if (gained >= 0.5) {
+    if (gained >= POPUP_MIN_PCT) {
       const a = Math.atan2(FCY - marker.y, FCX - marker.x);
-      popups.push({ text: `+${Math.max(1, Math.round(gained))}%`, x: marker.x + Math.cos(a) * 34, y: marker.y + Math.sin(a) * 34, t: 0 });
+      popups.push({ text: `+${Math.round(gained)}%`, x: marker.x + Math.cos(a) * 34, y: marker.y + Math.sin(a) * 34, t: 0 });
     }
     if (gained >= 0.5 || kills > 0) {
       const res = game.scoreCut(gained, lastCutLength, kills);
@@ -135,6 +134,11 @@ function loop(now) {
     transT += dt;
     if (transT >= COMPLETE_TIME) game.advance();
   }
+
+  // Handle any state change caused by this frame's logic BEFORE drawing — so a
+  // freshly-advanced level is loaded (grid cleared) before it's rendered, rather
+  // than flashing the just-cleared board for a frame.
+  if (game.state !== prevState) { onEnter(game.state); prevState = game.state; }
 
   for (const p of popups) p.t += dt;
   popups = popups.filter((p) => p.t < TIMING.popupLife);
