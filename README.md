@@ -21,6 +21,16 @@ lives) and Phases 0–3 (ride-the-rail movement, flood-fill claim, perimeter mod
 bouncing Blobs). **Next: Phase 6** — power-ups (Freeze first, ZOOM last) plus the
 special extra-life and slow-down Blobs. See §11/§16 of [GAME_DESIGN.md](GAME_DESIGN.md).
 
+## How to play
+
+Play it at <https://markwpirie.github.io/cosmic_cut/>.
+
+- **Goal:** carve out the play field. Each level has a **target %** — claim that much of the arena to clear it and move on, through zones 1-1 … 5-5.
+- **Controls:** **Arrow keys** or **WASD**. Movement is continuous "ride the rail" — press a direction and you keep going until you turn or reverse (press the opposite). Hold a direction approaching a junction to take that turn. Push **into open space** to start a **cut**.
+- **Cutting & risk:** while riding the bright perimeter (or a claimed edge) you're **safe**. The moment you cut into open space you're exposed — a Blob touching your **marker or your trail** costs a life. Close the loop back to safe ground to **claim** the enclosed area.
+- **Scoring:** bigger, bolder cuts pay off — **BLOCK OUT** (≥30%), **MEGA-CUT** (≥50%), **LONG** tiers (long cuts), and **SPLIT** (trap a Blob on the smaller side: it dies, you score, and the level multiplier ×2). Stacked bonuses → **MULTI STACK**.
+- **Flow:** the level starts when you press a direction; on a hit you freeze on the spot — press any key to respawn; out of lives → start screen (pick any zone you've reached).
+
 ## Code layout
 
 The engine is split into focused ES modules under [`src/`](src/), each with one

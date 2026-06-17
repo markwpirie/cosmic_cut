@@ -1,8 +1,8 @@
-# COSMIC CUT — Game Design Document (Draft 4)
+# COSMIC CUT — Game Design Document (Draft 5)
 
 A modern, neon, space-themed take on the classic BBC Micro game *Kix* (itself a clone of the arcade game *Qix*). Carve out territory by cutting areas of the play field while dodging enemies, hit the percentage target to clear the level, and chain bold risky cuts — SPLITS, BLOCK OUTS, MEGA-CUTS and LONG cuts — for big scores.
 
-**Status:** Draft 4 — Phases 0–2 built and live. Folds in the realised movement/control scheme and the perimeter (auto-network vs seam) model discovered while building the core cut/claim mechanic. Earlier drafts' scoring/mode design unchanged. Source of truth from here.
+**Status:** Draft 5 — **Phases 0–5 built and live** (the game is playable end-to-end). Done: ride-the-rail movement, grid + flood-fill claim with the perimeter (auto-network vs seam) model, bouncing Blobs along a blue→red spectrum, the SPLIT claim/kill, a data-driven campaign (zones 1-1…5-5, start screen + zone unlocks, per-zone themes, win condition, lives, death beat), and full cut scoring (BLOCK OUT / MEGA-CUT / LONG / SPLIT / MULTI STACK with a central read-out). **Next: Phase 6** (power-ups + special Blobs). The as-built specifics live in §14 (locked decisions) and §16 (movement/perimeter); this remains the source of truth.
 **Repo:** `/Users/marksMAC/Documents/GitHub/cosmic_cut` (GitHub + local). Build continues in Claude Code.
 **Live:** https://markwpirie.github.io/cosmic_cut/ (GitHub Pages, deploys on push to `main`).
 **Target platform:** Web first (desktop + mobile browser), structured for later iPhone port.
