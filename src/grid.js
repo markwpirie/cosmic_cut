@@ -161,30 +161,44 @@ export function applyClaim(trail, keepCells) {
     }
   }
 
-  // 3. Decide which open regions to KEEP, then claim all the others. Keep every
-  //    region holding a blob (keepCells); if none are valid, keep the largest.
+  // 3. Resolve which region stays OPEN vs gets CLAIMED, and which blobs die.
+  //    You keep the enemies' side: the LARGEST region that holds a blob — that's
+  //    where survivors stay. Every other region is claimed, and any blob caught
+  //    in a claimed (smaller) region dies: that's the SPLIT (§14). With no blob
+  //    info, fall back to keeping the largest region. Returns the indices (into
+  //    keepCells) of blobs that were claimed, so the caller can remove them.
+  const killed = [];
   if (sizes.length > 1) {
-    const keep = new Set();
+    const regionOf = [];            // region id under each keepCell, or -1
+    const enemyRegion = new Map();  // blob-holding region id -> its size
     if (keepCells) {
-      for (const { col, row } of keepCells) {
-        if (row >= 0 && row < ROWS && col >= 0 && col < COLS && comp[row][col] !== -1) {
-          keep.add(comp[row][col]);
-        }
-      }
+      keepCells.forEach((kc, i) => {
+        let rid = -1;
+        const { col, row } = kc;
+        if (row >= 0 && row < ROWS && col >= 0 && col < COLS && comp[row][col] !== -1) rid = comp[row][col];
+        regionOf[i] = rid;
+        if (rid !== -1) enemyRegion.set(rid, sizes[rid]);
+      });
     }
-    if (keep.size === 0) {
-      let largest = 0;
-      for (let i = 1; i < sizes.length; i++) if (sizes[i] > sizes[largest]) largest = i;
-      keep.add(largest);
+    let keepId = 0;
+    if (enemyRegion.size > 0) {
+      let best = -1;
+      for (const [rid, sz] of enemyRegion) if (sz > best) { best = sz; keepId = rid; }
+    } else {
+      for (let i = 1; i < sizes.length; i++) if (sizes[i] > sizes[keepId]) keepId = i;
     }
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
-        if (comp[r][c] !== -1 && !keep.has(comp[r][c])) grid[r][c] = FILLED;
+        if (comp[r][c] !== -1 && comp[r][c] !== keepId) grid[r][c] = FILLED;
       }
+    }
+    if (keepCells) {
+      keepCells.forEach((kc, i) => { if (regionOf[i] !== -1 && regionOf[i] !== keepId) killed.push(i); });
     }
   }
 
   recomputePercent();
+  return killed;
 }
 
 export function recomputePercent() {

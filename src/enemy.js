@@ -101,6 +101,13 @@ export function update(dt) {
   }
 }
 
+// Remove blobs by index (those caught on the claimed side of a SPLIT). Indices
+// refer to the current blobs order (the same order cells() reports).
+export function removeBlobs(indices) {
+  const kill = new Set(indices);
+  for (let i = blobs.length - 1; i >= 0; i--) if (kill.has(i)) blobs.splice(i, 1);
+}
+
 // The grid cell each blob sits in — the regions the claim must keep open (you
 // can't claim a side an enemy is on, §13).
 export function cells() {

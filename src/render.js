@@ -189,11 +189,12 @@ function drawMenu(ctx, menuSel) {
     "500 18px system-ui, sans-serif", COLORS.hud);
 }
 
-function drawIntro(ctx, transT) {
+function drawIntro(ctx) {
   const L = game.currentLevel();
-  centerText(ctx, `ZONE ${L.label}`, CY - 24, "700 52px system-ui, sans-serif", COLORS.frontier);
-  centerText(ctx, L.boss ? `BOSS — CLAIM ${L.target}%` : `CLAIM ${L.target}%`, CY + 30,
+  centerText(ctx, `ZONE ${L.label}`, CY - 30, "700 52px system-ui, sans-serif", COLORS.frontier);
+  centerText(ctx, L.boss ? `BOSS — CLAIM ${L.target}%` : `CLAIM ${L.target}%`, CY + 24,
     "600 26px system-ui, sans-serif", COLORS.hudAccent);
+  centerText(ctx, "press a direction to begin", CY + 72, "500 17px system-ui, sans-serif", COLORS.hud);
 }
 
 function drawLevelComplete(ctx, transT) {
@@ -214,7 +215,35 @@ function drawLevelComplete(ctx, transT) {
   ctx.save();
   ctx.translate(WIDTH / 2, CY);
   ctx.scale(pop, pop);
-  centerText(ctx, "LEVEL COMPLETE", 0, "700 46px system-ui, sans-serif", COLORS.marker);
+  ctx.fillStyle = COLORS.marker;
+  ctx.font = "700 46px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("LEVEL COMPLETE", 0, 0); // origin already at centre — don't offset again
+  ctx.restore();
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+}
+
+const POPUP_LIFE = 1.1; // keep in sync with main.js
+
+function drawPopups(ctx, popups) {
+  ctx.save();
+  ctx.font = "700 20px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = COLORS.frontier;
+  ctx.shadowColor = COLORS.frontier;
+  ctx.shadowBlur = 8;
+  for (const p of popups) {
+    const k = Math.min(1, p.t / POPUP_LIFE);
+    ctx.globalAlpha = 1 - k;
+    ctx.fillText(p.text, p.x, p.y - 16 - k * 28); // rise as it fades
+  }
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
   ctx.restore();
 }
 
@@ -233,7 +262,7 @@ function drawCampaignComplete(ctx) {
     "500 20px system-ui, sans-serif", COLORS.hud);
 }
 
-export function render(ctx, transT = 0, menuSel = 1) {
+export function render(ctx, transT = 0, menuSel = 1, popups = []) {
   drawBackground(ctx);
 
   if (game.state === "menu") { drawMenu(ctx, menuSel); return; }
@@ -256,9 +285,10 @@ export function render(ctx, transT = 0, menuSel = 1) {
   drawTrail(ctx);
   drawBlobs(ctx);
   drawMarker(ctx);
+  drawPopups(ctx, popups);
   drawHUD(ctx);
 
-  if (game.state === "intro") drawIntro(ctx, transT);
+  if (game.state === "intro") drawIntro(ctx);
   else if (game.state === "gameover") drawGameOver(ctx);
   else if (game.state === "campaigncomplete") drawCampaignComplete(ctx);
 }

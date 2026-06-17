@@ -7,7 +7,7 @@
 import { MARKER, nodeX, nodeY } from "./config.js";
 import { classifyEdge, rideTypeOf, rideRank, canCut, nodeIsSafe, applyClaim } from "./grid.js";
 import { peekPending, clearPending, currentDesired } from "./control.js";
-import { cells as blobCells } from "./enemy.js";
+import { cells as blobCells, removeBlobs } from "./enemy.js";
 
 export const marker = {
   col: MARKER.startCol,
@@ -138,7 +138,10 @@ function decideCutting() {
 }
 
 function finishCut() {
-  applyClaim(trail, blobCells()); // keep every blob's region open; claim the rest
+  // Keep the survivors' region open, claim the rest; blobs trapped on a claimed
+  // (smaller) side die — the SPLIT.
+  const killed = applyClaim(trail, blobCells());
+  if (killed.length) removeBlobs(killed);
   trail = [];
   mode = "riding";
 }
