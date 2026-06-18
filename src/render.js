@@ -4,7 +4,7 @@
 // start menu, a level intro banner, the play field, the level-complete wipe, and
 // the game-over / campaign-complete overlays.
 
-import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, MARKER, nodeX, nodeY } from "./config.js";
+import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, AUDIO, MARKER, nodeX, nodeY } from "./config.js";
 import { grid, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
 import { marker, mode, trail } from "./marker.js";
 import { blobs, radius as blobRadius } from "./enemy.js";
@@ -86,22 +86,6 @@ function drawBackground(ctx, beat = 0) {
   ctx.globalAlpha = 1;
 }
 
-// Beat-synced glow hugging the play-field border (theme-coloured). Purely
-// cosmetic — it never moves or obscures gameplay.
-function drawBeatEdge(ctx, beat) {
-  if (beat <= 0.03) return;
-  const col = theme().frontier;
-  ctx.save();
-  ctx.globalAlpha = Math.min(0.55, beat * 0.6);
-  ctx.strokeStyle = col;
-  ctx.lineWidth = 2 + beat * 4;
-  ctx.shadowColor = col;
-  ctx.shadowBlur = 12 + beat * 34;
-  ctx.strokeRect(field.x - 1, field.y - 1, field.w + 2, field.h + 2);
-  ctx.restore();
-  ctx.globalAlpha = 1;
-}
-
 function drawParticles(ctx) {
   for (const p of fx.getParticles()) {
     const k = Math.max(0, p.life / p.max);
@@ -173,13 +157,17 @@ function drawArena(ctx) {
   ctx.shadowBlur = 0;
 }
 
-function drawPerimeter(ctx) {
+// The bold bright frontier line the marker rides. It throbs with the music beat
+// (glow + width + brightness) and, because it traces the live open/claimed
+// boundary every frame, the throb naturally follows the evolving shape.
+function drawPerimeter(ctx, beat = 0) {
   const t = theme();
   ctx.strokeStyle = t.frontier;
-  ctx.lineWidth = 3.5;
+  ctx.lineWidth = 3.5 + beat * AUDIO.beat.widthBoost;
   ctx.lineCap = "round";
   ctx.shadowColor = t.frontier;
-  ctx.shadowBlur = 12;
+  ctx.shadowBlur = 12 + beat * AUDIO.beat.glowBoost;
+  ctx.globalAlpha = Math.min(1, 0.8 + beat * 0.2); // flare brighter on the beat
   ctx.beginPath();
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
@@ -195,6 +183,7 @@ function drawPerimeter(ctx) {
   ctx.stroke();
   ctx.shadowBlur = 0;
   ctx.lineCap = "butt";
+  ctx.globalAlpha = 1;
 }
 
 function drawTrail(ctx) {
@@ -582,7 +571,7 @@ export function render(ctx, view = {}) {
   drawClaimed(ctx);
   drawSeams(ctx);
   drawArena(ctx);
-  drawPerimeter(ctx);
+  drawPerimeter(ctx, beat);
   drawTrail(ctx);
   drawBlobs(ctx);
   drawMarker(ctx);
@@ -590,7 +579,6 @@ export function render(ctx, view = {}) {
   ctx.restore();
 
   drawDangerEdge(ctx, danger);
-  drawBeatEdge(ctx, beat);
   drawPopups(ctx, popups);
   drawReward(ctx, reward);
   drawHUD(ctx, scorePulseT);

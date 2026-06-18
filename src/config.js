@@ -101,3 +101,27 @@ export const TIMING = {
   completeWipe: 0.9,   // the expanding-ripple (circle close-out) duration
   completeTail: 0.6,   // pause after the ripple before the next level loads
 };
+
+// Audio feel knobs, gathered so the mix, beat-throb and music tension are all
+// tunable in one place (read by audio.js, render.js and audio-director.js).
+export const AUDIO = {
+  sfxLevel: 1.15,   // SFX submix gain (sits above the music)
+  moveLevel: 0.02,  // base volume of the movement "schoo"
+  beat: {           // beat-reactive throb on the frontier line
+    bassBins: 6,    // # of lowest FFT bins summed for the sub-bass pulse
+    liftPow: 0.6,   // shape: <1 lifts quiet bass so the throb reads
+    liftGain: 1.6,  // normalising gain after the lift (clamped to 1)
+    release: 0.18,  // pulse ease-down per frame (attack is instant)
+    glowBoost: 40,  // frontier shadowBlur added at full beat
+    widthBoost: 3,  // frontier lineWidth (px) added at full beat
+  },
+  tension: {        // music tension curve driven by fill% + danger
+    progressWeight: 0.5, // weight of fill% (normalised /100)
+    dangerWeight: 0.7,   // weight of danger (0..1, nearest blob to the trail)
+    ease: 0.05,          // smoothing toward the target tension per frame
+    rateSpan: 0.25,      // playbackRate = 1 + tension * rateSpan
+    rateCap: 1.3,        // hard clamp on playbackRate
+    synthBase: 0.2,      // synth-fallback intensity floor
+    synthSpan: 0.7,      // synth-fallback intensity added at full tension
+  },
+};

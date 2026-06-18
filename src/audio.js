@@ -7,6 +7,9 @@
 // drive the soundtrack per game moment — title, stage select, per-stage themes,
 // stage-clear + game-over jingles. A missing looping track falls back to the
 // synth; everything is lazy + guarded, so the module imports cleanly in Node.
+// This is the low-level engine; audio-director.js orchestrates music policy.
+
+import { AUDIO } from "./config.js";
 
 let ctx = null;
 let master = null;   // final output (respects mute)
@@ -57,7 +60,7 @@ function ensure() {
   delay.connect(master);
 
   sfxBus = ctx.createGain();
-  sfxBus.gain.value = 1.15; // SFX sit a touch above the music
+  sfxBus.gain.value = AUDIO.sfxLevel; // SFX sit a touch above the music
   sfxBus.connect(master);
 
   musicBus = ctx.createGain();
@@ -76,23 +79,22 @@ function ensure() {
   return true;
 }
 
-// Beat-reactive 0..1 value from the music's sub-bass: snaps up on a kick/onset
-// and eases back down. Returns 0 when muted (no sound → no visual pulse).
+// Beat-reactive 0..1 value from the music's sub-bass for a bold, continuous
+// throb: instant attack on each kick, slow release between. Returns 0 when muted
+// (no sound → no visual pulse). Tunables in config.AUDIO.beat.
 let analyser = null;
 let freqData = null;
 let pulseEnv = 0;
-let pulseAvg = 0;
 export function musicPulse() {
   if (!analyser || muted) return 0;
   analyser.getByteFrequencyData(freqData);
+  const N = Math.max(1, AUDIO.beat.bassBins | 0); // lowest bins ≈ sub-bass + kick
   let sum = 0;
-  const N = 6; // lowest ~6 bins ≈ sub-bass + kick
   for (let i = 0; i < N; i++) sum += freqData[i];
-  const bass = sum / (N * 255);                  // 0..1 current low-end energy
-  pulseAvg = pulseAvg * 0.95 + bass * 0.05;      // slow baseline to beat against
-  const onset = Math.min(1, Math.max(0, bass - pulseAvg) * 3.5); // emphasise hits above baseline
-  if (onset > pulseEnv) pulseEnv = onset;        // snap up on the beat
-  else pulseEnv += (onset - pulseEnv) * 0.15;    // ease back down
+  const bass = sum / (N * 255);                          // 0..1 current low-end energy
+  const lifted = Math.min(1, Math.pow(bass, AUDIO.beat.liftPow) * AUDIO.beat.liftGain);
+  if (lifted > pulseEnv) pulseEnv = lifted;              // snap up on the beat
+  else pulseEnv += (lifted - pulseEnv) * AUDIO.beat.release; // ease back down
   return pulseEnv;
 }
 
@@ -172,6 +174,10 @@ export function kill() { // blob explosion: crack + sub-boom + debris tail
   voice(90, { type: "sine", dur: 0.42, vol: 0.3, slideTo: 28, rev: 0.4 });
   noise(0.16, 0.2, 0, 1300, 0.2);
   noise(0.5, 0.12, 0.02, 600, 0.55);
+}
+// A short bright musical hit layered OVER the music (non-interrupting) on a kill.
+export function killStinger() {
+  [0, 7, 12].forEach((s, i) => voice(660 * 2 ** (s / 12), { type: "triangle", dur: 0.18, vol: 0.12, rev: 0.35, delaySend: 0.25, when: i * 0.05 }));
 }
 export function death() {
   [0, -3, -7].forEach((s, i) => voice(330 * 2 ** (s / 12), { type: "sawtooth", dur: 0.6, vol: 0.18, slideTo: 40, detune: i * 8, lp: 1400, rev: 0.5, when: i * 0.04 }));
@@ -256,7 +262,7 @@ export function moveTone(on, bright = 0) {
     move = { src, bp, g };
   }
   const t = ctx.currentTime;
-  move.g.gain.setTargetAtTime(on ? 0.02 + bright * 0.03 : 0.0001, t, 0.08);
+  move.g.gain.setTargetAtTime(on ? AUDIO.moveLevel + bright * 0.03 : 0.0001, t, 0.08);
   move.bp.frequency.setTargetAtTime(420 + bright * 1100, t, 0.12);
 }
 
@@ -342,7 +348,12 @@ export function startMusic() {
   musicBus.gain.setTargetAtTime(0.5, ctx.currentTime, 1.5);
   if (!activeTrack) activeTrack = "title"; // first play = the opening theme
   const entry = loadTrack(activeTrack);
-  if (entry.ok && entry.el) { entry.el.play().catch(() => {}); return; } // prefer a real track
+  if (entry.ok && entry.el) {
+    const spec = TRACKS[activeTrack];
+    entry.el.playbackRate = spec && spec.loop ? musicRate : 1;
+    entry.el.play().catch(() => {});
+    return; // prefer a real track
+  }
   const spec = TRACKS[activeTrack];
   if (spec && spec.loop === false) return; // a one-shot jingle has nothing to loop
   if (musicTimer) return; // file missing or still loading -> procedural for now
@@ -387,6 +398,12 @@ const TRACKS = {
 
 const trackCache = new Map(); // key -> { el, ok } (el null until canplaythrough)
 let activeTrack = null;       // track key currently routed to musicBus (null = none yet)
+let musicRate = 1;            // current playbackRate for stage tracks (tension curve)
+
+// Tempo+pitch rise: speed-ups also pitch up (no time-stretch).
+function setPreservesPitch(el, v) {
+  el.preservesPitch = v; el.mozPreservesPitch = v; el.webkitPreservesPitch = v;
+}
 
 function loadTrack(key) {
   if (trackCache.has(key)) return trackCache.get(key);
@@ -397,6 +414,7 @@ function loadTrack(key) {
   const el = new Audio();
   el.loop = !!spec.loop;
   el.preload = "auto";
+  setPreservesPitch(el, false);
   el.src = encodeURI("assets/" + spec.file);
   el.addEventListener("canplaythrough", () => {
     try {
@@ -406,6 +424,7 @@ function loadTrack(key) {
       // If we're still waiting on exactly this track, hand off from the synth.
       if (musicWanted && activeTrack === key) {
         if (musicTimer) { clearInterval(musicTimer); musicTimer = null; }
+        el.playbackRate = spec.loop ? musicRate : 1; // jingles always play at normal speed
         el.play().catch(() => {});
       }
     } catch (e) { /* ignore */ }
@@ -415,10 +434,12 @@ function loadTrack(key) {
   return entry;
 }
 
-// Cue a named track: pause the previous one, play the new file from the top when
-// it's ready, and (for looping tracks only) bridge with the procedural synth
-// loop until it loads. A missing jingle leaves the bus quiet for its SFX cue.
-export function setTrack(key) {
+// Cue a named track: pause the previous one, play the new file when it's ready,
+// and (for looping tracks only) bridge with the procedural synth loop until it
+// loads. A missing jingle leaves the bus quiet for its SFX cue. With { resume }
+// the track continues from its paused position instead of restarting at 0 — used
+// to return to a stage track after an interrupting jingle.
+export function setTrack(key, { resume = false } = {}) {
   if (key === activeTrack) return;
   const prev = trackCache.get(activeTrack);
   if (prev && prev.el) { try { prev.el.pause(); } catch (e) { /* ignore */ } }
@@ -428,7 +449,8 @@ export function setTrack(key) {
   if (!musicWanted || !ensure()) return;
   if (entry.ok && entry.el) {
     if (musicTimer) { clearInterval(musicTimer); musicTimer = null; }
-    try { entry.el.currentTime = 0; } catch (e) { /* ignore */ }
+    if (!resume) { try { entry.el.currentTime = 0; } catch (e) { /* ignore */ } }
+    entry.el.playbackRate = spec && spec.loop ? musicRate : 1;
     entry.el.play().catch(() => {});
   } else if (spec && spec.loop) {
     if (!musicTimer) { nextNote = ctx.currentTime + 0.1; step = 0; musicTimer = setInterval(scheduler, 40); }
@@ -439,3 +461,12 @@ export function setTrack(key) {
 
 // Convenience for the game loop: play the theme for a zone (1..8).
 export function setStageMusic(zone) { setTrack("stage" + zone); }
+
+// Tension curve: scale the active stage track's playback speed (tempo + pitch),
+// clamped to config. Jingles (loop:false) keep normal speed.
+export function setMusicRate(rate) {
+  musicRate = Math.max(1, Math.min(AUDIO.tension.rateCap, rate));
+  const entry = trackCache.get(activeTrack);
+  const spec = TRACKS[activeTrack];
+  if (entry && entry.el && spec && spec.loop) entry.el.playbackRate = musicRate;
+}

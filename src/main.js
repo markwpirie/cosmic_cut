@@ -12,6 +12,7 @@ import * as enemy from "./enemy.js";
 import * as game from "./game.js";
 import { render } from "./render.js";
 import * as audio from "./audio.js";
+import * as director from "./audio-director.js";
 import * as fx from "./fx.js";
 import { TIMING, POINTS, THEMES, field } from "./config.js";
 
@@ -72,18 +73,21 @@ function respawn() {
   popups = [];
 }
 
-// React to entering a new state — including which soundtrack moment it cues.
+// React to entering a new state — the AudioDirector owns which music moment it
+// cues (incl. interrupt/resume of the stage track).
 function onEnter(s) {
-  if (s === "title") audio.setTrack("title");                                  // opening theme
-  else if (s === "menu") audio.setTrack("stageSelect");                        // stage-select theme
-  else if (s === "intro") { loadLevel(); transT = 0; audio.setStageMusic(game.currentLevel().zone); }
+  if (s === "title") director.title();
+  else if (s === "menu") director.stageSelect();
+  else if (s === "intro") { loadLevel(); transT = 0; director.stage(game.currentLevel().zone); }
+  else if (s === "playing") director.stage(game.currentLevel().zone); // resume after a caught/jingle break (no-op if already on it)
   else if (s === "levelcomplete") {
     resetMarker(); transT = 0;
     if (reward) reward.t = 0; // replay the final cut's read-out fresh during the score phase
-    audio.setTrack("stageClear"); // clear jingle plays under the score read-out
+    director.levelComplete(); // Stage Clear interrupts; stage resumes next level
   }
-  else if (s === "gameover") audio.setTrack("gameOver");
-  // "dead" and "campaigncomplete" keep whatever's already playing.
+  else if (s === "dead") director.caught();   // Game Over MP3 interrupts; stage resumes on respawn
+  else if (s === "gameover") director.gameOver(); // terminal — plays through, then menu
+  // "campaigncomplete" keeps whatever's already playing.
 }
 
 // Menu/intro/restart input, layered over control.js's own key listener.
@@ -174,6 +178,7 @@ function loop(now) {
     }
     if (kills > 0) {
       audio.kill();
+      director.kill(); // bright musical stinger layered over the music
       // Each trapped blob explodes where it was caught, in its own colour.
       for (const k of enemy.lastKilled) {
         fx.burst(k.x, k.y, k.color, 26, 320);
@@ -218,7 +223,9 @@ function loop(now) {
     // Danger level (nearest blob to the trail) drives the edge glow + music.
     const gap = enemy.threatGap(marker, mode, trail);
     danger = gap === Infinity ? 0 : Math.max(0, Math.min(1, (40 - gap) / 40));
-    audio.setIntensity(0.2 + danger * 0.6 + Math.min(0.2, grid.percent / 500));
+    // Music tension: fill% + danger speed up / pitch up the stage track (and the
+    // synth intensity for the fallback). All curve constants in config.AUDIO.tension.
+    director.update({ fillPercent: grid.percent, danger });
   } else if (game.state === "intro") {
     transT += dt; // banner only; play begins on the first direction press
     danger = 0;
