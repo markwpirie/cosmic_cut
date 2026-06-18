@@ -79,16 +79,15 @@ function ensure() {
   return true;
 }
 
-// Beat-reactive 0..1 value from the music's sub-bass. ADAPTIVE: the throb tracks
-// how far the bass rises ABOVE its own recent baseline (the kick), normalised to
-// the recent peak — so it swings 0..1 on the beat regardless of the track's
-// absolute loudness (steady loud bass no longer pins it at 1). Instant attack,
-// slow release; returns 0 when muted. Tunables in config.AUDIO.beat.
+// Beat-reactive 0..1 value from the music's sub-bass: the throb is how far the
+// bass rises ABOVE its own slow baseline (the kick), times a fixed gain — so a
+// loud steady bass no longer pins it at 1, and it can't be poisoned by startup
+// transients. Instant attack, slow release; returns 0 when muted. Tunables in
+// config.AUDIO.beat.
 let analyser = null;
 let freqData = null;
 let pulseEnv = 0;
 let bassBaseline = 0; // slow-tracked steady bass level
-let peakDev = 0.01;   // tracked peak deviation, for normalisation
 let lastBass = 0;     // raw 0..1 sub-bass from the most recent musicPulse (debug)
 export function musicPulse() {
   if (!analyser || muted) return 0;
@@ -100,8 +99,7 @@ export function musicPulse() {
   lastBass = bass;
   bassBaseline += (bass - bassBaseline) * AUDIO.beat.baselineEase; // steady level
   const dev = Math.max(0, bass - bassBaseline);                    // the kick on top
-  peakDev = Math.max(dev, peakDev * AUDIO.beat.peakDecay);         // adapt to track dynamics
-  const target = peakDev > 0.001 ? Math.min(1, dev / peakDev) : 0; // 0..1 within recent range
+  const target = Math.min(1, dev * AUDIO.beat.devGain);            // fixed-gain → 0..1
   if (target > pulseEnv) pulseEnv = target;                        // snap up on the beat
   else pulseEnv += (target - pulseEnv) * AUDIO.beat.release;        // ease back down
   return pulseEnv;
