@@ -13,7 +13,7 @@ import * as game from "./game.js";
 import { render } from "./render.js";
 import * as audio from "./audio.js";
 import * as fx from "./fx.js";
-import { TIMING, POINTS, THEMES, ROWS, field } from "./config.js";
+import { TIMING, POINTS, THEMES, field } from "./config.js";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -190,10 +190,11 @@ function loop(now) {
     }
   }
 
-  // Live "tension" tone while cutting (rises with cut length); stops on any exit.
+  // Soft "tension" pulse while cutting — quiet when safe, swells/quickens as a
+  // blob nears your line (driven by danger, not cut length).
   const cutting = game.state === "playing" && mode === "cutting";
   if (cutting && !prevCutting) { audio.cutStart(); audio.cutStartBlip(); }
-  if (cutting) audio.cutTension(Math.min(1, trail.length / (2 * ROWS)));
+  if (cutting) audio.cutTension(danger);
   if (!cutting && prevCutting) audio.cutStop();
   prevCutting = cutting;
 
