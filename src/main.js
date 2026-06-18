@@ -18,8 +18,8 @@ import { TIMING, POINTS, THEMES, field } from "./config.js";
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
-// Total level-complete beat: hold on the text, ripple, then a short tail.
-const COMPLETE_TIME = TIMING.completeHold + TIMING.completeWipe + TIMING.completeTail;
+// Total level-complete beat: read out the score, hold the banner, ripple, tail.
+const COMPLETE_TIME = TIMING.completeScore + TIMING.completeHold + TIMING.completeWipe + TIMING.completeTail;
 const FCX = field.x + field.w / 2;
 const FCY = field.y + field.h / 2;
 const REWARD_MIN = 2500;  // show the big central read-out for bonuses, or any cut over this
@@ -73,7 +73,11 @@ function onEnter(s) {
   if (s === "title") audio.setTrack("title");                                  // opening theme
   else if (s === "menu") audio.setTrack("stageSelect");                        // stage-select theme
   else if (s === "intro") { loadLevel(); transT = 0; audio.setStageMusic(game.currentLevel().zone); }
-  else if (s === "levelcomplete") { resetMarker(); transT = 0; audio.setTrack("stageClear"); } // marker back to start & hold + clear jingle
+  else if (s === "levelcomplete") {
+    resetMarker(); transT = 0;
+    if (reward) reward.t = 0; // replay the final cut's read-out fresh during the score phase
+    audio.setTrack("stageClear"); // clear jingle plays under the score read-out
+  }
   else if (s === "gameover") audio.setTrack("gameOver");
   // "dead" and "campaigncomplete" keep whatever's already playing.
 }

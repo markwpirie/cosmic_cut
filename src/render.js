@@ -22,10 +22,11 @@ function theme() {
   return THEMES[game.currentLevel().zone - 1] || THEMES[0];
 }
 
-// Level-complete ripple radius for a given elapsed transition time: it holds
-// (radius 0) for completeHold, then expands over completeWipe.
+// Level-complete circle close-out radius for a given elapsed transition time: it
+// holds (radius 0) through the score read-out + banner hold, then expands over
+// completeWipe.
 function wipeRadius(transT) {
-  const w = (transT - TIMING.completeHold) / TIMING.completeWipe;
+  const w = (transT - TIMING.completeScore - TIMING.completeHold) / TIMING.completeWipe;
   if (w <= 0) return 0;
   const t = Math.min(w, 1);
   return (1 - (1 - t) * (1 - t)) * (MAXR + 30); // easeOut
@@ -330,7 +331,7 @@ function drawLevelComplete(ctx, transT) {
     ctx.stroke();
     ctx.shadowBlur = 0;
   }
-  const pop = Math.min(1, transT / 0.25);
+  const pop = Math.min(1, (transT - TIMING.completeScore) / 0.25); // banner pops in once the score beat is done
   ctx.save();
   ctx.translate(WIDTH / 2, CY);
   ctx.scale(pop, pop);
@@ -534,7 +535,10 @@ export function render(ctx, view = {}) {
     drawMarker(ctx);
     ctx.restore();
     drawHUD(ctx);
-    drawLevelComplete(ctx, transT);
+    // Phase 1: read out the final cut's score over the full board. Phase 2+:
+    // LEVEL COMPLETE banner, then the circle close-out wipe.
+    if (transT < TIMING.completeScore) drawReward(ctx, reward);
+    else drawLevelComplete(ctx, transT);
     return;
   }
 

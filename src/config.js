@@ -95,7 +95,8 @@ export const TIMING = {
   rewardLife: 2.2,     // how long the central score read-out (labels + total) shows
   rewardStep: 0.15,    // delay between each bonus label popping in (the "doof doof doof")
   scorePulse: 0.35,    // how long the HUD score stays enlarged after it jumps
-  completeHold: 1.8,   // savour the cleared board on LEVEL COMPLETE *before* the ripple (§7)
-  completeWipe: 0.9,   // the expanding-ripple duration
-  completeTail: 0.7,   // pause after the ripple before the next level loads
+  completeScore: 1.8,  // read out the final cut's score + bonuses (under the Stage Clear jingle) before the banner
+  completeHold: 1.2,   // hold the LEVEL COMPLETE banner over the full board *before* the ripple (§7)
+  completeWipe: 0.9,   // the expanding-ripple (circle close-out) duration
+  completeTail: 0.6,   // pause after the ripple before the next level loads
 };
