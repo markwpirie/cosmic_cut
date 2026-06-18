@@ -53,7 +53,7 @@ function ensureStars() {
     { x: WIDTH * 0.78, y: HEIGHT * 0.7, r: 300, c: "rgba(20,90,150,0.10)" },
   ];
 }
-function drawBackground(ctx) {
+function drawBackground(ctx, beat = 0) {
   ctx.fillStyle = COLORS.bg;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
   ensureStars();
@@ -64,16 +64,41 @@ function drawBackground(ctx) {
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
   }
+  // Music beat: a faint full-screen bloom that breathes with the bass.
+  if (beat > 0.02) {
+    const g = ctx.createRadialGradient(CX, CY, 0, CX, CY, Math.max(WIDTH, HEIGHT) * 0.7);
+    g.addColorStop(0, `rgba(120,90,220,${0.07 * beat})`);
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  }
   const t = now();
   const dt = Math.min(0.05, (t - starLast) / 1000);
   starLast = t;
   ctx.fillStyle = "#cfeaff";
+  const starBoost = 1 + beat * 0.7; // stars twinkle brighter on the beat
   for (const s of stars) {
     s.y += s.v * dt;
     if (s.y > HEIGHT) { s.y = 0; s.x = Math.random() * WIDTH; }
-    ctx.globalAlpha = s.a;
+    ctx.globalAlpha = Math.min(1, s.a * starBoost);
     ctx.fillRect(s.x, s.y, s.size, s.size);
   }
+  ctx.globalAlpha = 1;
+}
+
+// Beat-synced glow hugging the play-field border (theme-coloured). Purely
+// cosmetic — it never moves or obscures gameplay.
+function drawBeatEdge(ctx, beat) {
+  if (beat <= 0.03) return;
+  const col = theme().frontier;
+  ctx.save();
+  ctx.globalAlpha = Math.min(0.55, beat * 0.6);
+  ctx.strokeStyle = col;
+  ctx.lineWidth = 2 + beat * 4;
+  ctx.shadowColor = col;
+  ctx.shadowBlur = 12 + beat * 34;
+  ctx.strokeRect(field.x - 1, field.y - 1, field.w + 2, field.h + 2);
+  ctx.restore();
   ctx.globalAlpha = 1;
 }
 
@@ -517,8 +542,8 @@ function drawCampaignComplete(ctx) {
 }
 
 export function render(ctx, view = {}) {
-  const { transT = 0, menuSel = 1, popups = [], reward = null, deathPoint = null, deathBlob = null, scorePulseT = 99, danger = 0 } = view;
-  drawBackground(ctx);
+  const { transT = 0, menuSel = 1, popups = [], reward = null, deathPoint = null, deathBlob = null, scorePulseT = 99, danger = 0, beat = 0 } = view;
+  drawBackground(ctx, beat);
 
   if (game.state === "title") { drawTitle(ctx); return; }
   if (game.state === "menu") { drawMenu(ctx, menuSel); return; }
@@ -553,6 +578,7 @@ export function render(ctx, view = {}) {
   ctx.restore();
 
   drawDangerEdge(ctx, danger);
+  drawBeatEdge(ctx, beat);
   drawPopups(ctx, popups);
   drawReward(ctx, reward);
   drawHUD(ctx, scorePulseT);

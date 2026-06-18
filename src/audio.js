@@ -57,15 +57,43 @@ function ensure() {
   delay.connect(master);
 
   sfxBus = ctx.createGain();
-  sfxBus.gain.value = 0.9;
+  sfxBus.gain.value = 1.15; // SFX sit a touch above the music
   sfxBus.connect(master);
 
   musicBus = ctx.createGain();
   musicBus.gain.value = 0.0; // faded in when music starts
   musicBus.connect(master);
 
+  // Beat tap: analyse the music submix so a screen pulse can ride the bass
+  // (works for both the MP3 tracks and the procedural synth fallback).
+  analyser = ctx.createAnalyser();
+  analyser.fftSize = 256;
+  analyser.smoothingTimeConstant = 0.5;
+  freqData = new Uint8Array(analyser.frequencyBinCount);
+  musicBus.connect(analyser);
+
   loadTrack("title"); // warm the cache with the opening theme
   return true;
+}
+
+// Beat-reactive 0..1 value from the music's sub-bass: snaps up on a kick/onset
+// and eases back down. Returns 0 when muted (no sound → no visual pulse).
+let analyser = null;
+let freqData = null;
+let pulseEnv = 0;
+let pulseAvg = 0;
+export function musicPulse() {
+  if (!analyser || muted) return 0;
+  analyser.getByteFrequencyData(freqData);
+  let sum = 0;
+  const N = 6; // lowest ~6 bins ≈ sub-bass + kick
+  for (let i = 0; i < N; i++) sum += freqData[i];
+  const bass = sum / (N * 255);                  // 0..1 current low-end energy
+  pulseAvg = pulseAvg * 0.95 + bass * 0.05;      // slow baseline to beat against
+  const onset = Math.min(1, Math.max(0, bass - pulseAvg) * 3.5); // emphasise hits above baseline
+  if (onset > pulseEnv) pulseEnv = onset;        // snap up on the beat
+  else pulseEnv += (onset - pulseEnv) * 0.15;    // ease back down
+  return pulseEnv;
 }
 
 export function resume() {

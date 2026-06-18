@@ -220,7 +220,8 @@ function loop(now) {
   scorePulseT += dt;
   fx.update(dt);
 
-  render(ctx, { transT, menuSel, popups, reward, deathPoint, deathBlob, scorePulseT, danger });
+  const beat = audio.musicPulse(); // 0..1 bass-driven pulse for a beat-synced screen glow
+  render(ctx, { transT, menuSel, popups, reward, deathPoint, deathBlob, scorePulseT, danger, beat });
   requestAnimationFrame(loop);
 }
 
