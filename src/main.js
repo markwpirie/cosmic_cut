@@ -1,6 +1,6 @@
 // COSMIC CUT — main (entry point)
 // Wires the modules and runs the loop as a small state machine:
-//   menu → intro → playing → (levelcomplete → intro → …) → campaigncomplete
+//   title → menu → intro → playing → (levelcomplete → intro → …) → campaigncomplete
 //   playing → gameover → menu
 // Concerns stay in their modules: config (numbers), levels (data), control
 // (input), grid (world), marker (player), enemy (Blobs), game (state), render.
@@ -68,20 +68,27 @@ function respawn() {
   deathBlob = null;
 }
 
-// React to entering a new state.
+// React to entering a new state — including which soundtrack moment it cues.
 function onEnter(s) {
-  if (s === "intro") { loadLevel(); transT = 0; }
-  else if (s === "levelcomplete") { resetMarker(); transT = 0; } // marker back to start & hold
+  if (s === "title") audio.setTrack("title");                                  // opening theme
+  else if (s === "menu") audio.setTrack("stageSelect");                        // stage-select theme
+  else if (s === "intro") { loadLevel(); transT = 0; audio.setStageMusic(game.currentLevel().zone); }
+  else if (s === "levelcomplete") { resetMarker(); transT = 0; audio.setTrack("stageClear"); } // marker back to start & hold + clear jingle
+  else if (s === "gameover") audio.setTrack("gameOver");
+  // "dead" and "campaigncomplete" keep whatever's already playing.
 }
 
 // Menu/intro/restart input, layered over control.js's own key listener.
 window.addEventListener("keydown", (e) => {
-  // First key in the page wakes the audio context (browsers require a gesture).
+  // The very first key wakes the audio context (browsers require a gesture) and
+  // starts the opening theme — consumed so the title screen stays up to hear it.
   audio.resume();
-  if (!audioStarted) { audio.startMusic(); audioStarted = true; }
+  if (!audioStarted) { audio.startMusic(); audioStarted = true; return; }
   // Sound toggles, any state.
   if (e.key === "m" || e.key === "M") { audio.toggleMute(); audio.ui(); return; }
   if (e.key === "n" || e.key === "N") { audio.toggleMusic(); return; }
+
+  if (game.state === "title") { game.toMenu(); audio.ui(); return; } // splash → stage select
 
   if (game.state === "menu") {
     if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") { menuSel = Math.max(1, menuSel - 1); audio.ui(); }

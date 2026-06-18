@@ -11,8 +11,9 @@ const START_LIVES = 3;
 const UNLOCK_KEY = "cosmiccut.unlockedZone";
 const HIGH_KEY = "cosmiccut.highScore";
 
-// state: "menu" | "intro" | "playing" | "dead" | "levelcomplete" | "gameover" | "campaigncomplete"
-export let state = "menu";
+// state: "title" | "menu" | "intro" | "playing" | "dead" | "levelcomplete" | "gameover" | "campaigncomplete"
+// "title" is the opening splash; "menu" is the stage-select screen.
+export let state = "title";
 export let lives = START_LIVES;
 export let levelIndex = 0;
 export let score = 0;

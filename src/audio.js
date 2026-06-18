@@ -3,8 +3,10 @@
 // envelope + filter and can send to a shared convolver REVERB, so nothing sounds
 // like a bare beep. SFX, a soft danger-tied "cut" pulse, and a layered
 // generative synthwave loop (sub-bass + detuned supersaw pad + delayed arp over
-// an Am–F–C–G progression). Optional: drop assets/music.mp3 in and it plays
-// instead. Everything is lazy + guarded, so the module imports cleanly in Node.
+// an Am–F–C–G progression). Optional: MP3s in assets/ (see the TRACKS registry)
+// drive the soundtrack per game moment — title, stage select, per-stage themes,
+// stage-clear + game-over jingles. A missing looping track falls back to the
+// synth; everything is lazy + guarded, so the module imports cleanly in Node.
 
 let ctx = null;
 let master = null;   // final output (respects mute)
@@ -62,7 +64,7 @@ function ensure() {
   musicBus.gain.value = 0.0; // faded in when music starts
   musicBus.connect(master);
 
-  tryFile();
+  loadTrack("title"); // warm the cache with the opening theme
   return true;
 }
 
@@ -262,15 +264,20 @@ function scheduler() {
 export function startMusic() {
   if (!ensure() || !musicWanted) return;
   musicBus.gain.setTargetAtTime(0.5, ctx.currentTime, 1.5);
-  if (fileOK && mediaEl) { mediaEl.play().catch(() => {}); return; } // prefer a real track
-  if (musicTimer) return;
+  if (!activeTrack) activeTrack = "title"; // first play = the opening theme
+  const entry = loadTrack(activeTrack);
+  if (entry.ok && entry.el) { entry.el.play().catch(() => {}); return; } // prefer a real track
+  const spec = TRACKS[activeTrack];
+  if (spec && spec.loop === false) return; // a one-shot jingle has nothing to loop
+  if (musicTimer) return; // file missing or still loading -> procedural for now
   nextNote = ctx.currentTime + 0.1;
   step = 0;
   musicTimer = setInterval(scheduler, 40);
 }
 export function stopMusic() {
   if (musicBus && ctx) musicBus.gain.setTargetAtTime(0.0, ctx.currentTime, 0.4);
-  if (mediaEl) { try { mediaEl.pause(); } catch (e) { /* ignore */ } }
+  const entry = trackCache.get(activeTrack);
+  if (entry && entry.el) { try { entry.el.pause(); } catch (e) { /* ignore */ } }
   if (musicTimer) { clearInterval(musicTimer); musicTimer = null; }
 }
 export function setIntensity(x) { intensity = Math.max(0, Math.min(1, x)); }
@@ -281,26 +288,78 @@ export function toggleMusic() {
   return musicWanted;
 }
 
-// --- optional drop-in track: assets/music.mp3 ------------------------------
-let mediaEl = null;
-let fileOK = false;
-let fileTried = false;
-function tryFile() {
-  if (fileTried || typeof Audio === "undefined") return;
-  fileTried = true;
+// --- drop-in soundtrack: assets/*.mp3 --------------------------------------
+// Each game moment maps to a named track. A looping track whose file is missing
+// or not yet loaded falls back to the procedural synthwave loop; a one-shot
+// jingle (loop:false) that's missing just stays silent (its SFX cue covers it).
+// To add/replace music: drop the file in assets/ and edit its line here. Stages
+// 6-8 are already wired for when the campaign grows past five zones.
+const TRACKS = {
+  title:       { file: "01 - The Wind Blew All Day Long (Opening Theme).mp3", loop: true },
+  stageSelect: { file: "02 - Beyond the Peace (Stage Select).mp3", loop: true },
+  stage1:      { file: "03 - Back to the Fire (Stage 1 - Hydra).mp3", loop: true },
+  stage2:      { file: "05 - Venus Fire (Stage 2 - Gorgon).mp3", loop: true },
+  stage3:      { file: "07 - The Grubby Dark Blue (Stage 3 - Seiren).mp3", loop: true },
+  stage4:      { file: "09 - Truth (Stage 4 - Haides).mp3", loop: true },
+  stage5:      { file: "11 - Final Take a Chance (Stage 5 - Ellis).mp3", loop: true },
+  stage6:      { file: "13 - His Behavior Inspired Us With Distrust (Stage 6 - Cerberus).mp3", loop: true },
+  stage7:      { file: "14 - Hunger Made Them Desperate (Stage 7 - Orn Base).mp3", loop: true },
+  stage8:      { file: "16. Final Point (Stage 8 - Orn Core).mp3", loop: true },
+  stageClear:  { file: "18 - Stage Clear.mp3", loop: false },
+  gameOver:    { file: "22 - Game Over.mp3", loop: false },
+};
+
+const trackCache = new Map(); // key -> { el, ok } (el null until canplaythrough)
+let activeTrack = null;       // track key currently routed to musicBus (null = none yet)
+
+function loadTrack(key) {
+  if (trackCache.has(key)) return trackCache.get(key);
+  const entry = { el: null, ok: false };
+  trackCache.set(key, entry);
+  const spec = TRACKS[key];
+  if (!spec || !spec.file || typeof Audio === "undefined") return entry; // no file -> stays synth
   const el = new Audio();
-  el.loop = true;
+  el.loop = !!spec.loop;
   el.preload = "auto";
-  el.src = "assets/music.mp3";
+  el.src = encodeURI("assets/" + spec.file);
   el.addEventListener("canplaythrough", () => {
     try {
-      const src = ctx.createMediaElementSource(el);
-      src.connect(musicBus);
-      mediaEl = el;
-      fileOK = true;
-      if (musicWanted && musicTimer) { clearInterval(musicTimer); musicTimer = null; el.play().catch(() => {}); }
+      ctx.createMediaElementSource(el).connect(musicBus);
+      entry.el = el;
+      entry.ok = true;
+      // If we're still waiting on exactly this track, hand off from the synth.
+      if (musicWanted && activeTrack === key) {
+        if (musicTimer) { clearInterval(musicTimer); musicTimer = null; }
+        el.play().catch(() => {});
+      }
     } catch (e) { /* ignore */ }
   }, { once: true });
-  el.addEventListener("error", () => { fileOK = false; }, { once: true });
+  el.addEventListener("error", () => { entry.ok = false; }, { once: true });
   el.load();
+  return entry;
 }
+
+// Cue a named track: pause the previous one, play the new file from the top when
+// it's ready, and (for looping tracks only) bridge with the procedural synth
+// loop until it loads. A missing jingle leaves the bus quiet for its SFX cue.
+export function setTrack(key) {
+  if (key === activeTrack) return;
+  const prev = trackCache.get(activeTrack);
+  if (prev && prev.el) { try { prev.el.pause(); } catch (e) { /* ignore */ } }
+  activeTrack = key;
+  const spec = TRACKS[key];
+  const entry = loadTrack(key);
+  if (!musicWanted || !ensure()) return;
+  if (entry.ok && entry.el) {
+    if (musicTimer) { clearInterval(musicTimer); musicTimer = null; }
+    try { entry.el.currentTime = 0; } catch (e) { /* ignore */ }
+    entry.el.play().catch(() => {});
+  } else if (spec && spec.loop) {
+    if (!musicTimer) { nextNote = ctx.currentTime + 0.1; step = 0; musicTimer = setInterval(scheduler, 40); }
+  } else if (musicTimer) { // missing jingle -> let the synth go quiet under the SFX
+    clearInterval(musicTimer); musicTimer = null;
+  }
+}
+
+// Convenience for the game loop: play the theme for a zone (1..8).
+export function setStageMusic(zone) { setTrack("stage" + zone); }

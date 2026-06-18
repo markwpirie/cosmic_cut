@@ -261,6 +261,18 @@ function centerText(ctx, text, y, font, color, alpha = 1) {
   ctx.textBaseline = "top";
 }
 
+function drawTitle(ctx) {
+  centerText(ctx, "COSMIC CUT", CY - 40, "700 72px system-ui, sans-serif", COLORS.frontier);
+  centerText(ctx, "carve the cosmos", CY + 18, "500 22px system-ui, sans-serif", COLORS.hud);
+  // A gentle pulse on the prompt so the title feels alive while the theme plays.
+  const pulse = 0.55 + 0.45 * Math.abs(Math.sin(now() / 600));
+  ctx.globalAlpha = pulse;
+  centerText(ctx, "press any key", CY + 86, "600 20px system-ui, sans-serif", COLORS.hudAccent);
+  ctx.globalAlpha = 1;
+  centerText(ctx, "M  mute     ·     N  music", HEIGHT - 48,
+    "500 15px system-ui, sans-serif", COLORS.locked);
+}
+
 function drawMenu(ctx, menuSel) {
   centerText(ctx, "COSMIC CUT", 140, "700 56px system-ui, sans-serif", COLORS.frontier);
   if (game.highScore > 0) centerText(ctx, `HI  ${fmt(game.highScore)}`, 192, "700 22px system-ui, sans-serif", COLORS.hudAccent);
@@ -507,6 +519,7 @@ export function render(ctx, view = {}) {
   const { transT = 0, menuSel = 1, popups = [], reward = null, deathPoint = null, deathBlob = null, scorePulseT = 99, danger = 0 } = view;
   drawBackground(ctx);
 
+  if (game.state === "title") { drawTitle(ctx); return; }
   if (game.state === "menu") { drawMenu(ctx, menuSel); return; }
 
   // The play field shakes (screen-shake); overlays/HUD stay steady and readable.
