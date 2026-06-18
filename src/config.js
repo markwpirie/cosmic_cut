@@ -125,11 +125,12 @@ export const AUDIO = {
     synthBase: 0.2,    // synth-fallback intensity floor
     synthSpan: 0.7,    // synth-fallback intensity added at full tension
   },
-  sonar: {          // submarine-style ping — ONLY while cutting (exposed); speeds up with tension
-    freq: 320,         // base ping pitch (Hz); rises slightly with tension
+  sonar: {          // submarine ping while cutting (exposed): fires as you push out,
+    freq: 280,         //   then ~1s apart, pitch CLIMBING the longer the line is drawn
     level: 0.2,        // ping volume
-    slowInterval: 0.5, // seconds between pings at low tension
-    fastInterval: 0.28,// seconds between pings at full tension (board full / blob on your trail)
+    interval: 1.0,     // seconds between pings during a single cut
+    rampTime: 5,       // seconds of continuous cutting to reach the top pitch
+    pitchRange: 1.2,   // pitch climbs to base*(1+pitchRange) across rampTime (≈ +octave)
   },
   debugBeat: false, // flip to true to show the live beat detector readout (bottom-left)
 };
