@@ -106,7 +106,7 @@ export const TIMING = {
 // tunable in one place (read by audio.js, render.js and audio-director.js).
 export const AUDIO = {
   sfxLevel: 1.15,   // SFX submix gain (sits above the music)
-  moveLevel: 0.045, // base volume of the movement "schoo"
+  moveLevel: 0.09,  // base volume of the movement "schoo"
   beat: {           // beat-reactive throb on the frontier line
     bassBins: 6,      // # of lowest FFT bins summed for the sub-bass pulse
     smoothing: 0.3,   // analyser FFT smoothing (lower = punchier transients)
@@ -125,12 +125,11 @@ export const AUDIO = {
     synthBase: 0.2,    // synth-fallback intensity floor
     synthSpan: 0.7,    // synth-fallback intensity added at full tension
   },
-  sonar: {          // submarine-style ping that speeds up as tension rises
+  sonar: {          // submarine-style ping — ONLY while cutting (exposed); speeds up with tension
     freq: 320,         // base ping pitch (Hz); rises slightly with tension
     level: 0.2,        // ping volume
-    slowInterval: 2.2, // seconds between pings at zero tension (calm)
-    fastInterval: 0.45,// seconds between pings at full tension (frantic)
-    startDelay: 1.2,   // grace before the first ping when a level begins
+    slowInterval: 0.5, // seconds between pings at low tension
+    fastInterval: 0.28,// seconds between pings at full tension (board full / blob on your trail)
   },
   debugBeat: false, // flip to true to show the live beat detector readout (bottom-left)
 };

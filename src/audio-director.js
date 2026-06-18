@@ -32,21 +32,24 @@ export function stage(zone) {
   interruptedKey = null;
   currentStageKey = key;
   tension = 0;
-  pingTimer = AUDIO.sonar.startDelay; // calm grace before the sonar kicks in
+  pingTimer = 0;
   audio.setMusicRate(1);
   audio.setTrack(key, { resume });
 }
 
 // --- per-frame tension (called during play, with the frame's dt) -----------
-// Tension (fill% + danger) drives the SONAR PING RATE — the pings quicken as the
-// board fills and a blob crowds your trail. (Music speed-up stays off: rateSpan 0.)
-export function update({ fillPercent = 0, danger = 0, dt = 0 } = {}) {
+// Tension (fill% + danger) drives the SONAR PING RATE. The sonar only sounds
+// while CUTTING (exposed in open space): it pings the moment you push out and
+// quickens as the board fills / a blob crowds your trail. (Music speed-up stays
+// off: rateSpan 0.)
+export function update({ fillPercent = 0, danger = 0, dt = 0, cutting = false } = {}) {
   const T = AUDIO.tension;
   const target = clamp01(T.progressWeight * (fillPercent / 100) + T.dangerWeight * danger);
   tension += (target - tension) * T.ease; // smooth so the ping rate eases, not jumps
   audio.setMusicRate(1 + tension * T.rateSpan);
   audio.setIntensity(T.synthBase + tension * T.synthSpan);
 
+  if (!cutting) { pingTimer = 0; return; } // safe on the perimeter → silent; ping fires on the next cut
   const S = AUDIO.sonar;
   pingTimer -= dt;
   if (pingTimer <= 0) {
