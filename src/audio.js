@@ -195,6 +195,13 @@ export function death() {
   noise(0.5, 0.2, 0, 800, 0.4);
 }
 export function nearMiss() { voice(1200, { type: "sine", dur: 0.14, vol: 0.13, slideTo: 1900, rev: 0.4 }); }
+// Submarine sonar "ping": a reverberant tone with a slight downward tail. Pitch
+// rises a little with tension; the director controls how often it fires.
+export function sonarPing(tension = 0) {
+  const f = AUDIO.sonar.freq * (1 + tension * 0.3);
+  voice(f, { type: "sine", dur: 0.55, vol: AUDIO.sonar.level, slideTo: f * 0.86, attack: 0.004, rev: 0.7, delaySend: 0.3 });
+  voice(f * 2, { type: "sine", dur: 0.22, vol: AUDIO.sonar.level * 0.35, attack: 0.004, rev: 0.6 }); // metallic shimmer
+}
 export function extraLife() { [0, 4, 7, 12, 16].forEach((s, i) => voice(440 * 2 ** (s / 12), { type: "triangle", dur: 0.22, vol: 0.16, rev: 0.4, delaySend: 0.2, when: i * 0.09 })); }
 export function levelClear() { [0, 4, 7, 12, 19].forEach((s, i) => voice(330 * 2 ** (s / 12), { type: "triangle", dur: 0.3, vol: 0.18, rev: 0.5, delaySend: 0.25, when: i * 0.11 })); }
 export function gameOver() { [0, -2, -5, -9].forEach((s, i) => voice(294 * 2 ** (s / 12), { type: "sawtooth", dur: 0.5, vol: 0.18, lp: 1600, rev: 0.5, when: i * 0.18 })); }

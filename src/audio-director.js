@@ -15,6 +15,7 @@ import { AUDIO } from "./config.js";
 let currentStageKey = null; // the stage track we're on (e.g. "stage3")
 let interruptedKey = null;  // a stage track paused by a jingle, to resume next
 let tension = 0;            // smoothed 0..1
+let pingTimer = 0;          // seconds until the next sonar ping
 
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
 
@@ -31,17 +32,27 @@ export function stage(zone) {
   interruptedKey = null;
   currentStageKey = key;
   tension = 0;
+  pingTimer = AUDIO.sonar.startDelay; // calm grace before the sonar kicks in
   audio.setMusicRate(1);
   audio.setTrack(key, { resume });
 }
 
-// --- per-frame tension curve (called during play) --------------------------
-export function update({ fillPercent = 0, danger = 0 } = {}) {
+// --- per-frame tension (called during play, with the frame's dt) -----------
+// Tension (fill% + danger) drives the SONAR PING RATE — the pings quicken as the
+// board fills and a blob crowds your trail. (Music speed-up stays off: rateSpan 0.)
+export function update({ fillPercent = 0, danger = 0, dt = 0 } = {}) {
   const T = AUDIO.tension;
   const target = clamp01(T.progressWeight * (fillPercent / 100) + T.dangerWeight * danger);
-  tension += (target - tension) * T.ease; // smooth so playback speed doesn't jitter
+  tension += (target - tension) * T.ease; // smooth so the ping rate eases, not jumps
   audio.setMusicRate(1 + tension * T.rateSpan);
   audio.setIntensity(T.synthBase + tension * T.synthSpan);
+
+  const S = AUDIO.sonar;
+  pingTimer -= dt;
+  if (pingTimer <= 0) {
+    audio.sonarPing(tension);
+    pingTimer = S.slowInterval + (S.fastInterval - S.slowInterval) * tension; // faster as tension rises
+  }
 }
 
 // --- event stingers ---------------------------------------------------------

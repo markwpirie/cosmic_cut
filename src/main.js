@@ -225,7 +225,7 @@ function loop(now) {
     danger = gap === Infinity ? 0 : Math.max(0, Math.min(1, (40 - gap) / 40));
     // Music tension: fill% + danger speed up / pitch up the stage track (and the
     // synth intensity for the fallback). All curve constants in config.AUDIO.tension.
-    director.update({ fillPercent: grid.percent, danger });
+    director.update({ fillPercent: grid.percent, danger, dt });
   } else if (game.state === "intro") {
     transT += dt; // banner only; play begins on the first direction press
     danger = 0;

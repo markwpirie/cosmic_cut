@@ -187,21 +187,24 @@ function drawPerimeter(ctx, beat = 0) {
   ctx.globalAlpha = 1;
 }
 
-function drawTrail(ctx) {
+function drawTrail(ctx, beat = 0) {
   if (mode !== "cutting" || trail.length === 0) return;
   // Heat builds toward the LONG threshold (2× field height): the trail brightens,
-  // thickens and reddens, telegraphing both the building bonus and the risk.
+  // thickens and reddens, telegraphing both the building bonus and the risk. The
+  // line also throbs with the beat, like the perimeter.
   const heat = Math.min(1, trail.length / (2 * ROWS));
   const color = heat > 0.85 ? "#ff5a3c" : heat > 0.5 ? "#ffae3c" : theme().trail;
   ctx.strokeStyle = color;
-  ctx.lineWidth = 3 + heat * 2.5;
+  ctx.lineWidth = 3 + heat * 2.5 + beat * AUDIO.beat.widthBoost;
   ctx.shadowColor = color;
-  ctx.shadowBlur = 10 + heat * 16;
+  ctx.shadowBlur = 10 + heat * 16 + beat * AUDIO.beat.glowBoost;
+  ctx.globalAlpha = Math.min(1, 0.85 + beat * 0.15);
   ctx.beginPath();
   ctx.moveTo(nodeX(trail[0].col), nodeY(trail[0].row));
   for (let i = 1; i < trail.length; i++) ctx.lineTo(nodeX(trail[i].col), nodeY(trail[i].row));
   ctx.lineTo(marker.x, marker.y);
   ctx.stroke();
+  ctx.globalAlpha = 1;
   ctx.shadowBlur = 0;
 }
 
@@ -585,7 +588,7 @@ export function render(ctx, view = {}) {
   drawSeams(ctx);
   drawArena(ctx);
   drawPerimeter(ctx, beat);
-  drawTrail(ctx);
+  drawTrail(ctx, beat);
   drawBlobs(ctx);
   drawMarker(ctx);
   drawParticles(ctx);

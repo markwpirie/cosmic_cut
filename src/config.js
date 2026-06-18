@@ -106,7 +106,7 @@ export const TIMING = {
 // tunable in one place (read by audio.js, render.js and audio-director.js).
 export const AUDIO = {
   sfxLevel: 1.15,   // SFX submix gain (sits above the music)
-  moveLevel: 0.02,  // base volume of the movement "schoo"
+  moveLevel: 0.045, // base volume of the movement "schoo"
   beat: {           // beat-reactive throb on the frontier line
     bassBins: 6,      // # of lowest FFT bins summed for the sub-bass pulse
     smoothing: 0.3,   // analyser FFT smoothing (lower = punchier transients)
@@ -116,14 +116,21 @@ export const AUDIO = {
     glowBoost: 40,    // frontier shadowBlur added at full beat
     widthBoost: 3,    // frontier lineWidth (px) added at full beat
   },
-  tension: {        // music tension curve — DISABLED for now (speed-up felt off).
-    progressWeight: 0, // re-enable later by raising these + rateSpan
-    dangerWeight: 0,   //   weight of fill% / danger (0..1)
+  tension: {        // 0..1 tension from fill% + danger; drives the sonar ping rate
+    progressWeight: 0.6, //   (the music speed-up is OFF — rateSpan 0 — it felt bad)
+    dangerWeight: 0.8,   // weight of fill% / danger (0..1)
     ease: 0.05,        // smoothing toward the target tension per frame
     rateSpan: 0,       // playbackRate = 1 + tension*rateSpan  (0 → constant 1x, no speed-up)
     rateCap: 1.3,      // hard clamp on playbackRate
     synthBase: 0.2,    // synth-fallback intensity floor
     synthSpan: 0.7,    // synth-fallback intensity added at full tension
   },
-  debugBeat: true,  // TEMP: show the live beat detector readout on-screen to tune the throb
+  sonar: {          // submarine-style ping that speeds up as tension rises
+    freq: 320,         // base ping pitch (Hz); rises slightly with tension
+    level: 0.2,        // ping volume
+    slowInterval: 2.2, // seconds between pings at zero tension (calm)
+    fastInterval: 0.45,// seconds between pings at full tension (frantic)
+    startDelay: 1.2,   // grace before the first ping when a level begins
+  },
+  debugBeat: false, // flip to true to show the live beat detector readout (bottom-left)
 };
