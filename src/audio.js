@@ -85,6 +85,7 @@ function ensure() {
 let analyser = null;
 let freqData = null;
 let pulseEnv = 0;
+let lastBass = 0; // raw 0..1 sub-bass from the most recent musicPulse (debug)
 export function musicPulse() {
   if (!analyser || muted) return 0;
   analyser.getByteFrequencyData(freqData);
@@ -92,10 +93,15 @@ export function musicPulse() {
   let sum = 0;
   for (let i = 0; i < N; i++) sum += freqData[i];
   const bass = sum / (N * 255);                          // 0..1 current low-end energy
+  lastBass = bass;
   const lifted = Math.min(1, Math.pow(bass, AUDIO.beat.liftPow) * AUDIO.beat.liftGain);
   if (lifted > pulseEnv) pulseEnv = lifted;              // snap up on the beat
   else pulseEnv += (lifted - pulseEnv) * AUDIO.beat.release; // ease back down
   return pulseEnv;
+}
+// Diagnostics for tuning the throb (we can't hear the audio while developing).
+export function beatInfo() {
+  return { an: analyser ? 1 : 0, muted: muted ? 1 : 0, bass: +lastBass.toFixed(2), env: +pulseEnv.toFixed(2) };
 }
 
 export function resume() {

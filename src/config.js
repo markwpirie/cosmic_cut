@@ -115,13 +115,14 @@ export const AUDIO = {
     glowBoost: 40,  // frontier shadowBlur added at full beat
     widthBoost: 3,  // frontier lineWidth (px) added at full beat
   },
-  tension: {        // music tension curve driven by fill% + danger
-    progressWeight: 0.5, // weight of fill% (normalised /100)
-    dangerWeight: 0.7,   // weight of danger (0..1, nearest blob to the trail)
-    ease: 0.05,          // smoothing toward the target tension per frame
-    rateSpan: 0.25,      // playbackRate = 1 + tension * rateSpan
-    rateCap: 1.3,        // hard clamp on playbackRate
-    synthBase: 0.2,      // synth-fallback intensity floor
-    synthSpan: 0.7,      // synth-fallback intensity added at full tension
+  tension: {        // music tension curve — DISABLED for now (speed-up felt off).
+    progressWeight: 0, // re-enable later by raising these + rateSpan
+    dangerWeight: 0,   //   weight of fill% / danger (0..1)
+    ease: 0.05,        // smoothing toward the target tension per frame
+    rateSpan: 0,       // playbackRate = 1 + tension*rateSpan  (0 → constant 1x, no speed-up)
+    rateCap: 1.3,      // hard clamp on playbackRate
+    synthBase: 0.2,    // synth-fallback intensity floor
+    synthSpan: 0.7,    // synth-fallback intensity added at full tension
   },
+  debugBeat: true,  // TEMP: show the live beat detector readout on-screen to tune the throb
 };
