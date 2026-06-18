@@ -511,7 +511,19 @@ function drawDeathFlash(ctx, p, blob, transT) {
     ctx.shadowBlur = 0;
   }
   centerText(ctx, "CAUGHT!", field.y + 64, "700 40px system-ui, sans-serif", COLORS.marker);
-  centerText(ctx, "press any key to continue", field.y + 100, "500 18px system-ui, sans-serif", COLORS.hud);
+  // Brief forced pause so a held/mashed key can't skip straight into respawn.
+  if (transT >= TIMING.deathHold) {
+    centerText(ctx, "press any key to continue", field.y + 100, "500 18px system-ui, sans-serif", COLORS.hud);
+  }
+}
+
+// Pause overlay — dims the frozen board and shows how to resume.
+function drawPaused(ctx) {
+  ctx.fillStyle = "rgba(5, 3, 15, 0.6)";
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  centerText(ctx, "PAUSED", CY - 18, "700 52px system-ui, sans-serif", COLORS.frontier);
+  centerText(ctx, "P / ESC  resume     ·     M  mute     ·     N  music", CY + 40,
+    "500 17px system-ui, sans-serif", COLORS.hud);
 }
 
 function drawGameOver(ctx) {
@@ -542,7 +554,7 @@ function drawCampaignComplete(ctx) {
 }
 
 export function render(ctx, view = {}) {
-  const { transT = 0, menuSel = 1, popups = [], reward = null, deathPoint = null, deathBlob = null, scorePulseT = 99, danger = 0, beat = 0 } = view;
+  const { transT = 0, menuSel = 1, popups = [], reward = null, deathPoint = null, deathBlob = null, scorePulseT = 99, danger = 0, beat = 0, paused = false } = view;
   drawBackground(ctx, beat);
 
   if (game.state === "title") { drawTitle(ctx); return; }
@@ -587,4 +599,6 @@ export function render(ctx, view = {}) {
   else if (game.state === "dead") drawDeathFlash(ctx, deathPoint, deathBlob, transT);
   else if (game.state === "gameover") drawGameOver(ctx);
   else if (game.state === "campaigncomplete") drawCampaignComplete(ctx);
+
+  if (paused) drawPaused(ctx);
 }

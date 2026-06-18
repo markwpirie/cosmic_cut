@@ -3,7 +3,7 @@
 // here (grid resolution, speed, palette) without touching the logic.
 
 export const WIDTH = 800;
-export const HEIGHT = 600;
+export const HEIGHT = 680; // reclaimed the page's title/tagline strip for play area
 export const MARGIN = 40;
 
 // The play field rectangle, inset within the canvas.
@@ -11,7 +11,7 @@ export const field = {
   x: MARGIN,
   y: MARGIN,
   w: WIDTH - MARGIN * 2,  // 720
-  h: HEIGHT - MARGIN * 2, // 520
+  h: HEIGHT - MARGIN * 2, // 600
 };
 
 // Grid of cells over the field. CELL must divide field.w and field.h evenly.
@@ -76,9 +76,9 @@ export const THEMES = [
 // claims, multiplied by any bonuses it triggers (BLOCK OUT / MEGA-CUT by size,
 // LONG tiers by length), times the level multiplier (SPLITs grant ×2 each).
 export const POINTS = {
-  perPercent: 100,     // base points per 1% of the arena claimed in a cut
-  blockOutPct: 30, blockOutMult: 2,   // single cut ≥30% → ×2 (§4)
-  megaCutPct: 50,  megaCutMult: 4,    // single cut ≥50% → ×4 (§4)
+  perPercent: 10,     // base points per 1% of the arena claimed in a cut
+  blockOutPct: 75, blockOutMult: 2,   // single cut ≥30% → ×2 (§4)
+  megaCutPct: 85,  megaCutMult: 4,    // single cut ≥50% → ×4 (§4)
   // LONG tiers by cut length, measured in field-heights (×ROWS). LONG starts at 2×.
   longHeights: 2, superLongHeights: 3, megaLongHeights: 4,
   longMult: 1.5, superLongMult: 2, megaLongMult: 3,
@@ -95,6 +95,7 @@ export const TIMING = {
   rewardLife: 2.2,     // how long the central score read-out (labels + total) shows
   rewardStep: 0.15,    // delay between each bonus label popping in (the "doof doof doof")
   scorePulse: 0.35,    // how long the HUD score stays enlarged after it jumps
+  deathHold: 0.9,      // forced pause on the CAUGHT! screen before a key can respawn (stops accidental skips)
   completeScore: 1.8,  // read out the final cut's score + bonuses (under the Stage Clear jingle) before the banner
   completeHold: 1.2,   // hold the LEVEL COMPLETE banner over the full board *before* the ripple (§7)
   completeWipe: 0.9,   // the expanding-ripple (circle close-out) duration

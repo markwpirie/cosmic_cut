@@ -7,7 +7,7 @@
 
 import * as control from "./control.js"; // also registers keyboard listeners
 import * as grid from "./grid.js";
-import { marker, mode, trail, lastCutLength, update as updateMarker, reset as resetMarker } from "./marker.js";
+import { marker, mode, trail, lastCutLength, update as updateMarker, reset as resetMarker, home as homeMarker } from "./marker.js";
 import * as enemy from "./enemy.js";
 import * as game from "./game.js";
 import { render } from "./render.js";
@@ -39,6 +39,7 @@ let scorePulseT = 99;  // time since the HUD score last jumped (drives a brief p
 let danger = 0;        // 0..1, how close a blob is to your exposed trail
 let prevCutting = false; // tracks the cut-tension tone on/off
 let audioStarted = false;
+let paused = false;      // P / ESC freeze during play
 
 function zoneColor() { return THEMES[game.currentLevel().zone - 1].frontier; }
 
@@ -59,13 +60,16 @@ function loadLevel() {
 }
 
 // Lost a life but still alive: forfeit the cut, re-home marker + Blobs, keep the
-// claimed territory.
+// claimed territory. Respawn at the lowest, most-central node still bordering
+// open space, so a bottom block-out doesn't strand you far from the action.
 function respawn() {
-  resetMarker();
+  const spot = grid.respawnNode();
+  homeMarker(spot.col, spot.row);
   enemy.reset(game.currentLevel().blobs);
   control.reset();
   deathPoint = null;
   deathBlob = null;
+  popups = [];
 }
 
 // React to entering a new state — including which soundtrack moment it cues.
@@ -92,6 +96,19 @@ window.addEventListener("keydown", (e) => {
   if (e.key === "m" || e.key === "M") { audio.toggleMute(); audio.ui(); return; }
   if (e.key === "n" || e.key === "N") { audio.toggleMusic(); return; }
 
+  // Pause toggle (during the active level / death freeze). Halts the loop, ducks
+  // the music + movement/cut tones, and resumes them on unpause.
+  if (e.key === "p" || e.key === "P" || e.key === "Escape") {
+    if (game.state === "playing" || game.state === "intro" || game.state === "dead") {
+      paused = !paused;
+      audio.ui();
+      if (paused) { audio.stopMusic(); audio.moveTone(false); audio.cutStop(); prevCutting = false; }
+      else audio.startMusic();
+    }
+    return;
+  }
+  if (paused) return; // swallow all other input while paused
+
   if (game.state === "title") { game.toMenu(); audio.ui(); return; } // splash → stage select
 
   if (game.state === "menu") {
@@ -107,7 +124,9 @@ window.addEventListener("keydown", (e) => {
     return;
   }
   if (game.state === "dead") {
-    // Frozen on the death spot until a key — then respawn and carry on.
+    // Frozen on the death spot. A brief forced hold + ignoring held-key
+    // auto-repeat stops a mashed/held key from skipping straight into respawn.
+    if (transT < TIMING.deathHold || e.repeat) return;
     respawn();
     game.beginPlay();
     return;
@@ -124,6 +143,12 @@ let prevState = null;
 function loop(now) {
   const dt = Math.min((now - lastTime) / 1000, 0.05); // clamp big gaps (tab switches)
   lastTime = now;
+
+  if (paused) { // frozen: draw the overlay over the held frame, advance nothing
+    render(ctx, { transT, menuSel, popups, reward, deathPoint, deathBlob, scorePulseT, danger, beat: 0, paused: true });
+    requestAnimationFrame(loop);
+    return;
+  }
 
   if (game.state === "playing") {
     const prevCount = enemy.blobs.length;
@@ -142,14 +167,20 @@ function loop(now) {
       if (res.labels.length > 0 || res.total >= REWARD_MIN) reward = { ...res, t: 0 };
       scorePulseT = 0;
       audio.claim();
+      audio.claimWhoosh(); // the "schooooofff" as the line closes
       if (res.labels.length) audio.bonus(res.labels.length + 1, TIMING.rewardStep); // doof doof doof
       fx.burst(marker.x, marker.y, zoneColor(), 12 + Math.round(gained), 150);
       fx.addShake(Math.min(12, 2 + gained * 0.25));
     }
     if (kills > 0) {
       audio.kill();
-      fx.ring(marker.x, marker.y, "#ff6a3c", 18, 250);
-      fx.addShake(9);
+      // Each trapped blob explodes where it was caught, in its own colour.
+      for (const k of enemy.lastKilled) {
+        fx.burst(k.x, k.y, k.color, 26, 320);
+        fx.ring(k.x, k.y, k.color, 20, 300, 0.7);
+        fx.ring(k.x, k.y, "#ffffff", 14, 200, 0.45);
+      }
+      fx.addShake(11);
     }
     prevPercent = grid.percent;
 
@@ -162,6 +193,7 @@ function loop(now) {
       fx.ring(hit.x, hit.y, "#ff4d4d", 24, 320, 0.8);
       fx.burst(marker.x, marker.y, "#ffffff", 16, 220);
       fx.addShake(16);
+      popups = []; // drop any lingering "+N%"/NEAR MISS so they don't show over CAUGHT!
       game.loseLife(); // → "dead" (freeze until keypress) or "gameover"
       transT = 0;
       if (game.state === "gameover") { audio.gameOver(); if (game.newHigh) audio.highScore(); }
@@ -208,6 +240,9 @@ function loop(now) {
   if (cutting) audio.cutTension(danger);
   if (!cutting && prevCutting) audio.cutStop();
   prevCutting = cutting;
+
+  // Movement "schoo": present while in play, brighter while cutting, silent otherwise.
+  audio.moveTone(game.state === "playing", cutting ? 1 : 0);
 
   // Handle any state change caused by this frame's logic BEFORE drawing — so a
   // freshly-advanced level is loaded (grid cleared) before it's rendered, rather

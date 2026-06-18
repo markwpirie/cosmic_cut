@@ -98,11 +98,21 @@ export function update(dt) {
   }
 }
 
+// Positions/colours of the blobs removed by the most recent removeBlobs call,
+// so the caller can spawn an explosion at each (cleared every removal).
+export let lastKilled = [];
+
 // Remove blobs by index (those caught on the claimed side of a SPLIT). Indices
 // refer to the current blobs order (the same order cells() reports).
 export function removeBlobs(indices) {
   const kill = new Set(indices);
-  for (let i = blobs.length - 1; i >= 0; i--) if (kill.has(i)) blobs.splice(i, 1);
+  lastKilled = [];
+  for (let i = blobs.length - 1; i >= 0; i--) {
+    if (!kill.has(i)) continue;
+    const b = blobs[i];
+    lastKilled.push({ x: b.x, y: b.y, radius: b.radius, color: b.color });
+    blobs.splice(i, 1);
+  }
 }
 
 // The grid cell each blob sits in — the regions the claim must keep open (you

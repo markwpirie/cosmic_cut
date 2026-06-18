@@ -23,17 +23,22 @@ export let rideType = "auto"; // "auto" (frontier/wall) | "seam"
 export let trail = [];       // nodes of the in-progress cut
 export let lastCutLength = 0; // node count of the just-finished cut (for LONG scoring)
 
-// Reset to the start position (level start / restart).
-export function reset() {
-  marker.col = MARKER.startCol;
-  marker.row = MARKER.startRow;
-  marker.x = nodeX(marker.col);
-  marker.y = nodeY(marker.row);
+// Place the marker at a lattice node and clear its motion/cut state.
+export function home(col, row) {
+  marker.col = col;
+  marker.row = row;
+  marker.x = nodeX(col);
+  marker.y = nodeY(row);
   dir = null;
   prevDir = null;
   mode = "riding";
   rideType = "auto";
   trail = [];
+}
+
+// Reset to the start position (level start / restart): bottom-centre.
+export function reset() {
+  home(MARKER.startCol, MARKER.startRow);
 }
 
 const ALL_DIRS = [

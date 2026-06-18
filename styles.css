@@ -34,29 +34,12 @@ main {
   padding: 1rem;
 }
 
-.title {
-  font-size: clamp(2rem, 6vw, 3.5rem);
-  letter-spacing: 0.3em;
-  font-weight: 800;
-  color: var(--neon-cyan);
-  text-shadow:
-    0 0 8px var(--neon-cyan),
-    0 0 24px var(--neon-cyan);
-}
-
 canvas {
   /* Keep the arena crisp; scale down responsively without distorting. */
   max-width: 100%;
+  max-height: 100vh;
   height: auto;
   background: #000;
   border-radius: 6px;
   box-shadow: 0 0 30px rgba(25, 230, 255, 0.25);
-}
-
-.tagline {
-  font-size: 0.85rem;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: var(--neon-magenta);
-  opacity: 0.8;
 }

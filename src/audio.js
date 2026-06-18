@@ -167,9 +167,11 @@ export function claim() {
   voice(1046, { type: "sine", dur: 0.16, vol: 0.09, when: 0.02, rev: 0.35 });
   noise(0.1, 0.08, 0, 3000, 0.2);
 }
-export function kill() {
+export function kill() { // blob explosion: crack + sub-boom + debris tail
   voice(170, { type: "sawtooth", dur: 0.26, vol: 0.2, slideTo: 48, lp: 1500, rev: 0.25 });
-  noise(0.16, 0.16, 0, 1000, 0.2);
+  voice(90, { type: "sine", dur: 0.42, vol: 0.3, slideTo: 28, rev: 0.4 });
+  noise(0.16, 0.2, 0, 1300, 0.2);
+  noise(0.5, 0.12, 0.02, 600, 0.55);
 }
 export function death() {
   [0, -3, -7].forEach((s, i) => voice(330 * 2 ** (s / 12), { type: "sawtooth", dur: 0.6, vol: 0.18, slideTo: 40, detune: i * 8, lp: 1400, rev: 0.5, when: i * 0.04 }));
@@ -232,6 +234,52 @@ export function cutStop() {
   g.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.04);
   setTimeout(() => { try { o.stop(); lfo.stop(); } catch (e) { /* already stopped */ } }, 220);
   cut = null;
+}
+
+// --- movement whoosh ("schoo") + line-complete release ("schooooofff") -------
+// A soft looping band-passed noise that's present while the marker is moving and
+// brightens while cutting; volume eased toward 0 when idle/paused.
+let move = null;
+export function moveTone(on, bright = 0) {
+  if (!ensure()) return;
+  if (!move) {
+    const len = Math.floor(ctx.sampleRate * 1.2);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+    const bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 600; bp.Q.value = 0.8;
+    const g = ctx.createGain(); g.gain.value = 0.0001;
+    src.connect(bp).connect(g).connect(sfxBus);
+    if (reverb) { const s = ctx.createGain(); s.gain.value = 0.22; g.connect(s); s.connect(reverb); }
+    src.start();
+    move = { src, bp, g };
+  }
+  const t = ctx.currentTime;
+  move.g.gain.setTargetAtTime(on ? 0.02 + bright * 0.03 : 0.0001, t, 0.08);
+  move.bp.frequency.setTargetAtTime(420 + bright * 1100, t, 0.12);
+}
+
+// A filtered-noise sweep that falls away — the release when a cut closes and the
+// territory claims (the "schooooofff" that the movement schoo resolves into).
+export function claimWhoosh() {
+  if (!ensure()) return;
+  const t = ctx.currentTime;
+  const len = Math.floor(ctx.sampleRate * 0.7);
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  const lp = ctx.createBiquadFilter(); lp.type = "lowpass";
+  lp.frequency.setValueAtTime(5000, t);
+  lp.frequency.exponentialRampToValueAtTime(350, t + 0.6);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.22, t + 0.04);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.66);
+  src.connect(lp).connect(g).connect(sfxBus);
+  if (reverb) { const s = ctx.createGain(); s.gain.value = 0.4; g.connect(s); s.connect(reverb); }
+  src.start(t); src.stop(t + 0.72);
 }
 
 // --- generative synthwave: Am – F – C – G ----------------------------------

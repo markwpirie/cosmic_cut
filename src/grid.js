@@ -43,6 +43,29 @@ export function nodeIsSafe(col, row) {
   );
 }
 
+// Best respawn point after a death: the lowest (largest row), most-central
+// lattice node that sits on safe ground AND borders open space. So after a big
+// block-out along the bottom you reappear right at the live frontier instead of
+// stranded behind claimed turf having to ride all the way around the board.
+export function respawnNode() {
+  const mid = COLS / 2;
+  let best = null;
+  for (let row = ROWS; row >= 0; row--) {
+    for (let col = 0; col <= COLS; col++) {
+      if (!nodeIsSafe(col, row)) continue;
+      const bordersOpen =
+        (row - 1 >= 0 && col - 1 >= 0 && grid[row - 1][col - 1] === EMPTY) ||
+        (row - 1 >= 0 && col < COLS && grid[row - 1][col] === EMPTY) ||
+        (row < ROWS && col - 1 >= 0 && grid[row][col - 1] === EMPTY) ||
+        (row < ROWS && col < COLS && grid[row][col] === EMPTY);
+      if (!bordersOpen) continue;
+      const d = Math.abs(col - mid);
+      if (!best || row > best.row || (row === best.row && d < best.d)) best = { col, row, d };
+    }
+  }
+  return best ? { col: best.col, row: best.row } : { col: Math.round(mid), row: ROWS };
+}
+
 // Classify the edge leaving (col,row) in (dx,dy) by its two flanking cells:
 //   "INVALID"  — leaves the arena
 //   "OPEN"     — empty on BOTH sides (open space; pushing here starts a cut)
