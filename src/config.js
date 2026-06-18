@@ -107,13 +107,14 @@ export const TIMING = {
 export const AUDIO = {
   sfxLevel: 1.15,   // SFX submix gain (sits above the music)
   moveLevel: 0.02,  // base volume of the movement "schoo"
-  beat: {           // beat-reactive throb on the frontier line
-    bassBins: 6,    // # of lowest FFT bins summed for the sub-bass pulse
-    liftPow: 0.6,   // shape: <1 lifts quiet bass so the throb reads
-    liftGain: 1.6,  // normalising gain after the lift (clamped to 1)
-    release: 0.18,  // pulse ease-down per frame (attack is instant)
-    glowBoost: 40,  // frontier shadowBlur added at full beat
-    widthBoost: 3,  // frontier lineWidth (px) added at full beat
+  beat: {           // beat-reactive throb on the frontier line (adaptive detector)
+    bassBins: 6,      // # of lowest FFT bins summed for the sub-bass pulse
+    smoothing: 0.3,   // analyser FFT smoothing (lower = punchier transients)
+    baselineEase: 0.04, // how fast the steady-bass baseline tracks; the throb is the rise above it
+    peakDecay: 0.992,   // adaptive normalisation: decay of the tracked peak deviation
+    release: 0.16,    // pulse ease-down per frame (attack is instant)
+    glowBoost: 40,    // frontier shadowBlur added at full beat
+    widthBoost: 3,    // frontier lineWidth (px) added at full beat
   },
   tension: {        // music tension curve — DISABLED for now (speed-up felt off).
     progressWeight: 0, // re-enable later by raising these + rateSpan

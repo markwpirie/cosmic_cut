@@ -547,16 +547,16 @@ export function render(ctx, view = {}) {
   const { transT = 0, menuSel = 1, popups = [], reward = null, deathPoint = null, deathBlob = null, scorePulseT = 99, danger = 0, beat = 0, paused = false } = view;
   drawBackground(ctx, beat);
 
-  if (AUDIO.debugBeat) { // TEMP: live beat detector readout (top-right)
+  if (AUDIO.debugBeat) { // TEMP: live beat detector readout (bottom-left, clear of the HUD)
     const d = audio.beatInfo();
     ctx.save();
     ctx.fillStyle = "#39ff14";
     ctx.font = "600 13px monospace";
-    ctx.textAlign = "right";
-    ctx.textBaseline = "top";
-    ctx.fillText(`an${d.an} m${d.muted} bass ${d.bass} env ${d.env} → beat ${beat.toFixed(2)}`, WIDTH - 10, 8);
-    ctx.restore();
     ctx.textAlign = "left";
+    ctx.textBaseline = "bottom";
+    ctx.fillText(`an${d.an} m${d.muted} bass ${d.bass} env ${d.env} → beat ${beat.toFixed(2)}`, 10, HEIGHT - 8);
+    ctx.restore();
+    ctx.textBaseline = "top";
   }
 
   if (game.state === "title") { drawTitle(ctx); return; }
