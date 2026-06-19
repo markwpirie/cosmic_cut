@@ -42,8 +42,15 @@ bonus, a **starfield**, and a persistent **high score**.
 Earlier passes (still in) added the **MP3 soundtrack + AudioDirector**, a **beat-reactive
 throb**, **pause**, a **title screen**, and a **bigger play field** (800×680). All feel
 knobs are centralised in [`config.js`](src/config.js) (`AUDIO`, `POWERUPS`, `QIX`,
-`BLOB_POLY`, `SPARX`). **Next: Phase 7** — touch controls. See [TODO.md](TODO.md) for the
-running list and §14/§16 of [GAME_DESIGN.md](GAME_DESIGN.md).
+`BLOB_POLY`, `SPARX`). See [TODO.md](TODO.md) for the running list and §14/§16 of
+[GAME_DESIGN.md](GAME_DESIGN.md).
+
+**Now in progress — Phase 9 (graphics):** the rendering layer is being ported to
+**Pixi.js v8** on the `phase9-pixi` branch. Pixi loads as a CDN ES module via an
+importmap — **no build step** — and it's **opt-in via `?pixi`** (e.g.
+`http://localhost:8000/?pixi`) so the canvas version stays the default while it
+matures. All game logic is shared and untouched. See [PHASE9.md](PHASE9.md). Phase 7
+(touch controls) follows once Phase 9 lands.
 
 ## How to play
 
@@ -84,8 +91,9 @@ job, so a given fix lands in one place:
 | [`audio.js`](src/audio.js) | Low-level Web-Audio engine: SFX, synth, MP3 track registry, beat analyser | sound design |
 | [`audio-director.js`](src/audio-director.js) | Music policy: scene cues, interrupt/resume jingles, sonar tension, stingers | when/how music reacts to play |
 | [`fx.js`](src/fx.js) | Particle bursts + screen shake (pure maths) | juice / feedback |
-| [`render.js`](src/render.js) | All drawing (starfield, menu, HUD, read-out, overlays) | anything visual |
-| [`main.js`](src/main.js) | Wiring + the game loop / state routing / event→audio+fx | rarely |
+| [`render.js`](src/render.js) | All drawing — canvas (starfield, menu, HUD, read-out, overlays) | anything visual |
+| [`render-pixi.js`](src/render-pixi.js) | Phase 9 Pixi.js renderer — same `render(view)` contract, opt-in via `?pixi` | the graphics upgrade |
+| [`main.js`](src/main.js) | Wiring + the game loop / state routing / event→audio+fx / renderer switch | rarely |
 
 The pure game logic (`grid`, `marker`, `enemy`, `game`, `levels`, `fx`) is
 browser-API-free, so it stays separate from presentation (design principle §1.2)

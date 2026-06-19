@@ -23,6 +23,28 @@ as-built decisions in §14/§16. Tick items off as they land.
 - [x] **Starscape upgrade** — baked offscreen nebula + galaxies, twinkling parallax stars.
 - [x] **Solar Wind fixed** — now a sustained gust pinning enemies to one wall (was a
       one-frame nudge), with wind streaks + a HUD pill; louder arpeggio pickup sound.
+- [x] **Feel fixes (round 2):**
+      - **Slow draw is now a commitment** — armed only by holding SPACE as you leave
+        the boundary or within `MARKER.slowArmWindow` (1s); after that SPACE is inert,
+        and releasing mid-cut cancels it (must hold the whole line).
+      - **Tighter blob hitbox** — collision uses `enemy.hitRadius` (`BLOB_POLY.hitScale`),
+        not the full bounding radius, so blobs only kill near their actual body.
+      - **Qix stays inside the arena** — sheaf bounce margin = current span + endpoints
+        clamped to the field in `liveSeg` (used by both render and collision).
+      - **Dark glass actually reads now** — deeper/opaque `claimedFillSlow`; the bright
+        zone sheen is clipped to normal cells so slow glass stays dark.
+
+## Phase 9 — Pixi.js (in progress, `phase9-pixi` branch — see PHASE9.md)
+- [x] **Pixi v8 via CDN importmap, no build step**; opt-in with `?pixi` (canvas stays
+      the default so the branch is always playable).
+- [x] **Full renderer ported** (`render-pixi.js`): nebula/galaxy bg + stars, glass
+      field, perimeter/trail, enemies (sheaf + poly + sparx), power-ups, rocket marker,
+      particles, HUD + all overlays. Renderer switch + async init in `main.js`.
+- [x] **Glisten confined to claimed cells** (was leaking a grey band over the whole field).
+- [ ] **Real glow** via `pixi-filters` (GlowFilter / bloom) instead of multi-pass strokes.
+- [ ] **Cell-masked specular gradient** for richer glass (current glint is per-cell bands).
+- [ ] Sprite-based stars/particles (ParticleContainer); glass-block depth; boss reveal.
+- [ ] Verify in-browser (written blind — watch the DevTools console for v8 API mismatches).
 
 ## Next up
 - [ ] **Special Blobs** (the other half of §8) — extra-life Blob + slow-down Blob.
@@ -57,7 +79,8 @@ as-built decisions in §14/§16. Tick items off as they land.
 ## Roadmap (later phases — see §11)
 - [ ] **Phase 7** — touch controls for mobile (input abstraction). **Next major phase.**
 - [ ] **Phase 8** — PWA, installable on iPhone home screen.
-- [ ] **Phase 9** — Pixi.js, real sprites, glass blocks, richer neon/particles.
+- [x] **Phase 9** — Pixi.js graphics layer **started** (see the in-progress section
+      above + PHASE9.md). Real sprites / glass blocks / richer particles still to come.
 - [ ] **Phase 10** — boss / picture-reveal levels (X-5), **SUPER mode** (clear 5-5 → 2×
       enemies), scoring polish, final feel.
 

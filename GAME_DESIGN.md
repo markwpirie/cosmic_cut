@@ -42,7 +42,7 @@ These keep the project achievable without killing the ambition:
 
 Note the deliberate tension between two scoring philosophies: **tower play** (patient setup, big area) vs **LONG cuts** (§4 — long risky strokes through open space). Both are rewarded by different mechanics so the game supports two distinct high-skill styles.
 
-*(**Built:** slow-cut-by-button-press is now in — **hold SPACE while cutting** to crawl at `MARKER.slowCutMult` speed. The enclosed claim becomes **darker glass** and scores a **SLOW DRAW ×2** bonus. More exposed, double the reward — the tower-builder's tool.)*
+*(**Built:** slow-cut-by-button-press is now in — **hold SPACE while cutting** to crawl at `MARKER.slowCutMult` speed. It's a deliberate commitment: you arm it by holding SPACE as you leave the boundary or within `MARKER.slowArmWindow` (1s) of the cut starting; after that SPACE is inert, and releasing mid-cut cancels it (must hold the whole line). The enclosed claim becomes **darker glass** and scores a **SLOW DRAW ×2** bonus. More exposed, double the reward — the tower-builder's tool.)*
 
 ---
 
@@ -204,9 +204,9 @@ Each phase is a working, runnable thing. One concept per phase.
 | **4** | Zones + level table + win condition + progression. | Data-driven design | ✅ Done (levels.js table; start screen + zone unlocks; level-complete wipe; blue→red Blob spectrum — see §14) |
 | **5** | Cut mechanics: BLOCK OUT, MEGA-CUT, SPLIT, LONG, MULTI STACK + scoring. | Geometry checks, reward logic | ✅ Done (score + multipliers in `config.POINTS`; perimeter-safe collision — see §14) |
 | **6** | First power-up (Freeze), then the rest, ZOOM last. | Timed effects/state | ✅ Done (all five in `powerups.js`; enemy roster overhaul — Qix line-sheaf, polygon Blobs, Hunter, Sparx/Fast Sparx — landed alongside; rocket-ship player. Special Blobs + 75% enemy floor still to do — see §6/§8) |
-| **7** | Touch controls for mobile. | Input abstraction (key step for iPhone) | ◻ Next |
+| **7** | Touch controls for mobile. | Input abstraction (key step for iPhone) | ◻ After Phase 9 |
 | **8** | Make it a PWA — installable on iPhone home screen. | Deployment/packaging |
-| **9** | Swap in Pixi.js, real sprites, glass blocks, neon, particles, juice. | Graphics layer, polish |
+| **9** | Swap in Pixi.js, real sprites, glass blocks, neon, particles, juice. | Graphics layer, polish | 🚧 In progress (`phase9-pixi`; renderer ported, opt-in `?pixi` — see PHASE9.md) |
 | **10** | Boss/picture-reveal levels, SUPER mode, audio, scoring polish, final feel. | Special modes & reward |
 
 By Phase 3 you have something genuinely playable. Everything after is making it *good*.
@@ -250,7 +250,8 @@ Section 2's claim/fill algorithm — and the SPLIT detection in Phase 5 — are 
 - LONG/SUPER LONG/MEGA LONG by line length vs `l` (play-field height); stacks with all ✓
 - MULTI STACK: all bonus types on one cut stack into a combo ✓
 - All multipliers stack (incl. slow) ✓
-- Standard speed FAST, **slow on button press (SPACE) — built**: crawl while held mid-cut, darker glass, ×2 area (`MARKER.slowCutMult`, `POINTS.slowCutMult`) ✓
+- Standard speed FAST, **slow on button press (SPACE) — built**: crawl while held mid-cut, darker glass, ×2 area (`MARKER.slowCutMult`, `POINTS.slowCutMult`). It's a commitment — armed only at boundary-leave or within `MARKER.slowArmWindow` (1s), then must be held the whole line (release cancels; no mid-cut re-arm) ✓
+- **Phase 9 graphics started (branch `phase9-pixi`):** the presentation layer is being ported to **Pixi.js v8** (loaded as a CDN ES module via an importmap — *no build step*, keeping the serve-the-folder model and avoiding a Node/npm dependency). It's **opt-in via `?pixi`** while it matures; the canvas renderer (`render.js`) stays the default so the branch is always playable. `render-pixi.js` mirrors `render.js`'s `render(view)` contract and reuses every logic module untouched (design principle §1.2). Glow is currently a multi-pass-stroke fake; real glow filters, masked glass gloss, sprite particles and the boss picture-reveal are the roadmap (PHASE9.md). Phase 9 is being done **before** Phase 7 (touch) per the build order ✓
 - ZOOM power-up (rocket to edge, destroy enemies, subject to enemy floor) ✓
 - Claimed = shiny glass colour blocks (slow = darker); boss levels (X-5) reveal hidden picture ✓
 - Levels: zones X-1 … X-5, campaign ends 5-5 (hard boss) ✓

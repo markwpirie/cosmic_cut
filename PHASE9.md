@@ -56,8 +56,12 @@ or errors, open DevTools (F12) → Console; Pixi API mistakes show up there.
 ## Roadmap / next (polish that earns Pixi its keep)
 - [ ] **Real glow** via `pixi-filters` (`GlowFilter`/`AdvancedBloomFilter`) or an
       additive-blend glow layer, replacing the multi-pass stroke fake.
-- [ ] **Cell-accurate glass gloss** — mask a moving specular gradient to the claimed
-      cells (Pixi mask + `FillGradient`), matching/*beating* the canvas gloss.
+- [x] **Glisten confined to claimed cells** — the moving glint is now computed
+      per filled cell (two diagonal sweeps), so it no longer leaks a grey band over
+      the open field.
+- [ ] **Richer cell-accurate gloss** — replace the per-cell bands with a masked
+      moving specular gradient (Pixi mask + `FillGradient`) to match/*beat* the
+      canvas gloss.
 - [ ] **Sprite-based stars/particles** (ParticleContainer) for cheaper, denser FX.
 - [ ] **Glass blocks with depth** — bevel/refraction look for claimed territory.
 - [ ] **Boss picture-reveal** (X-5): claimed cells reveal a hidden image (Pixi mask

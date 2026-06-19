@@ -190,22 +190,32 @@ function drawClaimed(wipeR = -1) {
   const th = theme();
   const fillNormal = th.claimedFill;
   const fillSlow = th.claimedFillSlow || COLORS.claimedFillSlow;
+
+  // Two moving diagonal "glisten" bands, computed per filled cell so the shimmer
+  // only ever appears on claimed glass (and naturally follows its shape) — the
+  // canvas renderer clips a gradient to the same effect.
+  const t = now() / 1000;
+  const span = field.w + field.h;                 // diagonal extent
+  const bandHalf = 90;                            // band half-width, px
+  const b1 = ((t * 0.16) % 1) * (span + bandHalf * 2) - bandHalf;          // L→R
+  const b2 = ((t * 0.09 + 0.5) % 1) * (span + bandHalf * 2) - bandHalf;    // slower
+  const glint = (u) => {
+    let a = 0;
+    const d1 = Math.abs(u - b1); if (d1 < bandHalf) a += 0.13 * (1 - d1 / bandHalf);
+    const d2 = Math.abs(u - b2); if (d2 < bandHalf) a += 0.07 * (1 - d2 / bandHalf);
+    return a;
+  };
+
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       if (grid[r][c] !== FILLED) continue;
       const px = field.x + c * CELL, py = field.y + r * CELL;
       if (wipeR >= 0 && Math.hypot(px + CELL / 2 - CX, py + CELL / 2 - CY) <= wipeR) continue;
       g.rect(px, py, CELL, CELL).fill(slowFill[r][c] ? fillSlow : fillNormal);
+      const a = glint((px - field.x) + (py - field.y)); // diagonal coordinate
+      if (a > 0.003) g.rect(px, py, CELL, CELL).fill({ color: "#ffffff", alpha: a });
     }
   }
-  // A single moving glint band over the whole field gives a glassy shimmer.
-  // (Cell-accurate masking is a polish item — see PHASE9.md.)
-  const t = now() / 1000;
-  const shimmer = 0.5 + 0.5 * Math.sin(t * 1.6);
-  const span = field.w;
-  const sx = field.x + ((t * 0.16) % 1) * 2 * span - span;
-  g.poly([sx, field.y, sx + span * 0.18, field.y, sx + span * 0.18 + field.h * 0.3, field.y + field.h, sx + field.h * 0.3, field.y + field.h])
-    .fill({ color: "#ffffff", alpha: 0.05 + 0.04 * shimmer });
 }
 
 function drawSeams() {

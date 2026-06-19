@@ -14,9 +14,15 @@ On Windows use `python` not `python3`.
 - **Phases 0–5 + 2 feel passes: done and live.**
 - **Phase 6 (power-ups): done** — Freeze, Solar Wind, Boost, Shield, ZOOM all implemented in `src/powerups.js`. **Solar Wind** is a *sustained* timed gust (pins all enemies to one wall for `SOLARWIND.duration`), applied each frame in `powerups.update()` before `enemy.update()`.
 - **Slow-cut + visual/feel pass: done** — **hold SPACE while cutting** for a SLOW DRAW (slower via `MARKER.slowCutMult`; cut tagged in `grid.slowFill`; darker glass `THEMES.claimedFillSlow`; **×2** area via `POINTS.slowCutMult` + "SLOW DRAW" label in `game.scoreCut`). Claimed areas render as **glossy shimmering glass** and the background is a baked **nebula/galaxy starscape** with twinkling parallax stars (both in `render.js`). Pickup sound is a louder rising arpeggio (`audio.powerupPickup`).
-- **Enemy overhaul: done** — two enemy shapes in `enemy.js`: `"sheaf"` (the star Qix — classic Kix line-sheaf, sticks surge up to ~50% screen then settle, collides on the live line) and `"poly"` (polygon Blobs + Hunter Blobs, bounding-radius collision). Per-level mix via `qix`/`blobs`/`hunters` in `levels.js` (positional array auto-splits: first = Qix, rest = poly Blobs). Sparx + Fast Sparx in `sparx.js` (BFS chase, trail-latch, perimeter-kill). Player is a rocket ship pointing along travel dir.
-- **Phase 7: next** — touch controls for mobile.
+- **Enemy overhaul: done** — two enemy shapes in `enemy.js`: `"sheaf"` (the star Qix — classic Kix line-sheaf, sticks surge up to ~50% screen then settle, collides on the live line; bounce margin = current span + endpoints clamped to the field in `liveSeg`, so it never leaves the arena) and `"poly"` (polygon Blobs + Hunter Blobs). Poly collision uses `hitRadius` (`BLOB_POLY.hitScale`, tighter than the visual bounding radius). Per-level mix via `qix`/`blobs`/`hunters` in `levels.js` (positional array auto-splits: first = Qix, rest = poly Blobs). Sparx + Fast Sparx in `sparx.js` (BFS chase, trail-latch, perimeter-kill). Player is a rocket ship pointing along travel dir.
+- **Phase 9 (Pixi.js): in progress on branch `phase9-pixi`** — see `PHASE9.md`. Pixi v8 via CDN importmap (no build step), **opt-in with `?pixi`** (canvas stays default). Full renderer ported in `src/render-pixi.js` (mirrors `render.js`'s `render(view)`); renderer switch + async init in `main.js`. Written without a browser to test against — verify in-browser and watch the console for v8 API mismatches.
+- **Phase 7: next** (after Phase 9 graphics) — touch controls for mobile.
 - Full roadmap in `GAME_DESIGN.md §11`. Locked decisions in `§14`.
+
+## Branches
+- `main` — the canvas game (current, deploys live on push).
+- `phase9-pixi` — Pixi.js graphics layer (active work). Reuses all logic untouched;
+  only the presentation layer differs. Test with `http://localhost:8000/?pixi`.
 
 ## File map
 
@@ -34,14 +40,15 @@ On Windows use `python` not `python3`.
 | `audio.js` | Low-level Web-Audio: SFX, synth, MP3 registry, beat analyser |
 | `audio-director.js` | Music policy: scene cues, interrupt/resume jingles, sonar (currently off) |
 | `fx.js` | Particles + screen shake |
-| `render.js` | All drawing: field, blobs, power-up icons, HUD, overlays |
-| `main.js` | Game loop + state routing + event wiring |
+| `render.js` | All drawing (canvas): field, blobs, power-up icons, HUD, overlays |
+| `render-pixi.js` | Phase 9 Pixi.js renderer — same `render(view)` contract, opt-in via `?pixi` |
+| `main.js` | Game loop + state routing + event wiring + renderer switch (`USE_PIXI`) |
 
 ## Key design rules (§14)
 - Player is **only vulnerable while cutting** — riding the perimeter is always safe.
 - Claim keeps the blob's region open; blobs trapped on the smaller side die (SPLIT).
 - Power-ups spawn in open cells; collected by claiming the region containing them.
-- **Slow cut:** holding SPACE while cutting crawls the marker, tags the cut slow (`grid.slowFill`), renders darker glass, and scores ×2 area. Slow state flows control.js → marker.js (`slowActive`/`lastCutSlow`) → grid/game/render.
+- **Slow cut:** holding SPACE while cutting crawls the marker, tags the cut slow (`grid.slowFill`), renders darker glass, and scores ×2 area. It's a *commitment* — armed only by holding SPACE as you leave the boundary or within `MARKER.slowArmWindow` (1s); after that SPACE is inert, and releasing mid-cut cancels it (must hold the whole line). Slow state flows control.js → marker.js (`slowActive`/`lastCutSlow`) → grid/game/render.
 - ZOOM exception: floats freely, collected by marker touch, then player aims with arrow keys.
 - Sonar ping is currently **off** (`AUDIO.sonar.enabled: false` in `config.js`) — may be redesigned.
 
