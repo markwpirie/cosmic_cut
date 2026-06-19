@@ -18,8 +18,23 @@ import { TIMING, POINTS, THEMES, POWERUPS, field } from "./config.js";
 import * as powerups from "./powerups.js";
 import * as sparx from "./sparx.js";
 
+// Renderer selection (Phase 9). Default is the canvas renderer; add ?pixi to the
+// URL to use the Pixi.js renderer (loaded on demand so canvas mode never fetches
+// Pixi). Both honour the same render(view) contract via the draw() helper below.
+const USE_PIXI = typeof location !== "undefined" && new URLSearchParams(location.search).has("pixi");
 const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
+let ctx = null;
+let pixiRenderer = null;
+if (USE_PIXI) {
+  pixiRenderer = await import("./render-pixi.js");
+  await pixiRenderer.init(canvas);
+} else {
+  ctx = canvas.getContext("2d");
+}
+function draw(view) {
+  if (pixiRenderer) pixiRenderer.render(view);
+  else render(ctx, view);
+}
 
 // Total level-complete beat: read out the score, hold the banner, ripple, tail.
 const COMPLETE_TIME = TIMING.completeScore + TIMING.completeHold + TIMING.completeWipe + TIMING.completeTail;
@@ -174,7 +189,7 @@ function loop(now) {
   lastTime = now;
 
   if (paused) { // frozen: draw the overlay over the held frame, advance nothing
-    render(ctx, { transT, menuSel, popups, reward, deathPoint, deathBlob, scorePulseT, danger, beat: 0, paused: true });
+    draw({ transT, menuSel, popups, reward, deathPoint, deathBlob, scorePulseT, danger, beat: 0, paused: true });
     requestAnimationFrame(loop);
     return;
   }
@@ -330,7 +345,7 @@ function loop(now) {
   fx.update(dt);
 
   const beat = audio.musicPulse(); // 0..1 bass-driven pulse for a beat-synced screen glow
-  render(ctx, { transT, menuSel, popups, reward, deathPoint, deathBlob, scorePulseT, danger, beat });
+  draw({ transT, menuSel, popups, reward, deathPoint, deathBlob, scorePulseT, danger, beat });
   requestAnimationFrame(loop);
 }
 

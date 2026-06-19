@@ -5,6 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>COSMIC CUT</title>
   <link rel="stylesheet" href="styles.css" />
+  <!-- Phase 9: Pixi.js v8 as an ES module straight from the CDN — keeps the
+       "no build step" promise. Only loaded when the game runs in ?pixi mode
+       (main.js dynamically imports the Pixi renderer). -->
+  <script type="importmap">
+  {
+    "imports": {
+      "pixi.js": "https://cdn.jsdelivr.net/npm/pixi.js@8/dist/pixi.min.mjs"
+    }
+  }
+  </script>
 </head>
 <body>
   <main>
