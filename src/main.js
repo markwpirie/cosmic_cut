@@ -7,14 +7,16 @@
 
 import * as control from "./control.js"; // also registers keyboard listeners
 import * as grid from "./grid.js";
-import { marker, mode, trail, lastCutLength, update as updateMarker, reset as resetMarker, home as homeMarker } from "./marker.js";
+import { marker, mode, trail, lastCutLength, lastCutSlow, update as updateMarker, reset as resetMarker, home as homeMarker } from "./marker.js";
 import * as enemy from "./enemy.js";
 import * as game from "./game.js";
 import { render } from "./render.js";
 import * as audio from "./audio.js";
 import * as director from "./audio-director.js";
 import * as fx from "./fx.js";
-import { TIMING, POINTS, THEMES, field } from "./config.js";
+import { TIMING, POINTS, THEMES, POWERUPS, field } from "./config.js";
+import * as powerups from "./powerups.js";
+import * as sparx from "./sparx.js";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -49,9 +51,12 @@ function zoneColor() { return THEMES[game.currentLevel().zone - 1].frontier; }
 function loadLevel() {
   grid.reset();
   resetMarker();
-  enemy.reset(game.currentLevel().blobs);
+  const lv = game.currentLevel();
+  enemy.reset({ qix: lv.qix || [], blobs: lv.blobs || [], hunters: lv.hunters || [] });
+  sparx.reset(lv.sparx || 0, lv.fastSparx || 0);
   control.reset();
   fx.reset();
+  powerups.reset();
   prevPercent = 0;
   popups = [];
   reward = null;
@@ -66,8 +71,11 @@ function loadLevel() {
 function respawn() {
   const spot = grid.respawnNode();
   homeMarker(spot.col, spot.row);
-  enemy.reset(game.currentLevel().blobs);
+  const rlv = game.currentLevel();
+  enemy.reset({ qix: rlv.qix || [], blobs: rlv.blobs || [], hunters: rlv.hunters || [] });
+  sparx.reset(rlv.sparx || 0, rlv.fastSparx || 0);
   control.reset();
+  powerups.reset();
   deathPoint = null;
   deathBlob = null;
   popups = [];
@@ -103,6 +111,7 @@ window.addEventListener("keydown", (e) => {
   // Pause toggle (during the active level / death freeze). Halts the loop, ducks
   // the music + movement/cut tones, and resumes them on unpause.
   if (e.key === "p" || e.key === "P" || e.key === "Escape") {
+    if (powerups.isAiming()) { powerups.cancelZoom(); return; } // cancel ZOOM aim
     if (game.state === "playing" || game.state === "intro" || game.state === "dead") {
       paused = !paused;
       audio.ui();
@@ -121,6 +130,22 @@ window.addEventListener("keydown", (e) => {
     else if (e.key === "Enter" || e.key === " ") { game.startRun(menuSel); audio.ui(); }
     return;
   }
+  // ZOOM direction selection — absorbs input until the player picks a direction.
+  if (powerups.isAiming()) {
+    const zoomDirs = {
+      ArrowUp: {dx:0,dy:-1}, w: {dx:0,dy:-1}, W: {dx:0,dy:-1},
+      ArrowDown: {dx:0,dy:1}, s: {dx:0,dy:1}, S: {dx:0,dy:1},
+      ArrowLeft: {dx:-1,dy:0}, a: {dx:-1,dy:0}, A: {dx:-1,dy:0},
+      ArrowRight: {dx:1,dy:0}, d: {dx:1,dy:0}, D: {dx:1,dy:0},
+    };
+    const d = zoomDirs[e.key];
+    if (d) {
+      powerups.aimZoom(marker.col, marker.row, d.dx, d.dy);
+      // Result is consumed in the game loop next frame.
+    }
+    return; // swallow all keys (including non-directional) during aiming
+  }
+
   if (game.state === "intro") {
     // The level (and the Blobs) only start once the player picks a direction —
     // this same press is captured by control.js and steers the first move.
@@ -156,8 +181,37 @@ function loop(now) {
 
   if (game.state === "playing") {
     const prevCount = enemy.blobs.length;
-    updateMarker(dt);
-    enemy.update(dt);
+    powerups.update(dt);
+
+    // Consume a ZOOM result before moving the marker so the teleport lands cleanly,
+    // and no cut-state from the previous frame bleeds into updateMarker.
+    if (powerups.lastZoomResult) {
+      const zr = powerups.lastZoomResult;
+      powerups.lastZoomResult = null;
+      homeMarker(zr.targetCol, zr.targetRow);
+      if (zr.kills > 0) {
+        game.addScore(POWERUPS.ZOOM.killPoints * zr.kills + POWERUPS.ZOOM.distPoints * zr.distance);
+        for (const k of zr.killedBlobs) {
+          fx.burst(k.x, k.y, k.color, 22, 300);
+          fx.ring(k.x, k.y, k.color, 16, 240, 0.7);
+          fx.ring(k.x, k.y, "#ffffff", 10, 180, 0.35);
+        }
+        audio.kill();
+        director.kill();
+        fx.addShake(10);
+        scorePulseT = 0;
+      }
+      popups.push({ text: "ZOOM!", x: marker.x, y: marker.y - 20, t: 0 });
+    }
+
+    if (!powerups.isAiming()) updateMarker(dt);
+    if (powerups.checkZoomTouch(marker.x, marker.y)) {
+      homeMarker(marker.col, marker.row);
+      popups.push({ text: "AIM!", x: marker.x, y: marker.y - 24, t: 0 });
+      audio.powerupPickup();
+    }
+    enemy.update(dt, marker.x, marker.y);
+    sparx.update(dt, marker, trail);
     const gained = grid.percent - prevPercent;
     const kills = prevCount - enemy.blobs.length;
 
@@ -167,7 +221,7 @@ function loop(now) {
       popups.push({ text: `+${Math.round(gained)}%`, x: marker.x + Math.cos(a) * 34, y: marker.y + Math.sin(a) * 34, t: 0 });
     }
     if (gained >= 0.5 || kills > 0) {
-      const res = game.scoreCut(gained, lastCutLength, kills);
+      const res = game.scoreCut(gained, lastCutLength, kills, lastCutSlow);
       if (res.labels.length > 0 || res.total >= REWARD_MIN) reward = { ...res, t: 0 };
       scorePulseT = 0;
       audio.claim();
@@ -187,19 +241,32 @@ function loop(now) {
       }
       fx.addShake(11);
     }
+    // Check if a claim enclosed any pickups, and try to spawn a new one.
+    if (gained >= 0.5) {
+      const collected = powerups.checkClaim();
+      for (const type of collected) {
+        popups.push({ text: POWERUPS[type].label + "!", x: marker.x, y: marker.y - 36, t: 0 });
+        audio.powerupPickup();
+        if (type === "SOLARWIND") fx.addShake(8);
+      }
+      powerups.trySpawn(marker.col, marker.row);
+    }
+
     prevPercent = grid.percent;
 
-    const hit = enemy.collides(marker, mode, trail);
+    // Sparx kill on perimeter AND while cutting — check before blob-only test.
+    const sparxHit = sparx.collides(marker);
+    const hit = sparxHit || enemy.collides(marker, mode, trail);
     if (hit) {
       deathPoint = { x: marker.x, y: marker.y };
-      deathBlob = { x: hit.x, y: hit.y, radius: hit.radius };
+      deathBlob  = { x: hit.x, y: hit.y, radius: hit.radius || 6 };
       audio.cutStop();
       audio.death();
-      fx.ring(hit.x, hit.y, "#ff4d4d", 24, 320, 0.8);
+      fx.ring(hit.x, hit.y, sparxHit ? hit.color : "#ff4d4d", 24, 320, 0.8);
       fx.burst(marker.x, marker.y, "#ffffff", 16, 220);
       fx.addShake(16);
-      popups = []; // drop any lingering "+N%"/NEAR MISS so they don't show over CAUGHT!
-      game.loseLife(); // → "dead" (freeze until keypress) or "gameover"
+      popups = [];
+      game.loseLife();
       transT = 0;
       if (game.state === "gameover") { audio.gameOver(); if (game.newHigh) audio.highScore(); }
     } else {

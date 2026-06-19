@@ -36,7 +36,7 @@ export function addLevelMult(m) { levelMult *= m; }
 // points (also ×level mult). A SPLIT additionally grants ×2 to the level
 // multiplier for the rest of the level. labels are the bonus names, in stack
 // order, for the staggered "doof doof doof" reveal.
-export function scoreCut(gainedPct, length, kills) {
+export function scoreCut(gainedPct, length, kills, slow = false) {
   const labels = [];
   let mult = 1;
   if (gainedPct >= POINTS.megaCutPct) { mult *= POINTS.megaCutMult; labels.push("MEGA-CUT"); }
@@ -44,6 +44,7 @@ export function scoreCut(gainedPct, length, kills) {
   if (length >= POINTS.megaLongHeights * ROWS) { mult *= POINTS.megaLongMult; labels.push("MEGA LONG"); }
   else if (length >= POINTS.superLongHeights * ROWS) { mult *= POINTS.superLongMult; labels.push("SUPER LONG"); }
   else if (length >= POINTS.longHeights * ROWS) { mult *= POINTS.longMult; labels.push("LONG"); }
+  if (slow) { mult *= POINTS.slowCutMult; labels.push("SLOW DRAW"); } // the Stix double
   if (kills > 0) labels.push("SPLIT");
 
   const appliedMult = mult * levelMult;

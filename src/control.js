@@ -18,6 +18,11 @@ const KEY_VEC = {
 
 let pending = null;
 const heldKeys = []; // movement keys currently down, in press order
+let slow = false;    // SPACE held → "slow draw" (slower, doubled, darker glass)
+
+// Is the slow-cut key (SPACE) currently held?
+export function slowHeld() { return slow; }
+export function setSlow(on) { slow = on; }
 
 export function press(key) {
   if (!KEY_VEC[key]) return;
@@ -43,13 +48,18 @@ export function clearPending() { pending = null; }
 export function reset() {
   pending = null;
   heldKeys.length = 0;
+  slow = false;
 }
 
 if (typeof window !== "undefined") {
   window.addEventListener("keydown", (e) => {
+    if (e.key === " ") { e.preventDefault(); slow = true; return; } // slow-draw key
     if (!KEY_VEC[e.key]) return;
     e.preventDefault(); // stop arrows scrolling the page
     press(e.key);
   });
-  window.addEventListener("keyup", (e) => release(e.key));
+  window.addEventListener("keyup", (e) => {
+    if (e.key === " ") { slow = false; return; }
+    release(e.key);
+  });
 }

@@ -8,42 +8,60 @@ See [GAME_DESIGN.md](GAME_DESIGN.md) for the full design.
 
 ## Status
 
-**Phase 5 + two Game-Feel passes.** The Phase 4 campaign (zone select, data-driven
-levels in [`levels.js`](src/levels.js), per-zone themes, target %, lives) and Phase 5
-scoring are done: a finished cut scores base points per % claimed × **BLOCK OUT** /
-**MEGA-CUT** / **LONG** tiers × a per-level multiplier, and a **SPLIT** adds kill
-points + ×2 for the rest of the level (**MULTI STACK!** when bonuses stack). You're
-only vulnerable while *cutting*. All point values live in [`config.js`](src/config.js).
+**Phases 0–6 + two Game-Feel passes + an enemy/visual overhaul.** The Phase 4 campaign
+(zone select, data-driven levels in [`levels.js`](src/levels.js), per-zone themes,
+target %, lives) and Phase 5 scoring are done: a finished cut scores base points per %
+claimed × **BLOCK OUT** / **MEGA-CUT** / **LONG** tiers × a per-level multiplier, and a
+**SPLIT** adds kill points + ×2 for the rest of the level (**MULTI STACK!** when bonuses
+stack). Phase 6 adds **power-ups** and a full **enemy roster** (see below). You're only
+vulnerable to Blobs/Qix while *cutting* — but **Sparx kill on the safe perimeter too**.
+All values live in [`config.js`](src/config.js).
 
 On top sits the **feel layer**: **juice** (screen shake + colour-coded particle
 bursts; blobs explode where they're caught), **danger telegraphing**, a **NEAR MISS**
 bonus, a **starfield**, and a persistent **high score**.
 
-**Audio + Feel pass 2** is the latest work:
-- **Full MP3 soundtrack** — a **title** theme, **stage-select**, **per-stage themes**,
-  and **Stage Clear** / **Game Over** jingles, with a procedural-synth fallback.
-- An **AudioDirector** ([`audio-director.js`](src/audio-director.js)) that interrupts
-  the stage track with the short jingles and **resumes it where it left off**, layers
-  a kill stinger, and fires a **sonar tension ping** while you're exposed (faster as
-  the board fills / a blob nears your line).
-- A **beat-reactive throb** on the frontier + cut lines, driven by a Web-Audio
-  analyser on the music.
-- **Pause** (**P** / **Esc**), a **title screen**, smarter **respawn**, a death-screen
-  input guard, and a **bigger play field** (800×680).
+**Phase 6 + an enemy/visual overhaul** is the latest work:
+- **Power-ups** ([`powerups.js`](src/powerups.js)) — **Freeze**, **Solar Wind**,
+  **Boost**, **Shield**, and **ZOOM**. Most spawn in open space and are grabbed by
+  *claiming* the area around them; **ZOOM** floats and is grabbed by *touch*, then you
+  aim a direction and rocket to that wall, destroying any enemy in the path.
+- **New enemy roster** — the star **Qix** is the classic Kix **line-sheaf** (a twisting
+  ribbon of sticks that occasionally surges to ~half the screen), plus **polygon Blobs**,
+  **Hunter Blobs** (drift toward you), and **Sparx** + **Fast Sparx**
+  ([`sparx.js`](src/sparx.js)) that chase along the borders, kill you on the safe
+  perimeter too, and — for Fast Sparx — latch onto your cut line to chase you mid-draw.
+- The **player is now a rocket ship** that points the way it's travelling.
+- **Slow cut on SPACE** — hold SPACE while cutting to crawl: more exposed, but the claim
+  is **darker glass** worth **double** (the tower-builder's tool).
+- **Glossy glass + cosmic backdrop** — claimed areas shimmer like wet glass; the
+  background is a nebula/galaxy starscape with twinkling parallax stars.
+- **Solar Wind** now actually blows — a sustained gust pins every enemy to one wall for a
+  few seconds, clearing the board to carve.
 
-All audio feel knobs are centralised in [`config.js`](src/config.js) `AUDIO`.
-**Next: Phase 6** — power-ups (Freeze first, ZOOM last) + special Blobs. See
-[TODO.md](TODO.md) for the running list and §14/§16 of [GAME_DESIGN.md](GAME_DESIGN.md).
+Earlier passes (still in) added the **MP3 soundtrack + AudioDirector**, a **beat-reactive
+throb**, **pause**, a **title screen**, and a **bigger play field** (800×680). All feel
+knobs are centralised in [`config.js`](src/config.js) (`AUDIO`, `POWERUPS`, `QIX`,
+`BLOB_POLY`, `SPARX`). **Next: Phase 7** — touch controls. See [TODO.md](TODO.md) for the
+running list and §14/§16 of [GAME_DESIGN.md](GAME_DESIGN.md).
 
 ## How to play
 
 Play it at <https://markwpirie.github.io/cosmic_cut/>.
 
 - **Goal:** carve out the play field. Each level has a **target %** — claim that much of the arena to clear it and move on, through zones 1-1 … 5-5.
-- **Controls:** **Arrow keys** or **WASD**. Movement is continuous "ride the rail" — press a direction and you keep going until you turn or reverse (press the opposite). Hold a direction approaching a junction to take that turn. Push **into open space** to start a **cut**.
+- **Controls:** **Arrow keys** or **WASD**. Movement is continuous "ride the rail" — press a direction and you keep going until you turn or reverse (press the opposite). Hold a direction approaching a junction to take that turn. Push **into open space** to start a **cut**. **Hold SPACE while cutting for a SLOW DRAW** — you crawl (more exposed) but the claim is darker glass worth **double**.
 - **Cutting & risk:** while riding the bright perimeter (or a claimed edge) you're **safe**. The moment you cut into open space you're exposed — a Blob touching your **marker or your trail** costs a life. Close the loop back to safe ground to **claim** the enclosed area.
 - **Scoring:** bigger, bolder cuts pay off — **BLOCK OUT** (≥30%), **MEGA-CUT** (≥50%), **LONG** tiers (long cuts), and **SPLIT** (trap a Blob on the smaller side: it dies, you score, and the level multiplier ×2). Stacked bonuses → **MULTI STACK**.
 - **Flow:** a **title** screen → **stage-select** (pick any zone you've reached) → play. The level starts when you press a direction; on a hit you freeze on the spot (brief beat) — press any key to respawn; out of lives → start screen (beat the **high score**).
+- **Enemies:** the **Qix** (big twisting line-creature) and **Blobs** bounce through open
+  space — deadly only while you're cutting. **Hunter Blobs** drift toward you. **Sparx**
+  patrol the borders and are deadly *even while you ride safely*, so keep moving; **Fast
+  Sparx** will jump onto your cut line to chase you mid-draw.
+- **Power-ups:** grab **Freeze / Solar Wind / Boost / Shield** by claiming the area they
+  sit in. **Solar Wind** blows every enemy hard against one wall for a few seconds.
+  **ZOOM** floats — touch it, pick a direction, and rocket across the board destroying
+  everything in your path.
 - **Pause:** **P** or **Esc** freezes the game (music + tones duck); press again to resume.
 - **Audio:** **M** mutes all sound, **N** toggles the music (both remembered).
 
@@ -59,7 +77,9 @@ job, so a given fix lands in one place:
 | [`control.js`](src/control.js) | Keyboard input → movement intents | changing controls (Phase 7 touch) |
 | [`grid.js`](src/grid.js) | The world: cells, what's rideable, flood-fill claim | claim logic / geometry (§13, §16) |
 | [`marker.js`](src/marker.js) | The player: movement, cutting, the update step | movement feel, cut behaviour |
-| [`enemy.js`](src/enemy.js) | The Blobs: bouncing, spawn, collision, threat/near-miss | enemy behaviour |
+| [`enemy.js`](src/enemy.js) | The Qix (line-sheaf) + Blobs/Hunters (polygon): bouncing, spawn, collision | enemy behaviour / shapes |
+| [`sparx.js`](src/sparx.js) | Sparx + Fast Sparx: BFS perimeter chase, trail-latch, perimeter-kill | tracer enemy behaviour |
+| [`powerups.js`](src/powerups.js) | Power-ups: spawn, pickups, timed effects, ZOOM aim/rocket | power-up behaviour |
 | [`game.js`](src/game.js) | State machine: lives, level/zone, score, high score, win/advance, unlocks | progression flow / screens |
 | [`audio.js`](src/audio.js) | Low-level Web-Audio engine: SFX, synth, MP3 track registry, beat analyser | sound design |
 | [`audio-director.js`](src/audio-director.js) | Music policy: scene cues, interrupt/resume jingles, sonar tension, stingers | when/how music reacts to play |

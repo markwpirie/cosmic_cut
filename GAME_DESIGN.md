@@ -1,9 +1,9 @@
-# COSMIC CUT — Game Design Document (Draft 5)
+# COSMIC CUT — Game Design Document (Draft 6)
 
 A modern, neon, space-themed take on the classic BBC Micro game *Kix* (itself a clone of the arcade game *Qix*). Carve out territory by cutting areas of the play field while dodging enemies, hit the percentage target to clear the level, and chain bold risky cuts — SPLITS, BLOCK OUTS, MEGA-CUTS and LONG cuts — for big scores.
 
-**Status:** Draft 5 — **Phases 0–5 built and live, plus a Game-Feel pass** (the game is playable end-to-end and *feels* alive). Done: ride-the-rail movement, grid + flood-fill claim with the perimeter (auto-network vs seam) model, bouncing Blobs along a blue→red spectrum, the SPLIT claim/kill, a data-driven campaign (zones 1-1…5-5, start screen + zone unlocks, per-zone themes, win condition, lives, death beat), full cut scoring (BLOCK OUT / MEGA-CUT / LONG / SPLIT / MULTI STACK with a central read-out), and the feel layer — **procedural audio** (SFX + cut-tension tone + generative synthwave), **juice** (screen shake + particles), **danger telegraphing**, **near-miss** bonus, **starfield**, and a persistent **high score**. Since then an **Audio + Feel pass 2** has landed: a full drop-in **MP3 soundtrack** (title theme, stage-select, per-stage themes, stage-clear + game-over jingles) orchestrated by a new **AudioDirector** (interrupt+resume jingles, a **sonar tension ping** while exposed, layered stingers), a **beat-reactive throb** on the frontier + cut lines (Web-Audio analyser), **pause** (P/Esc), a **title screen**, smarter **respawn** + a death-screen input guard, **blob explosions**, movement/claim whooshes, and a **bigger play field** (800×680). **Next: Phase 6** (power-ups + special Blobs). The as-built specifics live in §14 (locked decisions) and §16 (movement/perimeter); this remains the source of truth.
-**Repo:** `/Users/marksMAC/Documents/GitHub/cosmic_cut` (GitHub + local). Build continues in Claude Code.
+**Status:** Draft 6 — **Phases 0–6 built and live, plus two feel passes and an enemy/visual overhaul.** Done through Phase 5: ride-the-rail movement, grid + flood-fill claim (auto-network vs seam), the SPLIT claim/kill, a data-driven campaign (zones 1-1…5-5, start screen + zone unlocks, per-zone themes, lives, death beat), full cut scoring (BLOCK OUT / MEGA-CUT / LONG / SPLIT / MULTI STACK with a central read-out), and the feel layer (procedural + MP3 audio via the **AudioDirector**, screen shake + particles, danger telegraphing, near-miss, starfield, persistent high score, pause, title screen, bigger 800×680 field). **Phase 6 (power-ups) is built** — Freeze, Solar Wind, Boost, Shield, ZOOM (`powerups.js`). The **enemy roster + visuals have been overhauled**: the star **Qix** is now the classic Kix **line-sheaf** (sticks surge to ~50% of screen then settle; collision tests the live line), alongside **polygon Blobs**, **Hunter Blobs** (drift at the player), and **Sparx + Fast Sparx** (`sparx.js` — BFS perimeter chase, kill on the perimeter too, Fast Sparx latch onto the cut trail). The **player is now a rocket ship** pointing along its heading. A **slow-cut + visual/feel pass** then added **slow-draw on SPACE** (darker glass, ×2), **glossy shimmering glass** claimed areas, a **nebula/galaxy starscape**, and fixed **Solar Wind** into a sustained wall-pin. **Next: Phase 7** (touch controls). The as-built specifics live in §14 (locked decisions) and §16 (movement/perimeter); this remains the source of truth.
+**Repo:** `c:\Users\markw_v611rg3\Documents\GitHub\cosmic_cut` (PC; GitHub + local). Build continues in Claude Code.
 **Live:** https://markwpirie.github.io/cosmic_cut/ (GitHub Pages, deploys on push to `main`).
 **Target platform:** Web first (desktop + mobile browser), structured for later iPhone port.
 **Builder:** First game, non-coder. Scoped to be learnable step by step.
@@ -42,7 +42,7 @@ These keep the project achievable without killing the ambition:
 
 Note the deliberate tension between two scoring philosophies: **tower play** (patient setup, big area) vs **LONG cuts** (§4 — long risky strokes through open space). Both are rewarded by different mechanics so the game supports two distinct high-skill styles.
 
-*(v1 ships with a single draw speed to keep the first build simple. Slow-cut-by-button-press is added back in once the core works — flagged so we don't forget.)*
+*(**Built:** slow-cut-by-button-press is now in — **hold SPACE while cutting** to crawl at `MARKER.slowCutMult` speed. The enclosed claim becomes **darker glass** and scores a **SLOW DRAW ×2** bonus. More exposed, double the reward — the tower-builder's tool.)*
 
 ---
 
@@ -98,6 +98,8 @@ The showpiece move. Boxing an enemy and cutting so opponents end up separated ei
 | **Hunter Blob** | A Blob that drifts toward the player's marker. | 2-3 | Pressure on big cuts. |
 | **Twin Blobs** | Two Blobs at once. | 3-1 | Crowded open area. |
 
+**As built (enemy overhaul):** all five exist in code. The **Qix** renders as the classic Kix **line-sheaf** — two endpoints sweep inside a body box that normally stays compact but periodically **surges** to ~50% of the screen, drawing a twisting ribbon of straight "sticks"; collision tests the **live stick line** (not a disc), so a long stick only kills where the line is. The **Blob** and **Hunter Blob** render as **polygon** shapes (orbiting vertices + internal diagonals); the Hunter adds a soft drift toward the marker and a pulsing tendril. **Sparx** and **Fast Sparx** live in `sparx.js`: they BFS-chase along the auto-network and **kill on the safe perimeter as well as while cutting**; Fast Sparx can **latch onto the exposed cut trail** and rocket along it to catch the player mid-cut. Per-level enemy mix is data-driven in `levels.js` (`qix` / `blobs` / `hunters` / `sparx` / `fastSparx`). Enemy size + behaviour knobs are in `config.QIX`, `config.BLOB_POLY`, `config.SPARX`. **Twin Blobs** is just "≥2 of the bouncers in one level". The **75% enemy floor/respawn** (below) is **not yet wired**.
+
 **Enemy ↔ Target % relationship:** big/fast/multiple enemies = lower % target. Enforced by the level table so we never demand a high % with a screen full of fast hunters.
 
 **Enemy floor & respawn rule:** each level maintains a minimum of **75% of its starting enemy count**. If SPLIT kills or ZOOM drop the count below that floor, fresh enemies respawn at the arena edge (away from the player) to restore it. This keeps levels from becoming trivially safe after a big SPLIT, and is what makes the SPLIT a tactical reset rather than a clear-the-board win.
@@ -147,19 +149,21 @@ Spawn occasionally in unclaimed space; grab by claiming the area they sit in (en
 | Power-up | Effect | Duration |
 |----------|--------|----------|
 | **Freeze** | All enemies stop dead. | 5s |
-| **Solar Wind** | A wave sweeps enemies to one side of the arena. | Instant |
+| **Solar Wind** | A sustained gust pins every enemy hard against one wall, clearing the board to carve. | 3.5s |
 | **Boost** | Player marker moves faster. | 8s |
 | **Shield** | Invincibility — enemies pass through harmlessly. | 6s |
 | **ZOOM** | Floats around the arena. Touch it and the player rockets in a straight line to the nearest edge, **destroying any enemy in the path** and scoring big all the way. Subject to the §6 enemy floor — respawns trigger if it drops below 75%. | Instant |
 
 *(Build Freeze first — simplest to implement and test. ZOOM is the most complex (pathing + multi-kill + respawn) so it comes later in the power-up work.)*
 
+**As built (Phase 6):** all five are in `powerups.js`, tuned via `config.POWERUPS`. Freeze/Boost/Shield/**Solar Wind** are timed (each with a HUD countdown pill). **Solar Wind** is a *sustained* gust: for `SOLARWIND.duration` it forces every enemy's velocity toward one random wall each frame (it runs before `enemy.update`, so the push always wins) and draws light streaks blowing across the field — pinning the board clear so you can carve. Pickups spawn occasionally in open cells and are collected by **claiming the region** around them; collecting one plays a bright rising arpeggio that cuts through the claim sounds. **ZOOM** floats and is grabbed by **marker touch** → the game pauses and shows four direction arrows → pressing a direction **rockets the marker to that wall**, killing any enemy on the line and scoring per kill + distance. (ZOOM's interaction with the not-yet-built 75% enemy floor is still to come.)
+
 ---
 
 ## 9. Scoring
 
 - **Base:** points per 1% claimed.
-- **Slow-cut bonus:** multiplier while slow-cutting (post-v1).
+- **Slow-cut bonus:** **built** — a SLOW DRAW (SPACE held during the cut) ×2 on that cut's area (`POINTS.slowCutMult`), shown as a **SLOW DRAW** label in the read-out; stacks with everything.
 - **BLOCK OUT / MEGA-CUT:** ×2 / ×4 on that claim.
 - **SPLIT:** ×2 level multiplier (persists for the level); smaller-side enemies destroyed.
 - **SPLIT SLOW:** slow bonus stacked onto the SPLIT.
@@ -178,7 +182,8 @@ High score saved locally (browser storage) for now; online leaderboard is a much
 
 - **Style:** Super Space Invaders-ish — crisp animated sprites, high-res nebula/galaxy backgrounds, heavy neon, glow.
 - **Palette:** deep space darks with electric neon accents (cyan, magenta, lime, hot orange).
-- **Claimed territory:** shiny glass-like translucent colour blocks; slow-cut claims a darker shade; boss levels reveal a hidden image instead.
+- **Claimed territory:** shiny glass-like translucent colour blocks; slow-cut claims a darker shade; boss levels reveal a hidden image instead. **Built:** claimed mass now renders as glossy glass — a clipped specular glint sweeps across, a counter-sweep + breathing zone-tint sheen give the shimmer/ripple, and SLOW-DRAW cells use the darker `claimedFillSlow` tint.
+- **Background (built):** a deep-space backdrop — a baked offscreen layer of coloured **nebula** clouds + two **galaxies** (bright core + flattened disc), with 150 twinkling, multi-tinted **parallax stars** on top, all breathing gently with the music beat.
 - **Cut line colour:** blue → yellow → red → flashing red/white as it lengthens (the LONG-cut feedback, §4).
 - **Text:** big, bold, expanding, punchy. *"LETS GO!!"*, *"BLOCK OUT"*, *"MEGA-CUT"* (then a beat) *"…SLOW"*, *"SPLIT!"*, *"ZONE 2-1"*, *"EXTRA LIFE!"*.
 - **Juice:** screen shake, particle bursts, glow pulses, satisfying claim fills. Added in a dedicated polish phase.
@@ -198,8 +203,8 @@ Each phase is a working, runnable thing. One concept per phase.
 | **3** | Add one Blob enemy + collision = lose a life. 3 lives, game over. | Enemies, collision, game state | ✅ Done (bouncing Blob; blob-aware claim; frontier-priority corners — see §14, §16) |
 | **4** | Zones + level table + win condition + progression. | Data-driven design | ✅ Done (levels.js table; start screen + zone unlocks; level-complete wipe; blue→red Blob spectrum — see §14) |
 | **5** | Cut mechanics: BLOCK OUT, MEGA-CUT, SPLIT, LONG, MULTI STACK + scoring. | Geometry checks, reward logic | ✅ Done (score + multipliers in `config.POINTS`; perimeter-safe collision — see §14) |
-| **6** | First power-up (Freeze), then the rest, ZOOM last. | Timed effects/state | ◻ Next |
-| **7** | Touch controls for mobile. | Input abstraction (key step for iPhone) |
+| **6** | First power-up (Freeze), then the rest, ZOOM last. | Timed effects/state | ✅ Done (all five in `powerups.js`; enemy roster overhaul — Qix line-sheaf, polygon Blobs, Hunter, Sparx/Fast Sparx — landed alongside; rocket-ship player. Special Blobs + 75% enemy floor still to do — see §6/§8) |
+| **7** | Touch controls for mobile. | Input abstraction (key step for iPhone) | ◻ Next |
 | **8** | Make it a PWA — installable on iPhone home screen. | Deployment/packaging |
 | **9** | Swap in Pixi.js, real sprites, glass blocks, neon, particles, juice. | Graphics layer, polish |
 | **10** | Boss/picture-reveal levels, SUPER mode, audio, scoring polish, final feel. | Special modes & reward |
@@ -218,7 +223,7 @@ By Phase 3 you have something genuinely playable. Everything after is making it 
 - **Hosting:** GitHub repo + GitHub Pages (free static hosting, deploys on push to `main`). Same workflow as the Pirie Smart Home repo.
 - **Live URL:** https://markwpirie.github.io/cosmic_cut/
 - **Editor:** VS Code with Claude Code.
-- **Repo path:** `/Users/marksMAC/Documents/GitHub/cosmic_cut`
+- **Repo path:** `c:\Users\markw_v611rg3\Documents\GitHub\cosmic_cut`
 - **iPhone path:** PWA first (free, no App Store). Capacitor wrap → App Store only if ever published.
 
 Why not Godot now: the core logic is small, learning JS + Canvas teaches transferable web skills, keeps the iPhone path simple, and avoids an engine learning curve on top of game-design learning. Godot stays open as a future option once the game is understood inside-out.
@@ -245,8 +250,7 @@ Section 2's claim/fill algorithm — and the SPLIT detection in Phase 5 — are 
 - LONG/SUPER LONG/MEGA LONG by line length vs `l` (play-field height); stacks with all ✓
 - MULTI STACK: all bonus types on one cut stack into a combo ✓
 - All multipliers stack (incl. slow) ✓
-- Standard speed FAST, slow on button press (slow deferred to post-v1) ✓
-- Single draw speed for v1 ✓
+- Standard speed FAST, **slow on button press (SPACE) — built**: crawl while held mid-cut, darker glass, ×2 area (`MARKER.slowCutMult`, `POINTS.slowCutMult`) ✓
 - ZOOM power-up (rocket to edge, destroy enemies, subject to enemy floor) ✓
 - Claimed = shiny glass colour blocks (slow = darker); boss levels (X-5) reveal hidden picture ✓
 - Levels: zones X-1 … X-5, campaign ends 5-5 (hard boss) ✓
@@ -272,7 +276,7 @@ Section 2's claim/fill algorithm — and the SPLIT detection in Phase 5 — are 
 - **Death beat (Phase 4):** a blob hit freezes the game in a `"dead"` state with the contact point pulsing ("CAUGHT!") and **waits for a key** before respawning (a fuller explosion is a later visual pass). Out of lives still → game over ✓
 - **Readability (Phase 4):** the "+N%" pop-up is nudged toward the field centre so it isn't hidden by the cut line or border; the HUD/intro ZONE label uses the zone's frontier colour ✓
 - **Perimeter-safe collision (Phase 5):** Blobs only kill while you're **cutting** in open space — riding the perimeter / claimed edges is safe even if a blob brushes the marker. The death also flashes the offending blob (the real kill point on a line contact) ✓
-- **Scoring (Phase 5):** base points per % claimed × size bonus (**BLOCK OUT** ≥30% ×2, **MEGA-CUT** ≥50% ×4) × length bonus (**LONG/SUPER/MEGA** by cut length vs field height) × the per-level multiplier; **SPLIT** adds per-kill points and grants ×2 to the level multiplier. Clearing a level adds a flat bonus + per-remaining-life bonus. All values in `config.POINTS`. Slow-cut bonus and ZOOM scoring stay deferred ✓
+- **Scoring (Phase 5):** base points per % claimed × size bonus (**BLOCK OUT** ≥30% ×2, **MEGA-CUT** ≥50% ×4) × length bonus (**LONG/SUPER/MEGA** by cut length vs field height) × the per-level multiplier; **SPLIT** adds per-kill points and grants ×2 to the level multiplier. Clearing a level adds a flat bonus + per-remaining-life bonus. All values in `config.POINTS`. **Slow-cut bonus is now built** (SLOW DRAW ×2); ZOOM scoring stays deferred ✓
 - **Score read-out (Phase 5):** a scored cut shows a big central read-out where each part pops in with expanding text on its own beat (the planned "doof doof doof", ready for sound): bonus names → score → ×multiplier → total. The HUD score pulses when it jumps. LONG tiers start at **2×** field height (SUPER 3×, MEGA 4×). The small "+N%" pop-up only appears for a big single-cut claim (≥50%); everything else reads through the central total + HUD pulse. Tunables in `config.TIMING` / `config.POINTS` ✓
 - **Game-Feel pass (procedural, no assets):** all in `audio.js` (Web-Audio) + `fx.js` (pure-maths particles/shake), wired from `main`:
   - **Audio:** every voice runs through an envelope + filter and a shared **convolver reverb** so it sounds produced, not beepy. Retro SFX (claim/kill/death/UI/level-clear/game-over/high-score), punchy **"doof doof doof"** bonus kicks timed to the read-out, a **soft danger-tied "cut" pulse** (a quiet bass hum + tremolo that swells and beats faster as a blob nears your line — replaced the old pitch-rising squeal), and a **layered generative synthwave loop** (sub-bass + detuned supersaw pad + delayed arp over an **Am–F–C–G** progression; filter opens with danger). **Optional `assets/music.mp3`** drops in as the track (looped, through the same mute/volume + **N** toggle); absent → the procedural loop. **M** mutes; both persist; context resumes on first keypress.
@@ -293,13 +297,16 @@ Section 2's claim/fill algorithm — and the SPLIT detection in Phase 5 — are 
   - **Blob explosions:** each split-killed blob bursts **at its own position in its own colour** (`enemy.lastKilled`), with a meatier explosion sound (crack + sub-boom + debris).
   - **Movement audio:** a soft band-passed **"schoo"** while moving (brighter when cutting) that resolves into a **"schooooofff"** whoosh when a cut closes and claims.
   - **Bigger field:** dropped the redundant page `<h1>`/tagline and grew the canvas to **800×680** (field 720×600, ROWS 75), reclaiming that strip as play area ✓
+- **Power-ups (Phase 6):** all five built in `powerups.js`, tuned in `config.POWERUPS`. Freeze/Boost/Shield timed with HUD countdown; Solar Wind instant; pickups collected by claiming around them; **ZOOM** floats, grabbed by touch → aim a direction → rocket to that wall killing enemies on the line. Sonar ping disabled (`AUDIO.sonar.enabled = false`) — may be re-imagined ✓
+- **Enemy roster + visual overhaul (Phase 6):** two enemy shapes in `enemy.js`: the star **Qix** as the Kix **line-sheaf** (endpoints sweep a body box that periodically **surges** to ~50% screen then settles; collision tests the **live stick line**), and **polygon Blobs** + **Hunter Blobs** (drift toward the player). **Sparx/Fast Sparx** in `sparx.js` — BFS perimeter chase, **kill on the safe perimeter too**, Fast Sparx **latch onto the cut trail**. Per-level mix is data-driven in `levels.js` (`qix`/`blobs`/`hunters`/`sparx`/`fastSparx`; positional array auto-splits first→Qix, rest→Blobs). Enemies are 1.5× and power-ups 3× larger than the first cut. Knobs in `config.QIX` / `config.BLOB_POLY` / `config.SPARX`. **Player is now a rocket ship** pointing along its heading (engine flame; hot while cutting). The **75% enemy floor/respawn** and the **special Blobs** (extra-life, slow-down) are still to do ✓
+- **Slow-cut + visual/feel pass 3:** four things landed together. (1) **Slow cut on SPACE** — hold while cutting to crawl at `MARKER.slowCutMult` (0.42×); the cut is tagged slow (`grid.slowFill`), its claim is darker glass, and it scores **SLOW DRAW ×2** (`POINTS.slowCutMult`); the live trail turns glass-blue while slow. (2) **Glossy glass** claimed areas — a clipped specular sweep + counter-sweep + breathing zone-tint sheen (shimmer/ripple). (3) **High-fidelity starscape** — a baked offscreen nebula+galaxy layer with twinkling parallax stars. (4) **Solar Wind fixed** into a sustained, visible gust (was a one-frame velocity nudge), plus a louder rising-arpeggio pickup sound. Knobs in `config` (`MARKER`, `POINTS`, `THEMES.claimedFillSlow`, `POWERUPS.SOLARWIND`) ✓
 
 ## 15. Still Open (deferred, none block the build)
 
 1. Exact point values per mechanic — tuned once playable.
 2. SUPER mode beyond S5-5 — wrap to SS mode (4× enemies)? Or procedural? Decide after SUPER is built.
 3. Whether LONG-cut multiplier has an upper cap or scales unbounded.
-4. Solar Wind vs ZOOM overlap — both move enemies; may merge or differentiate later.
+4. Solar Wind vs ZOOM overlap — now differentiated (Solar Wind = sustained wall-pin; ZOOM = player rocket + kills). Revisit only if they feel redundant.
 5. Marker control feel at the current grid resolution (8px) — revisit speed/granularity once enemies and dodging exist (Phase 3).
 
 ---

@@ -12,6 +12,10 @@ export const FILLED = 1;
 // implicit: anything off the grid counts as solid (see cellSolid).
 export const grid = Array.from({ length: ROWS }, () => new Array(COLS).fill(EMPTY));
 
+// Parallel flag: was a FILLED cell claimed by a SLOW DRAW (SPACE held)? Drives
+// the darker "slow glass" shading in render. Pure visual — never affects logic.
+export const slowFill = Array.from({ length: ROWS }, () => new Array(COLS).fill(false));
+
 // Every cut leaves a permanent line; once buried between two claimed cells it
 // becomes an internal SEAM — rideable if steered onto, never auto-followed.
 export const seams = new Set();
@@ -20,7 +24,7 @@ export let percent = 0;
 
 // Reset to an empty arena (level start).
 export function reset() {
-  for (let r = 0; r < ROWS; r++) grid[r].fill(EMPTY);
+  for (let r = 0; r < ROWS; r++) { grid[r].fill(EMPTY); slowFill[r].fill(false); }
   seams.clear();
   percent = 0;
 }
@@ -150,7 +154,7 @@ export function canCut(col, row, dx, dy) {
 // every region holding a blob and claim the rest. With no valid keepCells
 // (enemy-free tests) we fall back to keeping the largest region. Also records the
 // trail as a permanent seam line.
-export function applyClaim(trail, keepCells) {
+export function applyClaim(trail, keepCells, slow = false) {
   // 1. Turn the trail into a set of "walls" between cells.
   const walls = new Set();
   for (let i = 0; i < trail.length - 1; i++) {
@@ -212,7 +216,10 @@ export function applyClaim(trail, keepCells) {
     }
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
-        if (comp[r][c] !== -1 && comp[r][c] !== keepId) grid[r][c] = FILLED;
+        if (comp[r][c] !== -1 && comp[r][c] !== keepId) {
+          grid[r][c] = FILLED;
+          if (slow) slowFill[r][c] = true; // tag the newly-claimed cells as slow glass
+        }
       }
     }
     if (keepCells) {

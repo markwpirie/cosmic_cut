@@ -26,6 +26,10 @@ export function nodeY(row) { return field.y + row * CELL; }
 // Marker tuning.
 export const MARKER = {
   speed: 200, // px/sec — "standard speed is FAST" (§3)
+  slowCutMult: 0.42,  // speed multiplier while SPACE is held mid-cut (the "slow draw")
+  slowArmWindow: 1.0, // SPACE must be held within this many seconds of a cut starting to
+                      //   arm a slow draw; after that the key has no effect (and once armed
+                      //   it must stay held for the whole line — release cancels it)
   radius: 7,
   startCol: COLS / 2, // bottom-centre (classic Qix spot)
   startRow: ROWS,
@@ -56,6 +60,7 @@ export const COLORS = {
   // defaults (zone-1 cyan) used by menu/fallback
   frontier: "#7df9ff",
   claimedFill: "rgba(25, 230, 255, 0.16)",
+  claimedFillSlow: "rgba(4, 30, 44, 0.62)", // deep smoked "slow draw" glass
   seam: "rgba(125, 249, 255, 0.4)",
   arena: "#1f8fa3",
   trail: "#5ad6ff",
@@ -64,11 +69,11 @@ export const COLORS = {
 // Per-zone field palette — each zone re-themes the frontier/claim/trail/seam/
 // arena so the world's mood shifts as you climb (zone 1 cyan → 2 orange → …).
 export const THEMES = [
-  { frontier: "#7df9ff", claimedFill: "rgba(25, 230, 255, 0.16)", trail: "#5ad6ff", seam: "rgba(125, 249, 255, 0.4)", arena: "#1f8fa3" }, // 1 cyan
-  { frontier: "#ffb24d", claimedFill: "rgba(255, 150, 40, 0.16)", trail: "#ffc266", seam: "rgba(255, 185, 110, 0.4)", arena: "#a3631f" }, // 2 orange
-  { frontier: "#79ff9e", claimedFill: "rgba(60, 255, 140, 0.15)", trail: "#7affb0", seam: "rgba(130, 255, 180, 0.4)", arena: "#1fa35a" }, // 3 green
-  { frontier: "#bb8cff", claimedFill: "rgba(165, 120, 255, 0.16)", trail: "#c9a6ff", seam: "rgba(190, 160, 255, 0.4)", arena: "#5a2fa3" }, // 4 violet
-  { frontier: "#ffd24d", claimedFill: "rgba(255, 205, 60, 0.15)", trail: "#ffdf80", seam: "rgba(255, 220, 120, 0.4)", arena: "#a3851f" }, // 5 gold
+  { frontier: "#7df9ff", claimedFill: "rgba(25, 230, 255, 0.16)", claimedFillSlow: "rgba(4, 30, 44, 0.62)",  trail: "#5ad6ff", seam: "rgba(125, 249, 255, 0.4)", arena: "#1f8fa3" }, // 1 cyan
+  { frontier: "#ffb24d", claimedFill: "rgba(255, 150, 40, 0.16)", claimedFillSlow: "rgba(44, 22, 4, 0.62)",  trail: "#ffc266", seam: "rgba(255, 185, 110, 0.4)", arena: "#a3631f" }, // 2 orange
+  { frontier: "#79ff9e", claimedFill: "rgba(60, 255, 140, 0.15)", claimedFillSlow: "rgba(6, 38, 20, 0.62)",  trail: "#7affb0", seam: "rgba(130, 255, 180, 0.4)", arena: "#1fa35a" }, // 3 green
+  { frontier: "#bb8cff", claimedFill: "rgba(165, 120, 255, 0.16)", claimedFillSlow: "rgba(24, 14, 46, 0.64)", trail: "#c9a6ff", seam: "rgba(190, 160, 255, 0.4)", arena: "#5a2fa3" }, // 4 violet
+  { frontier: "#ffd24d", claimedFill: "rgba(255, 205, 60, 0.15)", claimedFillSlow: "rgba(44, 32, 4, 0.62)",  trail: "#ffdf80", seam: "rgba(255, 220, 120, 0.4)", arena: "#a3851f" }, // 5 gold
 ];
 
 // Scoring (Phase 5, §9). Point values are deliberately gathered here so they're
@@ -82,6 +87,7 @@ export const POINTS = {
   // LONG tiers by cut length, measured in field-heights (×ROWS). LONG starts at 2×.
   longHeights: 2, superLongHeights: 3, megaLongHeights: 4,
   longMult: 1.5, superLongMult: 2, megaLongMult: 3,
+  slowCutMult: 2,      // a SLOW DRAW (SPACE held) doubles the cut's area points (§"Stix")
   splitMult: 2,        // each SPLIT grants ×2 to the level multiplier (§14)
   perKill: 500,        // points per Blob destroyed (juicy, §"nice points on kill")
   nearMiss: 150,       // points when a blob grazes your trail without hitting
@@ -126,6 +132,7 @@ export const AUDIO = {
     synthSpan: 0.7,    // synth-fallback intensity added at full tension
   },
   sonar: {          // submarine ping while cutting (exposed): fires as you push out,
+    enabled: false,    //   set true to re-enable
     freq: 280,         //   then ~1s apart, pitch CLIMBING the longer the line is drawn
     level: 0.2,        // ping volume
     interval: 1.0,     // seconds between pings during a single cut
@@ -133,4 +140,77 @@ export const AUDIO = {
     pitchRange: 1.2,   // pitch climbs to base*(1+pitchRange) across rampTime (≈ +octave)
   },
   debugBeat: false, // flip to true to show the live beat detector readout (bottom-left)
+};
+
+// Qix body visual tuning — the classic Kix/Qix look: a SHEAF of straight lines.
+// Two endpoints sweep erratically inside a body box; a short history of past line
+// positions is drawn each frame → the twisting "ribbon of sticks". The box
+// normally stays compact (spanBase) but occasionally SURGES toward spanMax
+// (~50% of screen) for a short burst, then settles. The box centre bounces
+// through open space. Collision tests the live stick LINE (not a disc), so a
+// long stick only kills where the line actually is.
+export const QIX = {
+  sizeScale:        1.5,  // overall enemy size multiplier (applied to blob radius)
+  lines:             26,  // sheaf depth — number of past line snapshots drawn
+  endpointSpeed:     95,  // base px/sec the endpoints sweep within the box
+  surgeSpeedMult:   2.4,  // endpoint speed multiplier at full surge
+  spanBase:          26,  // typical half-length (compact, twisty)
+  spanMax:          150,  // half-length at full surge (≈ stick spanning 50% screen)
+  surgeIntervalMin:   3,  // min seconds between surges
+  surgeIntervalMax:   7,  // max seconds between surges
+  surgeHold:        0.6,  // seconds a surge stays expanded before settling
+  surgeEase:        2.5,  // how fast span eases toward its target (per sec)
+  twist:           0.18,  // constant span wobble (the twisty feel)
+  twistFreq:        2.3,  // wobble frequency (rad/sec)
+  lineHitPad:         4,  // collision padding around the live stick
+  hunterDrift:       22,  // px/sec² acceleration toward player (Hunter Blob)
+  glowWidth:    [5, 2.5, 1.2],      // stroke widths for each glow pass
+  glowAlpha:   [0.10, 0.30, 0.95],  // alphas matching each pass
+};
+
+// Polygon Blob visual tuning — the alternative enemy shape: a ring of orbiting
+// vertices with internal diagonals, oscillating radius and slow rotation. Used
+// for regular Blobs and Hunter Blobs. Collision uses a bounding radius.
+export const BLOB_POLY = {
+  segments:       8,    // vertices in the body polygon
+  hitScale:      0.95,  // collision radius = blob radius × this (tighter than the visual
+                        //   bounding radius, which uses the full oscillation extent)
+  oscillateAmp:  0.5,   // vertex radius swings ± this fraction of blob radius
+  oscillateFreq: 1.1,   // base oscillation frequency (rad/sec)
+  angularDrift:  0.25,  // max per-vertex angular drift (rad/sec)
+  rotateSpeed:   0.18,  // whole-body rotation (rad/sec)
+  glowWidth:    [9, 4, 1.6],
+  glowAlpha:   [0.12, 0.30, 0.9],
+};
+
+// Sparx (perimeter-tracer) tuning. Normal Sparx BFS-chase the player along the
+// auto-network. Fast Sparx do the same but can also latch onto an exposed cut
+// trail and rocket along it at boosted speed, trying to catch the player mid-cut.
+export const SPARX = {
+  speed:          85,   // normal Sparx perimeter speed (px/sec)
+  fastSpeed:     120,   // Fast Sparx perimeter speed
+  latchSpeed:    240,   // Fast Sparx speed when latched to the cut trail
+  radius:          9,   // collision + visual radius (1.5× the original 6)
+  normalColor: "#ffee00", // normal Sparx neon yellow
+  fastColor:   "#ff6200", // Fast Sparx hot orange
+  latchColor:  "#ff2200", // Fast Sparx color when latched (danger red)
+  trailLen:       12,   // number of recent positions kept for the visual trail
+};
+
+// Power-up tuning (Phase 6, §8). All durations in seconds; killPoints/distancePoints
+// are ZOOM scoring per enemy killed and per pixel travelled respectively.
+export const POWERUPS = {
+  maxOnBoard:     2,     // max pickups + ZOOM floating simultaneously
+  spawnChance:    0.35,  // probability of spawning after each successful claim
+  spawnMinPct:    5,     // don't spawn until this % of the board is claimed
+  zoomDriftSpeed: 40,    // px/sec — how fast the floating ZOOM marker drifts
+  iconScale:      3,     // visual + touch size multiplier for pickups
+  FREEZE:    { duration: 5, color: "#00d4ff", label: "FREEZE"                        },
+  // SOLAR WIND blows every enemy hard against one wall and pins them there for
+  // `duration` seconds, leaving the rest of the board clear to carve.
+  SOLARWIND: { duration: 3.5, color: "#ffaa00", label: "SOLAR WIND", gustMult: 1.6   },
+  BOOST:     { duration: 8, color: "#39ff14", label: "BOOST",     speedMult:    1.5  },
+  SHIELD:    { duration: 6, color: "#ff80ff", label: "SHIELD"                        },
+  ZOOM:      { duration: 0, color: "#ff4400", label: "ZOOM",      killPoints:   80,
+                                                                   distPoints:    1   },
 };

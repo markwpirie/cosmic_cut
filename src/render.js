@@ -4,10 +4,12 @@
 // start menu, a level intro banner, the play field, the level-complete wipe, and
 // the game-over / campaign-complete overlays.
 
-import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, AUDIO, MARKER, nodeX, nodeY } from "./config.js";
-import { grid, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
-import { marker, mode, trail } from "./marker.js";
-import { blobs, radius as blobRadius } from "./enemy.js";
+import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, AUDIO, POWERUPS, QIX, BLOB_POLY, SPARX, MARKER, nodeX, nodeY } from "./config.js";
+import * as powerups from "./powerups.js";
+import { grid, slowFill, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
+import { marker, mode, dir, trail, slowActive } from "./marker.js";
+import { blobs, qixLines, polyVerts, boundRadius } from "./enemy.js";
+import { sparxList } from "./sparx.js";
 import * as game from "./game.js";
 import { zoneCount } from "./levels.js";
 import * as fx from "./fx.js";
@@ -33,38 +35,103 @@ function wipeRadius(transT) {
   return (1 - (1 - t) * (1 - t)) * (MAXR + 30); // easeOut
 }
 
-// Drifting starfield + faint nebula, for the "cosmic" in COSMIC CUT.
+// Deep-space backdrop: a baked nebula + galaxy layer (drawn once to an offscreen
+// canvas), with live twinkling parallax stars on top — the "cosmic" in COSMIC CUT.
 let stars = null;
-let nebula = null;
 let starLast = 0;
+let deepCanvas = null;  // baked nebula + galaxies, drawn once
+const STAR_TINTS = ["#cfeaff", "#ffffff", "#bcdcff", "#ffe6c4", "#ffd0e8", "#d6c4ff"];
+
+// Paint a soft elliptical "galaxy": a bright core, a coloured disc, and a couple
+// of faint arm sweeps. cx,cy in offscreen pixels.
+function bakeGalaxy(g, cx, cy, r, tilt, core, arm) {
+  g.save();
+  g.translate(cx, cy);
+  g.rotate(tilt);
+  g.scale(1, 0.42); // flatten into a disc
+  const disc = g.createRadialGradient(0, 0, 0, 0, 0, r);
+  disc.addColorStop(0, core);
+  disc.addColorStop(0.25, arm);
+  disc.addColorStop(1, "rgba(0,0,0,0)");
+  g.fillStyle = disc;
+  g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.fill();
+  // bright dense core
+  const k = g.createRadialGradient(0, 0, 0, 0, 0, r * 0.3);
+  k.addColorStop(0, "rgba(255,255,255,0.9)");
+  k.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = k;
+  g.beginPath(); g.arc(0, 0, r * 0.3, 0, Math.PI * 2); g.fill();
+  g.restore();
+}
+
+function bakeDeepSpace() {
+  if (typeof document === "undefined") return; // headless import safety
+  deepCanvas = document.createElement("canvas");
+  deepCanvas.width = WIDTH;
+  deepCanvas.height = HEIGHT;
+  const g = deepCanvas.getContext("2d");
+
+  // Layered nebula clouds in varied galactic colours.
+  const clouds = [
+    { x: WIDTH * 0.22, y: HEIGHT * 0.28, r: 320, c: "rgba(120,40,180,0.16)" }, // magenta
+    { x: WIDTH * 0.80, y: HEIGHT * 0.66, r: 360, c: "rgba(20,110,170,0.15)" }, // teal-blue
+    { x: WIDTH * 0.62, y: HEIGHT * 0.18, r: 240, c: "rgba(200,60,120,0.10)" }, // rose
+    { x: WIDTH * 0.12, y: HEIGHT * 0.78, r: 280, c: "rgba(60,60,200,0.11)" },  // indigo
+    { x: WIDTH * 0.50, y: HEIGHT * 0.50, r: 420, c: "rgba(40,20,90,0.10)" },   // deep violet wash
+  ];
+  for (const n of clouds) {
+    const rg = g.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r);
+    rg.addColorStop(0, n.c);
+    rg.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = rg;
+    g.fillRect(0, 0, WIDTH, HEIGHT);
+  }
+
+  // A pair of distant galaxies.
+  bakeGalaxy(g, WIDTH * 0.74, HEIGHT * 0.30, 130, -0.5, "rgba(190,210,255,0.55)", "rgba(120,90,220,0.22)");
+  bakeGalaxy(g, WIDTH * 0.20, HEIGHT * 0.70, 95,  0.7,  "rgba(255,225,200,0.45)", "rgba(220,90,150,0.18)");
+
+  // Faint baked background dust-stars (the still, distant field).
+  for (let i = 0; i < 260; i++) {
+    g.globalAlpha = 0.1 + Math.random() * 0.4;
+    g.fillStyle = STAR_TINTS[(Math.random() * STAR_TINTS.length) | 0];
+    g.fillRect(Math.random() * WIDTH, Math.random() * HEIGHT, 1, 1);
+  }
+  g.globalAlpha = 1;
+}
+
 function ensureStars() {
   if (stars) return;
+  bakeDeepSpace();
   stars = [];
-  for (let i = 0; i < 110; i++) {
+  for (let i = 0; i < 150; i++) {
+    const far = Math.random() < 0.6;             // two parallax layers
     stars.push({
       x: Math.random() * WIDTH,
       y: Math.random() * HEIGHT,
-      size: Math.random() < 0.15 ? 2 : 1,
-      v: 4 + Math.random() * 16,
-      a: 0.25 + Math.random() * 0.6,
+      size: far ? 1 : (Math.random() < 0.25 ? 2 : 1),
+      v: (far ? 3 : 9) + Math.random() * (far ? 6 : 14),
+      a: 0.3 + Math.random() * 0.6,
+      tw: Math.random() * Math.PI * 2,           // twinkle phase
+      tws: 1.5 + Math.random() * 3,              // twinkle speed
+      tint: STAR_TINTS[(Math.random() * STAR_TINTS.length) | 0],
     });
   }
-  nebula = [
-    { x: WIDTH * 0.25, y: HEIGHT * 0.3, r: 260, c: "rgba(80,40,160,0.10)" },
-    { x: WIDTH * 0.78, y: HEIGHT * 0.7, r: 300, c: "rgba(20,90,150,0.10)" },
-  ];
 }
+
 function drawBackground(ctx, beat = 0) {
   ctx.fillStyle = COLORS.bg;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
   ensureStars();
-  for (const n of nebula) {
-    const g = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r);
-    g.addColorStop(0, n.c);
-    g.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  const t = now();
+  // Baked nebula + galaxies, breathing gently (and a touch on the beat).
+  if (deepCanvas) {
+    ctx.globalAlpha = 0.85 + 0.1 * Math.sin(t / 3500) + beat * 0.15;
+    ctx.drawImage(deepCanvas, 0, 0);
+    ctx.globalAlpha = 1;
   }
+
   // Music beat: a faint full-screen bloom that breathes with the bass.
   if (beat > 0.02) {
     const g = ctx.createRadialGradient(CX, CY, 0, CX, CY, Math.max(WIDTH, HEIGHT) * 0.7);
@@ -73,15 +140,17 @@ function drawBackground(ctx, beat = 0) {
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
   }
-  const t = now();
+
   const dt = Math.min(0.05, (t - starLast) / 1000);
   starLast = t;
-  ctx.fillStyle = "#cfeaff";
-  const starBoost = 1 + beat * 0.7; // stars twinkle brighter on the beat
+  const ts = t / 1000;
+  const starBoost = 1 + beat * 0.7; // stars flare brighter on the beat
   for (const s of stars) {
     s.y += s.v * dt;
     if (s.y > HEIGHT) { s.y = 0; s.x = Math.random() * WIDTH; }
-    ctx.globalAlpha = Math.min(1, s.a * starBoost);
+    const tw = 0.55 + 0.45 * Math.sin(ts * s.tws + s.tw); // per-star twinkle
+    ctx.globalAlpha = Math.min(1, s.a * tw * starBoost);
+    ctx.fillStyle = s.tint;
     ctx.fillRect(s.x, s.y, s.size, s.size);
   }
   ctx.globalAlpha = 1;
@@ -108,21 +177,79 @@ function drawDangerEdge(ctx, danger) {
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
 }
 
-// Claimed cells as one solid translucent mass. During the level-complete wipe,
-// cells within the expanding circle (radius wipeR) vanish inside-out.
+// Claimed territory rendered as glossy, shimmering glass: a translucent base
+// (darker for SLOW-DRAW cells), then a moving specular glint and a breathing
+// ripple sheen painted only over the claimed mass. During the level-complete
+// wipe, cells within the expanding circle (radius wipeR) vanish inside-out.
 function drawClaimed(ctx, wipeR = -1) {
-  ctx.fillStyle = theme().claimedFill;
+  const th = theme();
+  const fillNormal = th.claimedFill;
+  const fillSlow = th.claimedFillSlow || COLORS.claimedFillSlow;
+
+  // Gather visible claimed cells once (reused for the base fill and the clip).
+  const cells = [];
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       if (grid[r][c] !== FILLED) continue;
-      if (wipeR >= 0) {
-        const px = field.x + (c + 0.5) * CELL;
-        const py = field.y + (r + 0.5) * CELL;
-        if (Math.hypot(px - CX, py - CY) <= wipeR) continue; // wiped away
-      }
-      ctx.fillRect(field.x + c * CELL, field.y + r * CELL, CELL, CELL);
+      const px = field.x + c * CELL;
+      const py = field.y + r * CELL;
+      if (wipeR >= 0 && Math.hypot(px + CELL / 2 - CX, py + CELL / 2 - CY) <= wipeR) continue;
+      cells.push([px, py, slowFill[r][c]]);
     }
   }
+  if (!cells.length) return;
+
+  // 1) Base translucent glass (two passes so the slow/normal tints stay flat).
+  ctx.fillStyle = fillNormal;
+  for (const [px, py, s] of cells) if (!s) ctx.fillRect(px, py, CELL, CELL);
+  ctx.fillStyle = fillSlow;
+  for (const [px, py, s] of cells) if (s) ctx.fillRect(px, py, CELL, CELL);
+
+  const t = now() / 1000;
+  const shimmer = 0.5 + 0.5 * Math.sin(t * 1.6);
+  const span = field.w + field.h;
+
+  // 2) Breathing zone-tint sheen (the "ripple") — only on the bright/normal glass,
+  //    so the slow "dark glass" stays genuinely dark.
+  let anyNormal = false;
+  ctx.save();
+  ctx.beginPath();
+  for (const [px, py, s] of cells) if (!s) { ctx.rect(px, py, CELL, CELL); anyNormal = true; }
+  if (anyNormal) {
+    ctx.clip();
+    ctx.globalAlpha = 0.05 + 0.05 * shimmer;
+    ctx.fillStyle = th.frontier;
+    ctx.fillRect(field.x, field.y, field.w, field.h);
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+
+  // 3) Specular glints — clip to the whole claimed mass (glass catches light on
+  //    bright and dark cells alike). Two crossing sweeps for a rippling shimmer.
+  ctx.save();
+  ctx.beginPath();
+  for (const [px, py] of cells) ctx.rect(px, py, CELL, CELL);
+  ctx.clip();
+
+  const sweep = ((t * 0.16) % 1) * 2 * span - span;
+  const gx = field.x + sweep;
+  const glint = ctx.createLinearGradient(gx, field.y, gx + span * 0.32, field.y + field.h);
+  glint.addColorStop(0, "rgba(255,255,255,0)");
+  glint.addColorStop(0.5, `rgba(255,255,255,${(0.10 + 0.06 * shimmer).toFixed(3)})`);
+  glint.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = glint;
+  ctx.fillRect(field.x, field.y, field.w, field.h);
+
+  const sweep2 = (((t * 0.09) + 0.5) % 1) * 2 * span - span;
+  const gx2 = field.x + field.w - sweep2;
+  const glint2 = ctx.createLinearGradient(gx2, field.y + field.h, gx2 - span * 0.4, field.y);
+  glint2.addColorStop(0, "rgba(255,255,255,0)");
+  glint2.addColorStop(0.5, `rgba(200,240,255,${(0.05 + 0.05 * (1 - shimmer)).toFixed(3)})`);
+  glint2.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = glint2;
+  ctx.fillRect(field.x, field.y, field.w, field.h);
+
+  ctx.restore();
 }
 
 function drawSeams(ctx) {
@@ -193,11 +320,14 @@ function drawTrail(ctx, beat = 0) {
   // thickens and reddens, telegraphing both the building bonus and the risk. The
   // line also throbs with the beat, like the perimeter.
   const heat = Math.min(1, trail.length / (2 * ROWS));
-  const color = heat > 0.85 ? "#ff5a3c" : heat > 0.5 ? "#ffae3c" : theme().trail;
+  // A slow draw shows as a cooler, denser "glass-building" line; otherwise the
+  // trail heats up (yellow→red) toward the LONG threshold.
+  const color = slowActive ? "#5fd0ff"
+              : heat > 0.85 ? "#ff5a3c" : heat > 0.5 ? "#ffae3c" : theme().trail;
   ctx.strokeStyle = color;
-  ctx.lineWidth = 3 + heat * 2.5 + beat * AUDIO.beat.widthBoost;
+  ctx.lineWidth = 3 + heat * 2.5 + (slowActive ? 1.5 : 0) + beat * AUDIO.beat.widthBoost;
   ctx.shadowColor = color;
-  ctx.shadowBlur = 10 + heat * 16 + beat * AUDIO.beat.glowBoost;
+  ctx.shadowBlur = (slowActive ? 18 : 10) + heat * 16 + beat * AUDIO.beat.glowBoost;
   ctx.globalAlpha = Math.min(1, 0.85 + beat * 0.15);
   ctx.beginPath();
   ctx.moveTo(nodeX(trail[0].col), nodeY(trail[0].row));
@@ -208,33 +338,351 @@ function drawTrail(ctx, beat = 0) {
   ctx.shadowBlur = 0;
 }
 
-function drawBlobs(ctx) {
-  for (const b of blobs) {
-    ctx.fillStyle = b.color;
-    ctx.shadowColor = b.color;
-    ctx.shadowBlur = 20;
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, blobRadius(b), 0, Math.PI * 2);
-    ctx.fill();
+// --- Enemy bodies ---
+
+// The star Qix: a stack of straight "sticks" from the position history, newest
+// brightest, older fading — the twisting expanding/contracting ribbon.
+function drawSheaf(ctx, b) {
+  const H = qixLines(b);
+  if (!H.length) return;
+  const N = H.length;
+
+  ctx.save();
+  ctx.shadowColor = b.color;
+  ctx.lineCap = "round";
+
+  const widths = QIX.glowWidth;
+  const alphas = QIX.glowAlpha;
+  for (let pass = 0; pass < widths.length; pass++) {
+    ctx.lineWidth  = widths[pass];
+    ctx.shadowBlur = pass === 0 ? 22 : pass === 1 ? 12 : 5;
+    for (let i = 0; i < N; i++) {
+      const age = i / N;                         // 0 = newest stick
+      ctx.globalAlpha = alphas[pass] * (1 - age * 0.85);
+      ctx.strokeStyle = (pass === widths.length - 1 && i < 2) ? "#ffffff" : b.color;
+      const s = H[i];
+      ctx.beginPath();
+      ctx.moveTo(s.ax, s.ay);
+      ctx.lineTo(s.bx, s.by);
+      ctx.stroke();
+    }
   }
+  ctx.restore();
+}
+
+// The polygon Blob: a ring of orbiting vertices with internal diagonals, glow
+// passes, and a bright centre. Hunter Blobs add a pulsing tendril at the player.
+function drawPoly(ctx, b) {
+  const verts = polyVerts(b);
+  const Nv = verts.length;
+  const half = Nv >> 1;
+
+  ctx.save();
+  ctx.shadowColor = b.color;
+  ctx.lineJoin = "round";
+
+  const widths = BLOB_POLY.glowWidth;
+  const alphas = BLOB_POLY.glowAlpha;
+  for (let pass = 0; pass < widths.length; pass++) {
+    ctx.globalAlpha = alphas[pass];
+    ctx.strokeStyle = pass === widths.length - 1 ? "#ffffff" : b.color;
+    ctx.lineWidth   = widths[pass];
+    ctx.shadowBlur  = pass < 2 ? 22 : 8;
+
+    ctx.beginPath();
+    verts.forEach((v, i) => (i === 0 ? ctx.moveTo(v.x, v.y) : ctx.lineTo(v.x, v.y)));
+    ctx.closePath();
+    ctx.stroke();
+
+    if (pass >= 1) {
+      ctx.beginPath();
+      for (let i = 0; i < half; i++) {
+        ctx.moveTo(verts[i].x, verts[i].y);
+        ctx.lineTo(verts[i + half].x, verts[i + half].y);
+      }
+      ctx.stroke();
+    }
+  }
+
+  ctx.globalAlpha = 0.9;
+  ctx.fillStyle   = "#ffffff";
+  ctx.shadowBlur  = 12;
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (b.hunter) {
+    const dx = marker.x - b.x, dy = marker.y - b.y;
+    const d  = Math.hypot(dx, dy);
+    if (d > 0) {
+      const reach = Math.min(d * 0.45, boundRadius(b) * 2.5);
+      ctx.globalAlpha = 0.15 + 0.12 * Math.sin(b.t * 3.5);
+      ctx.strokeStyle = b.color;
+      ctx.lineWidth   = 1.2;
+      ctx.shadowBlur  = 10;
+      ctx.beginPath();
+      ctx.moveTo(b.x, b.y);
+      ctx.lineTo(b.x + (dx / d) * reach, b.y + (dy / d) * reach);
+      ctx.stroke();
+    }
+  }
+
+  ctx.restore();
+}
+
+function drawQix(ctx) {
+  for (const b of blobs) (b.shape === "sheaf" ? drawSheaf : drawPoly)(ctx, b);
+}
+
+// SOLAR WIND: streaks of light blowing across the field in the gust direction.
+function drawSolarWind(ctx) {
+  const sw = powerups.getSolarWind();
+  if (!sw) return;
+  const d = sw.dir;
+  const t = now() / 1000;
+  const half = Math.hypot(field.w, field.h) / 2;
+  const px = -d.y, py = d.x; // perpendicular (cross) axis
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(field.x, field.y, field.w, field.h);
+  ctx.clip();
+  ctx.strokeStyle = POWERUPS.SOLARWIND.color;
+  ctx.shadowColor = POWERUPS.SOLARWIND.color;
+  ctx.lineCap = "round";
+  const N = 30;
+  const L = 26;
+  for (let i = 0; i < N; i++) {
+    const b = (i / N) * 2 - 1 + Math.sin(i * 12.9) * 0.03; // cross position −1..1
+    const a = (((t * 0.55) + i * 0.137) % 1) * 2 - 1;       // along position, wrapping
+    const cx0 = CX + d.x * (a * half) + px * (b * half);
+    const cy0 = CY + d.y * (a * half) + py * (b * half);
+    const fade = 1 - Math.abs(a);
+    ctx.globalAlpha = 0.14 * fade * (0.6 + 0.4 * Math.sin(t * 5 + i));
+    ctx.lineWidth = 1.6;
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.moveTo(cx0 - d.x * L, cy0 - d.y * L);
+    ctx.lineTo(cx0, cy0);
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.globalAlpha = 1;
   ctx.shadowBlur = 0;
 }
 
+// --- Sparx ---
+
+function drawSparx(ctx) {
+  for (const s of sparxList) {
+    const col   = s.latched ? SPARX.latchColor : s.color;
+    const glow  = s.latched ? 22 : 14;
+    const pulse = 0.6 + 0.4 * Math.sin(s.t * 8 + (s.fast ? 1.5 : 0));
+
+    ctx.save();
+    ctx.shadowColor = col;
+
+    // Fading position trail — shows the recent path.
+    for (let i = 0; i < s.tail.length; i++) {
+      const a = (1 - i / s.tail.length) * 0.35 * pulse;
+      ctx.globalAlpha = a;
+      ctx.fillStyle   = col;
+      ctx.shadowBlur  = 4;
+      ctx.beginPath();
+      ctx.arc(s.tail[i].x, s.tail[i].y, SPARX.radius * 0.55, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Core: a rotating diamond (square rotated 45°).
+    ctx.globalAlpha = 0.9 * pulse;
+    ctx.fillStyle   = "#ffffff";
+    ctx.shadowBlur  = glow;
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    ctx.rotate(s.t * (s.fast ? 6 : 3.5));
+    const r = SPARX.radius;
+    ctx.beginPath();
+    ctx.moveTo(0, -r); ctx.lineTo(r, 0); ctx.lineTo(0, r); ctx.lineTo(-r, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // Coloured outer ring.
+    ctx.globalAlpha = 0.55 * pulse;
+    ctx.fillStyle   = col;
+    ctx.shadowBlur  = glow * 0.6;
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    ctx.rotate(s.t * (s.fast ? 6 : 3.5) + Math.PI / 4);
+    ctx.beginPath();
+    ctx.moveTo(0, -r * 1.5); ctx.lineTo(r * 1.5, 0); ctx.lineTo(0, r * 1.5); ctx.lineTo(-r * 1.5, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    ctx.restore();
+  }
+  ctx.shadowBlur  = 0;
+  ctx.globalAlpha = 1;
+}
+
+function drawPowerUps(ctx) {
+  const t = now();
+  const pulse = 8 + 10 * (0.5 + 0.5 * Math.sin(t / 350));
+
+  const S = POWERUPS.iconScale;
+
+  function icon(ctx, type, x, y, angle = 0) {
+    const cfg = POWERUPS[type];
+    ctx.strokeStyle = cfg.color;
+    ctx.fillStyle   = cfg.color;
+    ctx.shadowColor = cfg.color;
+    ctx.shadowBlur  = pulse;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    ctx.scale(S, S);
+    ctx.lineWidth = 1.5 / S * 1.5; // visually ~1.5px after scaling, a touch bolder
+    // Soft backing disc so the icon reads against busy backgrounds.
+    ctx.globalAlpha = 0.12;
+    ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+    if (type === "FREEZE") {
+      // Snowflake: 3 lines at 0° / 60° / 120°
+      for (let i = 0; i < 3; i++) {
+        ctx.save(); ctx.rotate((i * Math.PI) / 3);
+        ctx.beginPath(); ctx.moveTo(0, -5); ctx.lineTo(0, 5); ctx.stroke();
+        ctx.restore();
+      }
+    } else if (type === "SOLARWIND") {
+      // Three stacked chevrons pointing right
+      for (let i = -1; i <= 1; i++) {
+        ctx.beginPath();
+        ctx.moveTo(-3, i * 3 - 2); ctx.lineTo(0, i * 3); ctx.lineTo(3, i * 3 - 2);
+        ctx.stroke();
+      }
+    } else if (type === "BOOST") {
+      // Lightning bolt fill
+      ctx.beginPath();
+      ctx.moveTo(1, -5); ctx.lineTo(-2, 0); ctx.lineTo(1, 0); ctx.lineTo(-1, 5);
+      ctx.lineTo(3, -1); ctx.lineTo(0, -1); ctx.closePath();
+      ctx.fill();
+    } else if (type === "SHIELD") {
+      // Pentagon outline
+      ctx.beginPath();
+      for (let i = 0; i < 5; i++) {
+        const a = (i * 2 * Math.PI) / 5 - Math.PI / 2;
+        i === 0 ? ctx.moveTo(Math.cos(a) * 5, Math.sin(a) * 5)
+                : ctx.lineTo(Math.cos(a) * 5, Math.sin(a) * 5);
+      }
+      ctx.closePath(); ctx.stroke();
+    } else if (type === "ZOOM") {
+      // Filled circle + 4 radiating spikes
+      ctx.beginPath(); ctx.arc(0, 0, 3, 0, Math.PI * 2); ctx.fill();
+      for (let i = 0; i < 4; i++) {
+        const a = (i * Math.PI) / 2;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * 4, Math.sin(a) * 4);
+        ctx.lineTo(Math.cos(a) * 8, Math.sin(a) * 8);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  // Static pickups
+  for (const p of powerups.getPickups()) {
+    const x = field.x + p.col * CELL + CELL / 2;
+    const y = field.y + p.row * CELL + CELL / 2;
+    icon(ctx, p.type, x, y);
+  }
+
+  // Floating ZOOM marker
+  const z = powerups.getZoom();
+  if (z) icon(ctx, "ZOOM", z.x, z.y, z.angle);
+
+  ctx.shadowBlur = 0;
+}
+
+// ZOOM aiming overlay: 4 directional arrows around the marker.
+function drawZoomAim(ctx) {
+  const arrows = [
+    {dx:0, dy:-1, label:"▲"}, {dx:0, dy:1, label:"▼"},
+    {dx:-1, dy:0, label:"◀"}, {dx:1, dy:0, label:"▶"},
+  ];
+  const r = 28;
+  const pulse = 0.6 + 0.4 * Math.sin(now() / 150);
+  ctx.font = "bold 18px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  for (const { dx, dy, label } of arrows) {
+    ctx.fillStyle = POWERUPS.ZOOM.color;
+    ctx.shadowColor = POWERUPS.ZOOM.color;
+    ctx.shadowBlur = 12 * pulse;
+    ctx.globalAlpha = 0.6 + 0.4 * pulse;
+    ctx.fillText(label, marker.x + dx * r, marker.y + dy * r);
+  }
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+}
+
+// The player is a little rocket ship that points the way it's travelling.
 function drawMarker(ctx) {
-  // While cutting you're vulnerable — the marker flashes hot to telegraph it.
+  // While cutting you're vulnerable — the hull flashes hot to telegraph it.
   let color = COLORS.marker;
-  let r = MARKER.radius;
+  let hot = false;
   if (mode === "cutting") {
     const pulse = 0.5 + 0.5 * Math.sin(now() / 70);
     color = pulse > 0.5 ? "#ffffff" : "#ff4d4d";
-    r = MARKER.radius + pulse * 1.6;
+    hot = true;
   }
+
+  // Heading: face the travel direction; default nose-up at level start.
+  const angle = dir ? Math.atan2(dir.dy, dir.dx) : -Math.PI / 2;
+  const r = MARKER.radius;
+
+  ctx.save();
+  ctx.translate(marker.x, marker.y);
+  ctx.rotate(angle);
+
+  // Engine flame behind the ship, flickering (hotter/longer while cutting).
+  const flick = 0.6 + 0.4 * Math.sin(now() / 45);
+  const flame = (hot ? r * 2.2 : r * 1.5) * flick;
+  ctx.globalAlpha = 0.9;
+  ctx.fillStyle = hot ? "#ffd24d" : "#7df9ff";
+  ctx.shadowColor = ctx.fillStyle;
+  ctx.shadowBlur = 14;
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.9, -r * 0.4);
+  ctx.lineTo(-r * 0.9 - flame, 0);
+  ctx.lineTo(-r * 0.9, r * 0.4);
+  ctx.closePath();
+  ctx.fill();
+
+  // Hull: a sleek triangle nose pointing along +x (heading).
+  ctx.globalAlpha = 1;
   ctx.fillStyle = color;
   ctx.shadowColor = color;
-  ctx.shadowBlur = 18;
+  ctx.shadowBlur = 16;
   ctx.beginPath();
-  ctx.arc(marker.x, marker.y, r, 0, Math.PI * 2);
+  ctx.moveTo(r * 1.6, 0);        // nose
+  ctx.lineTo(-r * 0.9, -r);      // back-left fin
+  ctx.lineTo(-r * 0.4, 0);       // tail notch
+  ctx.lineTo(-r * 0.9, r);       // back-right fin
+  ctx.closePath();
   ctx.fill();
+
+  // Cockpit dot.
+  ctx.globalAlpha = 0.95;
+  ctx.fillStyle = "#ffffff";
+  ctx.shadowBlur = 6;
+  ctx.beginPath();
+  ctx.arc(r * 0.3, 0, r * 0.28, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+  ctx.globalAlpha = 1;
   ctx.shadowBlur = 0;
 }
 
@@ -265,6 +713,39 @@ function drawHUD(ctx, scorePulseT = 99) {
   ctx.fillText(`SCORE ${fmt(game.score)}`, 0, 0);
   ctx.restore();
   ctx.textAlign = "left";
+
+  // Active power-up effect bar: one pill per timed effect, below the main HUD line.
+  const active = powerups.getActiveEffects();
+  const rows = [
+    ["freeze",    POWERUPS.FREEZE],
+    ["boost",     POWERUPS.BOOST ],
+    ["shield",    POWERUPS.SHIELD],
+    ["solarwind", POWERUPS.SOLARWIND],
+  ].filter(([k]) => active[k] > 0);
+  if (rows.length) {
+    ctx.font = "600 13px system-ui, sans-serif";
+    ctx.textBaseline = "top";
+    let ex = 12;
+    for (const [key, cfg] of rows) {
+      const rem = active[key];
+      const dur = cfg.duration;
+      const label = `${cfg.label} ${rem.toFixed(1)}s`;
+      const w = ctx.measureText(label).width;
+      ctx.fillStyle = cfg.color;
+      ctx.shadowColor = cfg.color;
+      ctx.shadowBlur = 6;
+      ctx.fillText(label, ex, 30);
+      // Depleting bar below the label
+      ctx.fillStyle = cfg.color;
+      ctx.globalAlpha = 0.35;
+      ctx.fillRect(ex, 47, w, 2);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = cfg.color;
+      ctx.fillRect(ex, 47, w * (rem / dur), 2);
+      ex += w + 16;
+    }
+    ctx.shadowBlur = 0;
+  }
 }
 
 // --- overlays / screens ----------------------------------------------------
@@ -333,6 +814,8 @@ function drawIntro(ctx) {
   centerText(ctx, L.boss ? `BOSS — CLAIM ${L.target}%` : `CLAIM ${L.target}%`, CY + 24,
     "600 26px system-ui, sans-serif", COLORS.hudAccent);
   centerText(ctx, "press a direction to begin", CY + 72, "500 17px system-ui, sans-serif", COLORS.hud);
+  centerText(ctx, "hold SPACE while cutting for a SLOW DRAW — double points, dark glass", CY + 104,
+    "500 14px system-ui, sans-serif", COLORS.locked);
 }
 
 function drawLevelComplete(ctx, transT) {
@@ -589,8 +1072,12 @@ export function render(ctx, view = {}) {
   drawArena(ctx);
   drawPerimeter(ctx, beat);
   drawTrail(ctx, beat);
-  drawBlobs(ctx);
+  drawSolarWind(ctx);
+  drawQix(ctx);
+  drawSparx(ctx);
+  drawPowerUps(ctx);
   drawMarker(ctx);
+  if (powerups.isAiming()) drawZoomAim(ctx);
   drawParticles(ctx);
   ctx.restore();
 

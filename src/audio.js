@@ -204,6 +204,19 @@ export function sonarPing(prog = 0) {
   voice(f, { type: "sine", dur: 0.5, vol: AUDIO.sonar.level, attack: 0.004, rev: 0.75, delaySend: 0.3 });
   voice(f * 2, { type: "sine", dur: 0.2, vol: AUDIO.sonar.level * 0.3, attack: 0.004, rev: 0.6 }); // metallic shimmer
 }
+export function powerupPickup() {
+  // A bright rising arpeggio (C–E–G–C) — deliberately loud and bell-like so it
+  // sings out over the claim/whoosh/bonus sounds that fire on the same frame.
+  const notes = [523, 659, 784, 1047];
+  notes.forEach((f, i) => {
+    voice(f,     { type: "triangle", dur: 0.16, vol: 0.30, when: i * 0.055, rev: 0.45, delaySend: 0.25 });
+    voice(f * 2, { type: "sine",     dur: 0.12, vol: 0.12, when: i * 0.055, rev: 0.5  }); // shimmer octave
+  });
+  voice(1568, { type: "sine", dur: 0.5, vol: 0.14, when: 0.22, attack: 0.01, rev: 0.7, delaySend: 0.35 }); // sparkle tail
+}
+export function powerupExpire() {
+  voice(660, { type: "triangle", dur: 0.18, vol: 0.14, slideTo: 330, lp: 3000, rev: 0.3 });
+}
 export function extraLife() { [0, 4, 7, 12, 16].forEach((s, i) => voice(440 * 2 ** (s / 12), { type: "triangle", dur: 0.22, vol: 0.16, rev: 0.4, delaySend: 0.2, when: i * 0.09 })); }
 export function levelClear() { [0, 4, 7, 12, 19].forEach((s, i) => voice(330 * 2 ** (s / 12), { type: "triangle", dur: 0.3, vol: 0.18, rev: 0.5, delaySend: 0.25, when: i * 0.11 })); }
 export function gameOver() { [0, -2, -5, -9].forEach((s, i) => voice(294 * 2 ** (s / 12), { type: "sawtooth", dur: 0.5, vol: 0.18, lp: 1600, rev: 0.5, when: i * 0.18 })); }

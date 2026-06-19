@@ -3,10 +3,34 @@
 Running task list. Roadmap phases live in [GAME_DESIGN.md](GAME_DESIGN.md) §11;
 as-built decisions in §14/§16. Tick items off as they land.
 
+## Done recently
+- [x] **Phase 6 — power-ups.** Freeze, Solar Wind, Boost, Shield, **ZOOM** all built
+      (`powerups.js`). ZOOM = touch the floating pickup → aim with a direction key →
+      rocket to that wall, killing blobs in the path. Config in `config.POWERUPS`.
+- [x] **Enemy roster overhaul.** Two enemy shapes in `enemy.js`: the **star Qix**
+      (line-sheaf — sticks surge to ~50% screen then settle, line-segment collision)
+      and **polygon Blobs** (+ **Hunter Blobs** that drift at the player). **Sparx** +
+      **Fast Sparx** in `sparx.js` (BFS perimeter chase, kill on perimeter too;
+      Fast Sparx latch onto your cut trail and rocket along it). Per-level enemy mix
+      via `qix`/`blobs`/`hunters`/`sparx`/`fastSparx` in `levels.js`.
+- [x] **Player is a rocket ship** pointing along travel direction (engine flame,
+      hot while cutting).
+- [x] **Slow cut on SPACE** — hold while cutting to crawl (`MARKER.slowCutMult`); the
+      claim is darker glass (`grid.slowFill` + `THEMES.claimedFillSlow`) worth **×2**
+      (SLOW DRAW, `POINTS.slowCutMult`); trail turns glass-blue while slow.
+- [x] **Glossy glass claimed areas** — clipped specular sweep + counter-sweep + breathing
+      sheen (shimmer/ripple) in `render.drawClaimed`.
+- [x] **Starscape upgrade** — baked offscreen nebula + galaxies, twinkling parallax stars.
+- [x] **Solar Wind fixed** — now a sustained gust pinning enemies to one wall (was a
+      one-frame nudge), with wind streaks + a HUD pill; louder arpeggio pickup sound.
+
 ## Next up
-- [ ] **Phase 6 — power-ups & special Blobs.** Freeze first, then the rest, **ZOOM** last
-      (rocket to edge, destroy enemies, subject to the 75% enemy floor). Special Blobs:
-      extra-life and slow-down. Timed effects/state — see §11.
+- [ ] **Special Blobs** (the other half of §8) — extra-life Blob + slow-down Blob.
+- [ ] **Enemy floor / respawn rule (§6)** — keep ≥75% of starting enemy count;
+      respawn at the edge when SPLIT/ZOOM drop below it. Not yet wired.
+- [ ] **Tune the new enemies by feel** — Qix surge (`QIX.spanMax`,
+      `surgeIntervalMin/Max`, `endpointSpeed`); Sparx speeds + latch; Hunter drift;
+      per-level counts in `levels.js`.
 
 ## Audio / feel follow-ups (from the Audio + Feel pass 2)
 - [ ] **Separate SFX vs music volume** controls (in-game keys or a small menu). The
@@ -31,13 +55,13 @@ as-built decisions in §14/§16. Tick items off as they land.
 - [ ] Re-enable the on-screen beat readout only if needed (`config.AUDIO.debugBeat`).
 
 ## Roadmap (later phases — see §11)
-- [ ] **Phase 7** — touch controls for mobile (input abstraction).
+- [ ] **Phase 7** — touch controls for mobile (input abstraction). **Next major phase.**
 - [ ] **Phase 8** — PWA, installable on iPhone home screen.
 - [ ] **Phase 9** — Pixi.js, real sprites, glass blocks, richer neon/particles.
 - [ ] **Phase 10** — boss / picture-reveal levels (X-5), **SUPER mode** (clear 5-5 → 2×
       enemies), scoring polish, final feel.
 
 ## Deferred (captured, not blocking — §15)
-- [ ] Slow-cut bonus + its darker-shade visuals; **ZOOM** scoring.
+- [ ] **ZOOM** scoring tuning (kill + distance values). *(Slow-cut bonus + darker glass: done.)*
 - [ ] SUPER-mode build-out (wired conceptually; 5-5 currently ends at campaign-complete).
 - [ ] LONG-cut multiplier cap vs. unbounded; Solar Wind vs ZOOM overlap.

@@ -51,7 +51,7 @@ export function update({ fillPercent = 0, danger = 0, dt = 0, cutting = false } 
   audio.setMusicRate(1 + tension * T.rateSpan);
   audio.setIntensity(T.synthBase + tension * T.synthSpan);
 
-  if (!cutting) { pingTimer = 0; cutTime = 0; return; } // safe → silent; first ping fires on the next cut
+  if (!cutting || !AUDIO.sonar.enabled) { pingTimer = 0; cutTime = 0; return; }
   const S = AUDIO.sonar;
   cutTime += dt;
   pingTimer -= dt;

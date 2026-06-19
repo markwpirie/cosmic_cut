@@ -5,8 +5,9 @@
 // it's drivable headlessly in tests.
 
 import { MARKER, nodeX, nodeY } from "./config.js";
+import { boostMult } from "./powerups.js";
 import { classifyEdge, rideTypeOf, rideRank, canCut, nodeIsSafe, applyClaim } from "./grid.js";
-import { peekPending, clearPending, currentDesired } from "./control.js";
+import { peekPending, clearPending, currentDesired, slowHeld } from "./control.js";
 import { cells as blobCells, removeBlobs } from "./enemy.js";
 
 export const marker = {
@@ -22,6 +23,11 @@ export let mode = "riding";  // "riding" | "cutting"
 export let rideType = "auto"; // "auto" (frontier/wall) | "seam"
 export let trail = [];       // nodes of the in-progress cut
 export let lastCutLength = 0; // node count of the just-finished cut (for LONG scoring)
+export let slowActive = false; // a valid slow draw is in force right now (drives the visual)
+export let lastCutSlow = false; // was the just-finished cut a SLOW DRAW? (for scoring)
+let cutClock = 0;             // seconds since this cut began
+let slowArmed = false;       // committed to a slow draw (SPACE held early enough)
+let slowBroken = false;      // SPACE released after arming → can't be a slow draw any more
 
 // Place the marker at a lattice node and clear its motion/cut state.
 export function home(col, row) {
@@ -55,6 +61,10 @@ function setDir(dx, dy) {
 function startCut(dx, dy) {
   mode = "cutting";
   trail = [{ col: marker.col, row: marker.row }];
+  cutClock = 0;
+  slowArmed = slowHeld(); // holding SPACE as you leave the boundary arms it immediately
+  slowBroken = false;
+  slowActive = slowArmed;
   setDir(dx, dy);
 }
 
@@ -147,7 +157,8 @@ function finishCut() {
   // Keep the survivors' region open, claim the rest; blobs trapped on a claimed
   // (smaller) side die — the SPLIT.
   lastCutLength = trail.length;
-  const killed = applyClaim(trail, blobCells());
+  lastCutSlow = slowArmed && !slowBroken; // armed early AND held continuously to the end
+  const killed = applyClaim(trail, blobCells(), lastCutSlow);
   if (killed.length) removeBlobs(killed);
   trail = [];
   mode = "riding";
@@ -172,7 +183,26 @@ function onArrive() {
 // distance across turns so speed is constant regardless of frame rate.
 export function update(dt) {
   if (!dir) { decideRiding(); if (!dir) return; } // start on first input
-  let remaining = MARKER.speed * dt;
+  // Slow draw: a deliberate, committed crawl. You arm it by holding SPACE as you
+  // leave the boundary or within slowArmWindow of the cut starting; after that the
+  // key does nothing. Once armed it must stay held for the whole line — releasing
+  // breaks it for good (you can't re-arm mid-cut). A valid slow draw crawls at
+  // slowCutMult and tags the claim as darker glass worth double.
+  if (mode === "cutting") {
+    cutClock += dt;
+    if (!slowBroken) {
+      if (slowHeld()) {
+        if (cutClock <= MARKER.slowArmWindow) slowArmed = true; // arm only in the window
+      } else if (slowArmed) {
+        slowBroken = true; // released after arming → no longer a slow draw
+      }
+    }
+    slowActive = slowArmed && !slowBroken && slowHeld();
+  } else {
+    slowActive = false;
+  }
+  const speedMult = boostMult() * (slowActive ? MARKER.slowCutMult : 1);
+  let remaining = MARKER.speed * speedMult * dt;
   while (remaining > 0 && dir) {
     const tx = nodeX(marker.col + dir.dx);
     const ty = nodeY(marker.row + dir.dy);
