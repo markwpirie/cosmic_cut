@@ -46,6 +46,34 @@ as-built decisions in §14/§16. Tick items off as they land.
 - [ ] Sprite-based stars/particles (ParticleContainer); glass-block depth; boss reveal.
 - [ ] Verify in-browser (written blind — watch the DevTools console for v8 API mismatches).
 
+### Phase 9 — the "beautiful" art-direction pass (reference board in `assets/`)
+Reference: `assets/Qix Jun 19, 2026, 08_30_18 PM.png` — a "QIX: NEXUS — Reclaim the
+Void" visual storyboard. **This is the target look.** Visual DNA to hit:
+- **Palette discipline:** deep near-black void; **cyan/teal** the hero colour;
+  **magenta/violet** reserved for boss energy. Few colours, used with restraint.
+- **Bloom on everything** (the biggest single upgrade vs the current fake glow).
+- **Claimed area = luminous glass:** translucent blue fills with crisp emissive borders.
+- **Enemies as energy** (bright glowing cores + trails), not flat shapes.
+- **Atmospheric depth:** faint grid in the void, drifting motes, edge vignette.
+- **Thin, wide sci-fi typography**; calm data-viz HUD.
+
+Sequenced implementation (each step is visible, tune as we go — Mark is the eyes):
+- [ ] **1. Bloom** — `AdvancedBloomFilter` (from `pixi-filters`) on the Pixi stage.
+- [ ] **2. Palette pass** — lock cyan-hero / magenta-boss; darken the void.
+- [ ] **3. Glass treatment** — emissive borders + refraction for claimed cells (panel-7 look).
+- [ ] **4. Grid + vignette + ambient particles** — the atmospheric depth.
+- [ ] **5. Energy enemies** — glow cores + particle trails (keep our shapes, make them radiate).
+- [ ] **6. Typography** — sci-fi web font for HUD + titles.
+
+Open decisions (Mark to decide):
+- [ ] **Name** — *deferred.* Concern: **"Qix" is a Taito trademark** — using it in the
+      product name risks infringement (the genre/mechanic itself isn't protected, just
+      the name). Pick an original name (COSMIC CUT or new). Not legal advice — flagging.
+- [ ] **Enemy style** — evolve current shapes to glow like energy (preferred) vs move
+      to the simpler abstract points in the board.
+- [ ] **Procedural vs assets** — bring in art assets (logo, boss bursts, rich
+      backgrounds; possibly AI-generated) while gameplay stays crisp procedural vectors.
+
 ## Next up
 - [ ] **Special Blobs** (the other half of §8) — extra-life Blob + slow-down Blob.
 - [ ] **Enemy floor / respawn rule (§6)** — keep ≥75% of starting enemy count;
