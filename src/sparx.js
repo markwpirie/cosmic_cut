@@ -88,6 +88,22 @@ function bfsNextDir(startCol, startRow, goalCol, goalRow, trail, canLatch) {
   return null;
 }
 
+// Fallback movement when BFS can't reach the player (e.g. the player is off the
+// perimeter mid-cut). Keep gliding along the perimeter: continue STRAIGHT if we can,
+// else take a perpendicular turn (random choice at a junction), and only reverse at a
+// dead end. Perimeter edges only (no trail-latching here).
+function patrolDir(s, trail) {
+  const valid = (d) => edgeValid(s.col, s.row, d.dx, d.dy, trail, false);
+  if (!s.dir) { for (const d of ALL_DIRS) if (valid(d)) return d; return null; }
+  const back = { dx: -s.dir.dx, dy: -s.dir.dy };
+  if (valid(s.dir)) return s.dir;                       // carry straight on
+  const turns = ALL_DIRS.filter(d =>                    // perpendicular options
+    !(d.dx === s.dir.dx && d.dy === s.dir.dy) &&
+    !(d.dx === back.dx && d.dy === back.dy) && valid(d));
+  if (turns.length) return turns[(Math.random() * turns.length) | 0];
+  return valid(back) ? back : null;                     // dead end → turn around
+}
+
 // Is the edge from (col,row) in direction (dx,dy) traversable by a Sparx?
 function edgeValid(col, row, dx, dy, trail, canLatch) {
   const rank = rideRank(col, row, dx, dy);
@@ -152,14 +168,18 @@ function updatePerimeter(s, dt, marker, trail) {
         if (s.latched) break;
       }
 
-      // BFS to choose the next node.
-      const nextDir = bfsNextDir(s.col, s.row, marker.col, marker.row, trail, s.fast);
+      // BFS to choose the next node. While the player is cutting, the marker leaves
+      // the perimeter network, so no path exists toward it — rather than freeze, the
+      // Sparx keeps PATROLLING (carry on in its current heading) so it stays a moving
+      // threat until the player rejoins the perimeter.
+      const nextDir = bfsNextDir(s.col, s.row, marker.col, marker.row, trail, s.fast)
+                   || patrolDir(s, trail);
       if (nextDir) {
         s.dir = nextDir;
         s.nextCol = s.col + nextDir.dx;
         s.nextRow = s.row + nextDir.dy;
       } else {
-        // No path found — stay put (rare, e.g. completely enclosed corner).
+        // Truly boxed in (no valid perimeter edge at all) — stay put.
         s.nextCol = s.col; s.nextRow = s.row;
         remaining = 0;
       }

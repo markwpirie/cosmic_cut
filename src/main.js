@@ -58,6 +58,8 @@ let danger = 0;        // 0..1, how close a blob is to your exposed trail
 let prevCutting = false; // tracks the cut-tension tone on/off
 let audioStarted = false;
 let paused = false;      // P / ESC freeze during play
+const SHEAF_RESPAWN = 1.5; // seconds before a new Qix appears once the board has none
+let sheafRespawnT = SHEAF_RESPAWN;
 
 function zoneColor() { return THEMES[game.currentLevel().zone - 1].frontier; }
 
@@ -354,6 +356,20 @@ function loop(now) {
     }
 
     prevPercent = grid.percent;
+
+    // Repopulate the Qix if the board has none left (all killed via ZOOM dash / SPLIT)
+    // — there should always be a star enemy to carve around. Short delay so it doesn't
+    // pop in the instant the last one dies.
+    const curLv = game.currentLevel();
+    if (curLv.qix && curLv.qix.length && enemy.countSheafs() === 0) {
+      sheafRespawnT -= dt;
+      if (sheafRespawnT <= 0) {
+        enemy.addSheaf(curLv.qix[0], curLv.boss);
+        sheafRespawnT = SHEAF_RESPAWN;
+      }
+    } else {
+      sheafRespawnT = SHEAF_RESPAWN;
+    }
 
     // Death checks. The player is invulnerable to enemies while AIMING a ZOOM (frozen)
     // and during the DASH itself — the dash kills on contact instead (above). But

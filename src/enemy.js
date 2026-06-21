@@ -81,7 +81,9 @@ function makeVerts() {
 
 function makeEnemy(ti, r, c, shape, hunter, boss = false) {
   const type = BLOB_TYPES[ti] || BLOB_TYPES[0];
-  const radius = type.radius * QIX.sizeScale * (boss ? BOSS.sizeMult : 1);
+  // Poly Blobs get an extra size bump so their orbiting-vertex detail is legible.
+  const polyScale = shape === "poly" ? BLOB_POLY.sizeScale : 1;
+  const radius = type.radius * QIX.sizeScale * polyScale * (boss ? BOSS.sizeMult : 1);
   const b = {
     x: field.x + (c + 0.5) * CELL,
     y: field.y + (r + 0.5) * CELL,
@@ -137,6 +139,21 @@ export function reset({ qix = [], blobs: polyIdx = [], hunters = [], boss = fals
   });
 }
 reset();
+
+// Spawn a single extra sheaf Qix mid-level (used to repopulate the board when the
+// last one is killed via a ZOOM dash or a SPLIT — there should always be a star
+// enemy to carve around). Picks a fresh open cell away from the player.
+export function addSheaf(ti = 0, boss = false) {
+  const [r, c] = spawnCells(1)[0];
+  blobs.push(makeEnemy(ti, r, c, "sheaf", false, boss));
+}
+
+// How many sheaf (Qix) enemies are currently alive.
+export function countSheafs() {
+  let n = 0;
+  for (const b of blobs) if (b.shape === "sheaf") n++;
+  return n;
+}
 
 // --- Sheaf body ---
 

@@ -115,8 +115,23 @@ export const GLASS = {
 // (local turbulence, not just a sliding image). `warp` = displacement strength in px
 // (0 = off, static drift only); `evolve` scales how fast it churns.
 export const NEBULA = {
-  warp: 22,
+  warp: 40,
   evolve: 1,
+  // Slow whole-nebula motion so the gas clouds aren't pinned to fixed screen spots:
+  // an oversized sprite (scale) drifts in a lissajous (drift px) and gently rocks
+  // (rotate rad). Kept within the oversize margin so a screen edge never shows.
+  scale: 1.32,   // base oversize (room to wander/rotate without exposing an edge)
+  drift: 46,     // px amplitude of the slow positional wander
+  rotate: 0.06,  // radians amplitude of the slow rotation rock
+};
+
+// Phase 9 — STARFIELD drift (Pixi-only). The parallax stars used to always fall
+// straight down (N→S); now they scroll along a heading that slowly rotates, so the
+// field's direction keeps changing. `windTurn` = rad/sec the heading rotates;
+// `baseAngle` = starting heading (π/2 = downward, the classic look).
+export const STARFIELD = {
+  windTurn: 0.05,
+  baseAngle: Math.PI / 2,
 };
 
 // Phase 9 — our signature look: ROUNDED territory edges. The perimeter frontier, the
@@ -240,6 +255,8 @@ export const BOSS = {
 // for regular Blobs and Hunter Blobs. Collision uses a bounding radius.
 export const BLOB_POLY = {
   segments:       8,    // vertices in the body polygon
+  sizeScale:     1.6,   // extra size multiplier for POLY blobs only (on top of QIX.sizeScale)
+                        //   — bigger Blobs so their orbiting-vertex intricacy reads clearly
   hitScale:      0.95,  // collision radius = blob radius × this (tighter than the visual
                         //   bounding radius, which uses the full oscillation extent)
   oscillateAmp:  0.5,   // vertex radius swings ± this fraction of blob radius

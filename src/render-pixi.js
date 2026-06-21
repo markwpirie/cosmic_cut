@@ -15,7 +15,7 @@
 
 import { Application, Container, Graphics, Sprite, TilingSprite, Texture, Text, Rectangle, DisplacementFilter } from "pixi.js";
 import { AdvancedBloomFilter } from "pixi-filters";
-import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, QIX, BLOB_POLY, SPARX, MARKER, BLOOM, CORNERS, GLASS, NEBULA } from "./config.js";
+import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, QIX, BLOB_POLY, SPARX, MARKER, BLOOM, CORNERS, GLASS, NEBULA, STARFIELD } from "./config.js";
 import * as powerups from "./powerups.js";
 import { grid, slowFill, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
 import { marker, mode, dir, trail, slowActive } from "./marker.js";
@@ -50,6 +50,7 @@ let storm = null;     // { x0,y0,x1,y1,life,max } the current ambient bolt
 let stormFlash = 0;   // brief screen-flash envelope after a strike
 let starsState = null;
 let starLast = 0;
+let starWind = STARFIELD.baseAngle; // current scroll heading; rotates slowly each frame
 
 // Text pool — reuse Text objects across frames (creating them per frame is slow).
 let uiLayer = null;
@@ -213,6 +214,19 @@ function glow(g, build, passes, cap = "round") {
     build(g);
     g.stroke({ width: p.w, color: p.c, alpha: p.a, cap, join: "round" });
   }
+}
+
+// A fake-3D glossy sphere: a soft outer glow, the shaded body, a lower-right shadow
+// and an upper-left specular highlight — so cores/pickups/particles read as lit beads
+// instead of flat discs. Light is assumed to come from the upper-left. With bloom the
+// white specular blooms into a convincing glassy sheen. `glow` scales the outer halo.
+function sphere(g, x, y, r, color, opts = {}) {
+  const { glow = 0.2, light = 0xffffff } = opts;
+  if (glow > 0) g.circle(x, y, r * 1.8).fill({ color, alpha: glow });        // soft outer glow
+  g.circle(x, y, r).fill({ color, alpha: 0.95 });                            // body
+  g.circle(x + r * 0.25, y + r * 0.3, r * 0.7).fill({ color: 0x000000, alpha: 0.26 }); // shadow side
+  g.circle(x - r * 0.28, y - r * 0.32, r * 0.5).fill({ color, alpha: 0.65 }); // lit lobe
+  g.circle(x - r * 0.3, y - r * 0.34, r * 0.22).fill({ color: light, alpha: 0.9 }); // specular
 }
 
 // --- Rainbow + lightning toolkit -------------------------------------------
@@ -571,10 +585,13 @@ function drawBackground(beat) {
   // oversized + centre-anchored so the breathe/drift never exposes a screen edge. The
   // "pulse" now comes from scale-breathing + the smoke-warp, not alpha.
   bgSprite.alpha = 1;
-  bgSprite.scale.set(1.15 + 0.03 * Math.sin(tt * 0.18));
-  bgSprite.rotation = 0.012 * Math.sin(tt * 0.05);
-  bgSprite.x = WIDTH / 2 + 16 * Math.sin(tt * 0.06);
-  bgSprite.y = HEIGHT / 2 + 12 * Math.cos(tt * 0.05);
+  // Wander + rock the whole nebula so the gas clouds aren't pinned to fixed screen
+  // spots. All amplitudes stay inside the oversize margin (NEBULA.scale) so no edge
+  // shows. The lissajous (different x/y frequencies) gives a non-repeating drift.
+  bgSprite.scale.set(NEBULA.scale + 0.04 * Math.sin(tt * 0.18));
+  bgSprite.rotation = NEBULA.rotate * (0.7 * Math.sin(tt * 0.05) + 0.3 * Math.sin(tt * 0.13));
+  bgSprite.x = WIDTH / 2 + NEBULA.drift * Math.sin(tt * 0.06);
+  bgSprite.y = HEIGHT / 2 + NEBULA.drift * Math.cos(tt * 0.043);
   // Churn the smoke: a perpetual slow swirl (continuous rotation) plus a gentle drift of
   // the displacement map → the nebula curls and evolves. NEBULA.evolve scales the rate.
   if (dispSprite) {
@@ -593,10 +610,17 @@ function drawBackground(beat) {
   starLast = t;
   const ts = t / 1000;
   const boost = 1 + beat * 0.7;
+  // Scroll the field along a heading that slowly rotates, so it doesn't always fall
+  // straight N→S — over a minute the drift swings to a new direction. Each star keeps
+  // its own speed (parallax) and wraps toroidally on both axes.
+  starWind += dt * STARFIELD.windTurn;
+  const wx = Math.cos(starWind), wy = Math.sin(starWind);
   const g = G.stars; g.clear();
   for (const s of starsState) {
-    s.y += s.v * dt;
-    if (s.y > HEIGHT) { s.y = 0; s.x = Math.random() * WIDTH; }
+    s.x += s.v * wx * dt;
+    s.y += s.v * wy * dt;
+    if (s.x < 0) s.x += WIDTH; else if (s.x > WIDTH) s.x -= WIDTH;
+    if (s.y < 0) s.y += HEIGHT; else if (s.y > HEIGHT) s.y -= HEIGHT;
     const tw = 0.55 + 0.45 * Math.sin(ts * s.tws + s.tw);
     g.rect(s.x, s.y, s.size, s.size).fill({ color: s.tint, alpha: Math.min(1, s.a * tw * boost) });
   }
@@ -692,18 +716,22 @@ function drawGlassSweep(wipeR = -1) {
   sweepB.alpha = GLASS.opacity * 0.6;
 }
 
-function drawSeams() {
+function drawSeams(wipeR = -1) {
   const g = G.seams; g.clear();
   // Collect the visible interior seam segments (as col/row node pairs), then link
   // them into chains and stroke with the same rounded corners as everything else.
+  // During the level-complete ripple, cull any seam whose midpoint is inside the wipe
+  // radius so the interior lines vanish WITH the glass (instead of lingering on the
+  // already-wiped board).
+  const culled = (mx, my) => wipeR >= 0 && Math.hypot(mx - CX, my - CY) <= wipeR;
   const segs = [];
   for (const key of seams) {
     const [kind, a, b] = key.split(":");
     const p = Number(a), q = Number(b);
     if (kind === "h") {
-      if (cellSolid(p - 1, q) && cellSolid(p, q)) segs.push([q, p, q + 1, p]);
+      if (cellSolid(p - 1, q) && cellSolid(p, q) && !culled(nx(q + 0.5), ny(p))) segs.push([q, p, q + 1, p]);
     } else {
-      if (cellSolid(q, p - 1) && cellSolid(q, p)) segs.push([p, q, p, q + 1]);
+      if (cellSolid(q, p - 1) && cellSolid(q, p) && !culled(nx(p), ny(q + 0.5))) segs.push([p, q, p, q + 1]);
     }
   }
   if (!segs.length) return;
@@ -795,9 +823,9 @@ function drawSheaf(g, b) {
   const N = H.length;
   const boss = b.boss;
   const t = now() / 1000;
-  // Rainbow sticks: hue cycles along the history AND over time, so the ribbon shimmers
-  // through the spectrum. Boss gets a fatter, brighter set of passes. Newest 2 sticks
-  // stay white-hot at the core.
+  // BOSS sticks shimmer through the rainbow (its signature); regular Qix sticks glow in
+  // the enemy's own neon colour, newest 2 white-hot. Boss gets a fatter, brighter set
+  // of passes. (Rainbow is reserved for the boss so it reads as special.)
   const passes = boss
     ? [{ w: 11, a: 0.12 }, { w: 5, a: 0.45 }, { w: 1.8, a: 1 }]
     : [{ w: 5, a: 0.12 }, { w: 1.6, a: 0.95 }];
@@ -805,7 +833,9 @@ function drawSheaf(g, b) {
     for (let i = 0; i < N; i++) {
       const age = i / N;
       const s = H[i];
-      const c = (pass.w < 2 && i < 2) ? 0xffffff : hueColor(t * 80 + i * 16 + b.t * 30);
+      const c = boss
+        ? ((pass.w < 2 && i < 2) ? 0xffffff : hueColor(t * 80 + i * 16 + b.t * 30))
+        : (i < 2 ? 0xffffff : b.color);
       g.moveTo(s.ax, s.ay).lineTo(s.bx, s.by)
         .stroke({ width: pass.w, color: c, alpha: pass.a * (1 - age * 0.85), cap: "round" });
     }
@@ -815,6 +845,8 @@ function drawSheaf(g, b) {
     g.circle(b.x, b.y, 18 * pulse).fill({ color: hueColor(t * 100), alpha: 0.45 });
     g.circle(b.x, b.y, 9 * pulse).fill({ color: hueColor(t * 100 + 120), alpha: 0.6 });
     g.circle(b.x, b.y, 4).fill({ color: 0xffffff, alpha: 0.95 });
+  } else { // glowy 3D nucleus at the sheaf's body centre
+    sphere(g, b.x, b.y, 5, b.color, { glow: 0.3 });
   }
   drawSheafLightning(g, b, H, t, boss);
 }
@@ -824,7 +856,7 @@ function drawSheaf(g, b) {
 function drawSheafLightning(g, b, H, t, boss) {
   const s = H[0]; // newest = live stick
   if (Math.random() < (boss ? 0.7 : 0.12)) {
-    drawBolt(g, s.ax, s.ay, s.bx, s.by, hueColor(t * 120 + 40),
+    drawBolt(g, s.ax, s.ay, s.bx, s.by, boss ? hueColor(t * 120 + 40) : b.color,
       { jitter: boss ? 26 : 13, segs: boss ? 9 : 6, w: boss ? 2.4 : 1.5, a: boss ? 0.9 : 0.55 });
   }
   if (boss) {
@@ -847,7 +879,7 @@ function drawPoly(g, b) {
     g.moveTo(verts[i].x, verts[i].y).lineTo(verts[i + half].x, verts[i + half].y)
       .stroke({ width: 1.6, color: b.color, alpha: 0.5 });
   }
-  g.circle(b.x, b.y, 2.5).fill({ color: "#ffffff", alpha: 0.9 });
+  sphere(g, b.x, b.y, 4, b.color, { glow: 0.28 }); // glowy 3D core
   if (b.hunter) {
     const dx = marker.x - b.x, dy = marker.y - b.y, d = Math.hypot(dx, dy);
     if (d > 0) {
@@ -886,31 +918,32 @@ function drawPowerUps() {
   const S = POWERUPS.iconScale;
   const draw = (type, x, y, angle = 0) => {
     const cfg = POWERUPS[type], col = cfg.color;
-    // backing disc
-    g.circle(x, y, 8 * S).fill({ color: col, alpha: 0.12 });
+    // backing: a glossy 3D sphere (lit bead) instead of a flat disc
+    sphere(g, x, y, 8 * S, col, { glow: 0.16 });
     const lw = 2.2;
+    const ink = "#ffffff"; // glyph drawn white so it reads on the coloured sphere
     if (type === "FREEZE") {
       for (let i = 0; i < 3; i++) {
         const a = (i * Math.PI) / 3;
         const dx = Math.sin(a) * 5 * S, dy = -Math.cos(a) * 5 * S;
-        g.moveTo(x - dx, y - dy).lineTo(x + dx, y + dy).stroke({ width: lw, color: col });
+        g.moveTo(x - dx, y - dy).lineTo(x + dx, y + dy).stroke({ width: lw, color: ink });
       }
     } else if (type === "SOLARWIND") {
       for (let i = -1; i <= 1; i++) {
         const yo = i * 3 * S;
-        g.moveTo(x - 3 * S, y + yo - 2 * S).lineTo(x, y + yo).lineTo(x + 3 * S, y + yo - 2 * S).stroke({ width: lw, color: col });
+        g.moveTo(x - 3 * S, y + yo - 2 * S).lineTo(x, y + yo).lineTo(x + 3 * S, y + yo - 2 * S).stroke({ width: lw, color: ink });
       }
     } else if (type === "BOOST") {
-      g.poly([x + 1 * S, y - 5 * S, x - 2 * S, y, x + 1 * S, y, x - 1 * S, y + 5 * S, x + 3 * S, y - 1 * S, x, y - 1 * S]).fill(col);
+      g.poly([x + 1 * S, y - 5 * S, x - 2 * S, y, x + 1 * S, y, x - 1 * S, y + 5 * S, x + 3 * S, y - 1 * S, x, y - 1 * S]).fill(ink);
     } else if (type === "SHIELD") {
       const pts = [];
       for (let i = 0; i < 5; i++) { const a = (i * 2 * Math.PI) / 5 - Math.PI / 2; pts.push(x + Math.cos(a) * 5 * S, y + Math.sin(a) * 5 * S); }
-      g.poly(pts).stroke({ width: lw, color: col });
+      g.poly(pts).stroke({ width: lw, color: ink });
     } else if (type === "ZOOM") {
-      g.circle(x, y, 3 * S).fill(col);
+      g.circle(x, y, 3 * S).fill(ink);
       for (let i = 0; i < 4; i++) {
         const a = (i * Math.PI) / 2 + angle;
-        g.moveTo(x + Math.cos(a) * 4 * S, y + Math.sin(a) * 4 * S).lineTo(x + Math.cos(a) * 8 * S, y + Math.sin(a) * 8 * S).stroke({ width: lw, color: col });
+        g.moveTo(x + Math.cos(a) * 4 * S, y + Math.sin(a) * 4 * S).lineTo(x + Math.cos(a) * 8 * S, y + Math.sin(a) * 8 * S).stroke({ width: lw, color: ink });
       }
     }
   };
@@ -960,7 +993,8 @@ function drawParticles() {
     if (p.glow) {
       g.circle(p.x, p.y, r * 2.6).fill({ color: p.color, alpha: 0.16 * k });   // soft halo
       g.circle(p.x, p.y, r).fill({ color: p.color, alpha: Math.min(1, k) });   // body
-      g.circle(p.x, p.y, r * 0.5).fill({ color: "#ffffff", alpha: 0.55 * k }); // hot core (bloom catches it)
+      // offset hot highlight (upper-left) → reads as a lit 3D bead, not a flat dot
+      g.circle(p.x - r * 0.3, p.y - r * 0.3, r * 0.5).fill({ color: "#ffffff", alpha: 0.6 * k });
     } else {
       g.rect(p.x - r / 2, p.y - r / 2, r, r).fill({ color: p.color, alpha: k });
     }
@@ -1136,7 +1170,7 @@ export function render(view = {}) {
   if (game.state === "levelcomplete") {
     drawClaimed(wipeRadius(transT));
     drawGlassSweep(wipeRadius(transT));
-    drawSeams(); // keep the interior glass lines visible through the celebration
+    drawSeams(wipeRadius(transT)); // interior lines vanish WITH the glass as the ripple passes
     [G.perimeter, G.trail, G.solar, G.enemy, G.sparx, G.powerup].forEach(g => g.clear());
     drawArena();
     drawParticles();
