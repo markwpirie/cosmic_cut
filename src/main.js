@@ -191,6 +191,73 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
+// --- Touch controls (mobile / iPhone) ----------------------------------------
+// A relative virtual joystick: the primary finger's displacement direction is the
+// "held" heading (so the marker turns onto that line at junctions, exactly like a
+// held arrow key); a direction change also fires a fresh press (start a cut / turn
+// now). A SECOND finger = slow draw (SPACE). Taps drive the menus. Keyboard still
+// works alongside. Built on control.press/release/setSlow so it reuses the intent model.
+const SYNTH = { up: "ArrowUp", down: "ArrowDown", left: "ArrowLeft", right: "ArrowRight" };
+let touchId = null, touchAnchor = null, touchDir = null;
+
+function touchDominant(dx, dy) {
+  if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? "right" : "left";
+  return dy > 0 ? "down" : "up";
+}
+function setTouchDir(name) {
+  if (touchDir === name) return;
+  if (touchDir) control.release(SYNTH[touchDir]);
+  touchDir = name;
+  if (name) {
+    control.press(SYNTH[name]);
+    if (game.state === "intro") game.beginPlay(); // a direction begins the level (like a key)
+  }
+}
+// Shared "a touch happened" gesture: wake audio (first gesture) + advance non-play
+// screens. Returns true if it consumed the very first gesture (audio bootstrap).
+function touchGesture() {
+  audio.resume();
+  if (!audioStarted) { audio.startMusic(); audioStarted = true; return true; }
+  if (paused) return true;
+  if (game.state === "title") { game.toMenu(); audio.ui(); }
+  else if (game.state === "menu") { game.startRun(menuSel); audio.ui(); }
+  else if (game.state === "dead") { if (transT >= TIMING.deathHold) { respawn(); game.beginPlay(); } }
+  else if (game.state === "gameover" || game.state === "campaigncomplete") {
+    game.toMenu(); menuSel = Math.min(menuSel, game.unlockedZone);
+  }
+  return false;
+}
+if (canvas && typeof window !== "undefined" && "ontouchstart" in window) {
+  canvas.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    if (e.touches.length >= 2) control.setSlow(true);
+    touchGesture();
+    if (touchId === null) {
+      const t = e.changedTouches[0];
+      touchId = t.identifier;
+      touchAnchor = { x: t.clientX, y: t.clientY };
+    }
+  }, { passive: false });
+  canvas.addEventListener("touchmove", (e) => {
+    e.preventDefault();
+    if (touchId === null || !touchAnchor) return;
+    let t = null;
+    for (const ct of e.touches) if (ct.identifier === touchId) { t = ct; break; }
+    if (!t) return;
+    const dx = t.clientX - touchAnchor.x, dy = t.clientY - touchAnchor.y;
+    if (Math.hypot(dx, dy) > 16) setTouchDir(touchDominant(dx, dy)); // 16px dead-zone
+  }, { passive: false });
+  const endTouch = (e) => {
+    e.preventDefault();
+    if (e.touches.length < 2) control.setSlow(false);
+    let still = false;
+    for (const ct of e.touches) if (ct.identifier === touchId) { still = true; break; }
+    if (!still) { setTouchDir(null); touchId = null; touchAnchor = null; }
+  };
+  canvas.addEventListener("touchend", endTouch, { passive: false });
+  canvas.addEventListener("touchcancel", endTouch, { passive: false });
+}
+
 let lastTime = performance.now();
 let prevState = null;
 

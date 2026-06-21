@@ -42,4 +42,9 @@ canvas {
   background: #000;
   border-radius: 6px;
   box-shadow: 0 0 30px rgba(25, 230, 255, 0.25);
+  /* Mobile: the canvas owns all touch gestures (no page pan/zoom), no tap flash. */
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
 }
