@@ -45,6 +45,9 @@ let glassMask = null; // union of claimed cells, used to clip the specular sweep
 let sweepGroup = null; // masked container holding the additive reflection TilingSprites
 let sweepA = null, sweepB = null; // two parallax reflection layers
 let sweepLast = 0;    // timestamp for sweep scroll dt
+let stormTimer = 3;   // seconds until the next ambient void lightning strike
+let storm = null;     // { x0,y0,x1,y1,life,max } the current ambient bolt
+let stormFlash = 0;   // brief screen-flash envelope after a strike
 let starsState = null;
 let starLast = 0;
 
@@ -210,6 +213,45 @@ function glow(g, build, passes, cap = "round") {
     build(g);
     g.stroke({ width: p.w, color: p.c, alpha: p.a, cap, join: "round" });
   }
+}
+
+// --- Rainbow + lightning toolkit -------------------------------------------
+// HSL hue (degrees) → 0xRRGGBB int. Used for rainbow Qix sheafs and electric arcs.
+function hueColor(h, s = 1, l = 0.6) {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const hh = (((h % 360) + 360) % 360) / 60;
+  const x = c * (1 - Math.abs((hh % 2) - 1));
+  let r = 0, g = 0, b = 0;
+  if (hh < 1) { r = c; g = x; } else if (hh < 2) { r = x; g = c; }
+  else if (hh < 3) { g = c; b = x; } else if (hh < 4) { g = x; b = c; }
+  else if (hh < 5) { r = x; b = c; } else { r = c; b = x; }
+  const m = l - c / 2, to = (v) => Math.round((v + m) * 255);
+  return (to(r) << 16) | (to(g) << 8) | to(b);
+}
+
+// A jagged lightning path between two points (fresh jitter each call → flickers).
+function boltPts(x0, y0, x1, y1, jitter, segs) {
+  const pts = [{ x: x0, y: y0 }];
+  for (let i = 1; i < segs; i++) {
+    const t = i / segs;
+    pts.push({ x: x0 + (x1 - x0) * t + (Math.random() - 0.5) * jitter,
+               y: y0 + (y1 - y0) * t + (Math.random() - 0.5) * jitter });
+  }
+  pts.push({ x: x1, y: y1 });
+  return pts;
+}
+function strokePts(g, pts, w, c, a) {
+  g.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
+  g.stroke({ width: w, color: c, alpha: a, cap: "round", join: "round" });
+}
+// Electric arc: one jagged path, stroked as wide-coloured halo + white core + tinted core.
+function drawBolt(g, x0, y0, x1, y1, color, opts = {}) {
+  const { jitter = 14, segs = 6, w = 2, a = 1 } = opts;
+  const pts = boltPts(x0, y0, x1, y1, jitter, segs);
+  strokePts(g, pts, w * 3, color, a * 0.18);
+  strokePts(g, pts, w, 0xffffff, a);
+  strokePts(g, pts, w * 0.6, color, a * 0.85);
 }
 
 // Seamless, tileable streak+noise texture for the glass reflection TilingSprites.
@@ -558,6 +600,33 @@ function drawBackground(beat) {
     const tw = 0.55 + 0.45 * Math.sin(ts * s.tws + s.tw);
     g.rect(s.x, s.y, s.size, s.size).fill({ color: s.tint, alpha: Math.min(1, s.a * tw * boost) });
   }
+
+  // Ambient lightning storm in the void: every few seconds a forked bolt strikes from
+  // the top, with a brief blue screen-flash. Drawn over the nebula (G.stars sits above
+  // bgSprite), subtle enough not to fight the gameplay.
+  stormTimer -= dt;
+  if (stormTimer <= 0) {
+    stormTimer = 5 + Math.random() * 8;
+    const x0 = Math.random() * WIDTH;
+    storm = { x0, y0: 0, x1: x0 + (Math.random() - 0.5) * 320, y1: HEIGHT * (0.35 + Math.random() * 0.5), life: 0.22, max: 0.22 };
+    stormFlash = 0.6;
+  }
+  if (storm) {
+    storm.life -= dt;
+    if (storm.life <= 0) storm = null;
+    else {
+      const a = storm.life / storm.max;
+      drawBolt(g, storm.x0, storm.y0, storm.x1, storm.y1, 0xaad4ff, { jitter: 34, segs: 11, w: 2, a: a * 0.55 });
+      // a fork
+      const fx2 = storm.x0 + (storm.x1 - storm.x0) * 0.55;
+      const fy2 = storm.y1 * 0.55;
+      drawBolt(g, fx2, fy2, fx2 + (Math.random() - 0.5) * 160, fy2 + 60 + Math.random() * 120, 0xaad4ff, { jitter: 22, segs: 7, w: 1.4, a: a * 0.4 });
+    }
+  }
+  if (stormFlash > 0) {
+    stormFlash -= dt * 3;
+    g.rect(0, 0, WIDTH, HEIGHT).fill({ color: 0x2a4a7a, alpha: Math.max(0, stormFlash) * 0.12 });
+  }
 }
 
 function drawClaimed(wipeR = -1) {
@@ -684,6 +753,20 @@ function drawTrail(beat) {
   ]);
 }
 
+// Danger crackle: when an enemy is closing on your exposed cut, electric arcs spit off
+// the marker — rising with `danger` (0..1). Drawn into the trail layer (bloomed).
+function drawCutCrackle(danger) {
+  if (mode !== "cutting" || danger < 0.32) return;
+  const g = G.trail, t = now() / 1000;
+  const arcs = danger > 0.7 ? 2 : 1;
+  for (let k = 0; k < arcs; k++) {
+    if (Math.random() > danger) continue;
+    const ang = Math.random() * Math.PI * 2, len = 10 + danger * 32;
+    drawBolt(g, marker.x, marker.y, marker.x + Math.cos(ang) * len, marker.y + Math.sin(ang) * len,
+      hueColor(t * 220 + k * 90), { jitter: 7, segs: 4, w: 1.4, a: 0.45 + danger * 0.45 });
+  }
+}
+
 function drawSolarWind() {
   const g = G.solar; g.clear();
   const sw = powerups.getSolarWind();
@@ -710,14 +793,41 @@ function drawSheaf(g, b) {
   const H = qixLines(b);
   if (!H.length) return;
   const N = H.length;
-  // Two glow passes; newest sticks brightest.
-  for (const pass of [{ w: 5, a: 0.12 }, { w: 1.6, a: 0.95 }]) {
+  const boss = b.boss;
+  const t = now() / 1000;
+  // Rainbow sticks: hue cycles along the history AND over time, so the ribbon shimmers
+  // through the spectrum. Boss gets a fatter, brighter set of passes. Newest 2 sticks
+  // stay white-hot at the core.
+  const passes = boss
+    ? [{ w: 11, a: 0.12 }, { w: 5, a: 0.45 }, { w: 1.8, a: 1 }]
+    : [{ w: 5, a: 0.12 }, { w: 1.6, a: 0.95 }];
+  for (const pass of passes) {
     for (let i = 0; i < N; i++) {
       const age = i / N;
       const s = H[i];
-      const c = (pass.w < 2 && i < 2) ? "#ffffff" : b.color;
+      const c = (pass.w < 2 && i < 2) ? 0xffffff : hueColor(t * 80 + i * 16 + b.t * 30);
       g.moveTo(s.ax, s.ay).lineTo(s.bx, s.by)
         .stroke({ width: pass.w, color: c, alpha: pass.a * (1 - age * 0.85), cap: "round" });
+    }
+  }
+  drawSheafLightning(g, b, H, t, boss);
+}
+
+// Electric crackle on the Qix: a flickering bolt along the live stick (constant on the
+// boss, occasional otherwise) plus, for the boss, arcs lashing out around it.
+function drawSheafLightning(g, b, H, t, boss) {
+  const s = H[0]; // newest = live stick
+  if (Math.random() < (boss ? 0.7 : 0.12)) {
+    drawBolt(g, s.ax, s.ay, s.bx, s.by, hueColor(t * 120 + 40),
+      { jitter: boss ? 26 : 13, segs: boss ? 9 : 6, w: boss ? 2.4 : 1.5, a: boss ? 0.9 : 0.55 });
+  }
+  if (boss) {
+    const arcs = 1 + (Math.random() * 2 | 0);
+    for (let k = 0; k < arcs; k++) {
+      if (Math.random() > 0.6) continue;
+      const ang = Math.random() * Math.PI * 2, len = 70 + Math.random() * 150;
+      drawBolt(g, b.x, b.y, b.x + Math.cos(ang) * len, b.y + Math.sin(ang) * len,
+        hueColor(t * 120 + 180 + k * 60), { jitter: 24, segs: 8, w: 2, a: 0.6 });
     }
   }
 }
@@ -1039,6 +1149,7 @@ export function render(view = {}) {
   drawArena();
   drawPerimeter(beat);
   drawTrail(beat);
+  drawCutCrackle(danger);
   drawSolarWind();
   drawEnemies();
   drawSparx();
