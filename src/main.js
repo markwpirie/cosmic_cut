@@ -7,7 +7,7 @@
 
 import * as control from "./control.js"; // also registers keyboard listeners
 import * as grid from "./grid.js";
-import { marker, mode, trail, lastCutLength, lastCutSlow, zoomDash, selfHit, startZoomDash, snapToNode, update as updateMarker, reset as resetMarker, home as homeMarker } from "./marker.js";
+import { marker, mode, dir, trail, lastCutLength, lastCutSlow, zoomDash, selfHit, startZoomDash, snapToNode, update as updateMarker, reset as resetMarker, home as homeMarker } from "./marker.js";
 import * as enemy from "./enemy.js";
 import * as game from "./game.js";
 import { render } from "./render.js";
@@ -289,12 +289,11 @@ function loop(now) {
       if (dashKilled.length) {
         game.addScore(POWERUPS.ZOOM.killPoints * dashKilled.length);
         for (const k of dashKilled) {
-          fx.burst(k.x, k.y, k.color, 22, 300);
-          fx.ring(k.x, k.y, k.color, 16, 240, 0.7);
-          fx.ring(k.x, k.y, "#ffffff", 10, 180, 0.35);
+          fx.explode(k.x, k.y, k.color, 1.2);
+          fx.ring(k.x, k.y, k.color, 16, 260, 0.6);
         }
         popups.push({ text: `ZOOM +${POWERUPS.ZOOM.killPoints * dashKilled.length}`, x: marker.x, y: marker.y - 20, t: 0 });
-        audio.kill(); director.kill(); fx.addShake(8); scorePulseT = 0;
+        audio.kill(); director.kill(); fx.addShake(12); scorePulseT = 0;
       }
     }
 
@@ -304,6 +303,13 @@ function loop(now) {
       snapToNode();
       popups.push({ text: "AIM!", x: marker.x, y: marker.y - 24, t: 0 });
       audio.powerupPickup();
+    }
+    // Engine embers trailing the ship as it moves — hotter + denser while cutting.
+    if (dir && !aiming) {
+      const cutting = mode === "cutting";
+      if (Math.random() < (cutting ? 0.95 : 0.45)) {
+        fx.trailPuff(marker.x, marker.y, cutting ? "#ff9a3c" : zoneColor(), dir.dx, dir.dy);
+      }
     }
     enemy.update(dt, marker.x, marker.y);
     sparx.update(dt, marker, trail);
@@ -328,13 +334,13 @@ function loop(now) {
     if (kills > 0) {
       audio.kill();
       director.kill(); // bright musical stinger layered over the music
-      // Each trapped blob explodes where it was caught, in its own colour.
+      // Each trapped blob detonates where it was caught, in its own colour.
       for (const k of enemy.lastKilled) {
-        fx.burst(k.x, k.y, k.color, 26, 320);
-        fx.ring(k.x, k.y, k.color, 20, 300, 0.7);
-        fx.ring(k.x, k.y, "#ffffff", 14, 200, 0.45);
+        fx.explode(k.x, k.y, k.color, 1.4);
+        fx.ring(k.x, k.y, k.color, 22, 340, 0.7);
+        fx.ring(k.x, k.y, "#ffffff", 16, 220, 0.45);
       }
-      fx.addShake(11);
+      fx.addShake(16);
     }
     // Check if a claim enclosed any pickups, and try to spawn a new one.
     if (gained >= 0.5) {

@@ -840,7 +840,14 @@ function drawParticles() {
   const g = G.particles; g.clear();
   for (const p of fx.getParticles()) {
     const k = Math.max(0, p.life / p.max);
-    g.rect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size).fill({ color: p.color, alpha: k });
+    const r = (p.size || 2) * (p.shrink ? 0.4 + 0.6 * k : 1);
+    if (p.glow) {
+      g.circle(p.x, p.y, r * 2.6).fill({ color: p.color, alpha: 0.16 * k });   // soft halo
+      g.circle(p.x, p.y, r).fill({ color: p.color, alpha: Math.min(1, k) });   // body
+      g.circle(p.x, p.y, r * 0.5).fill({ color: "#ffffff", alpha: 0.55 * k }); // hot core (bloom catches it)
+    } else {
+      g.rect(p.x - r / 2, p.y - r / 2, r, r).fill({ color: p.color, alpha: k });
+    }
   }
 }
 
