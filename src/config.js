@@ -224,8 +224,11 @@ export const QIX = {
 // FIRST qix of a boss level (levels.js sets `boss: sub === 5`).
 export const BOSS = {
   sizeMult:          1.7,  // body radius
-  spanBaseMult:      1.9,  // larger compact span (always looms bigger)
-  spanMaxMult:       1.45, // even wider surges
+  spanBaseMult:      1.9,  // larger COMPACT span — it always looms bigger as it roams
+  spanMaxMult:       1.0,  // keep the surge at the normal (already ~50%-screen) size: a
+                           //   bigger surge would exceed half the field and the wall-bounce
+                           //   margin (= span) would pin/jitter the boss. Big-when-compact
+                           //   + size/lines/effects carry the "boss" feel instead.
   linesMult:         1.8,  // longer twisting ribbon
   endpointSpeedMult: 1.3,  // sweeps faster
   surgeIntervalMult: 0.55, // surges roughly twice as often

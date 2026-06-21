@@ -15,8 +15,9 @@ On Windows use `python` not `python3`.
 - **Phase 6 (power-ups): done** — Freeze, Solar Wind, Boost, Shield, ZOOM all implemented in `src/powerups.js`. **Solar Wind** is a *sustained* timed gust (pins all enemies to one wall for `SOLARWIND.duration`), applied each frame in `powerups.update()` before `enemy.update()`.
 - **Slow-cut + visual/feel pass: done** — **hold SPACE while cutting** for a SLOW DRAW (slower via `MARKER.slowCutMult`; cut tagged in `grid.slowFill`; darker glass `THEMES.claimedFillSlow`; **×2** area via `POINTS.slowCutMult` + "SLOW DRAW" label in `game.scoreCut`). Claimed areas render as **glossy shimmering glass** and the background is a baked **nebula/galaxy starscape** with twinkling parallax stars (both in `render.js`). Pickup sound is a louder rising arpeggio (`audio.powerupPickup`).
 - **Enemy overhaul: done** — two enemy shapes in `enemy.js`: `"sheaf"` (the star Qix — classic Kix line-sheaf, sticks surge up to ~50% screen then settle, collides on the live line; bounce margin = current span + endpoints clamped to the field in `liveSeg`, so it never leaves the arena) and `"poly"` (polygon Blobs + Hunter Blobs). Poly collision uses `hitRadius` (`BLOB_POLY.hitScale`, tighter than the visual bounding radius). Per-level mix via `qix`/`blobs`/`hunters` in `levels.js` (positional array auto-splits: first = Qix, rest = poly Blobs). Sparx + Fast Sparx in `sparx.js` (BFS chase, trail-latch, perimeter-kill). Player is a rocket ship pointing along travel dir.
-- **Phase 9 (Pixi.js): in progress on branch `phase9-pixi`** — see `PHASE9.md`. Pixi v8 via CDN importmap (no build step), **opt-in with `?pixi`** (canvas stays default). Full renderer ported in `src/render-pixi.js` (mirrors `render.js`'s `render(view)`); renderer switch + async init in `main.js`. Written without a browser to test against — verify in-browser and watch the console for v8 API mismatches.
-- **Phase 7: next** (after Phase 9 graphics) — touch controls for mobile.
+- **Phase 9 (Pixi.js): in progress on branch `phase9-pixi`** — see `PHASE9.md`. Pixi v8 via CDN importmap (no build step), **opt-in with `?pixi`** (canvas stays default). Full renderer ported in `src/render-pixi.js` (mirrors `render.js`'s `render(view)`); renderer switch + async init in `main.js`. Now includes: **bloom** (`AdvancedBloomFilter`, `config.BLOOM`), **rounded territory edges** (`config.CORNERS`, traced loops/chains + `roundedPath`), **gorgeous glass** (additive `TilingSprite` shimmer + masked **refraction** of the nebula, `config.GLASS`), **churning nebula** (`DisplacementFilter` smoke-warp, `config.NEBULA`), **glowy particles** (engine embers + explosions), **rainbow Qix sheafs**, **lightning storms + crackles**, and the **boss** visuals. Written without a browser — verify in-browser and watch the console for v8 API mismatches.
+- **Phase 7 (touch controls): done** — relative virtual joystick on the canvas (swipe = heading, two fingers = slow draw), taps advance menus; in `main.js`, built on `control.press/release/setSlow`. Keyboard still works. CSS: `touch-action:none`, no pinch-zoom.
+- **Boss (X-5 levels): done** — the first Qix of a boss level becomes a **big rainbow lightning boss** (per-enemy sheaf params in `enemy.js`, scaled by `config.BOSS`; render-pixi draws rainbow + lashing arcs + pulsing core). Surge span kept at normal size on purpose (bigger would exceed the wall-bounce margin and pin it).
 - Full roadmap in `GAME_DESIGN.md §11`. Locked decisions in `§14`.
 
 ## Branches
@@ -28,9 +29,9 @@ On Windows use `python` not `python3`.
 
 | File | Owns |
 |------|------|
-| `config.js` | All tunable numbers — grid, speeds, colours, scoring, audio, POWERUPS |
-| `levels.js` | Campaign data — 25 levels (zones 1-1…5-5), target %, blob types |
-| `control.js` | Keyboard input → movement intents |
+| `config.js` | All tunable numbers — grid, speeds, colours, scoring, audio, POWERUPS, BOSS; Pixi-look knobs BLOOM/CORNERS/GLASS/NEBULA |
+| `levels.js` | Campaign data — 25 levels (zones 1-1…5-5), target %, blob types, `boss` flag |
+| `control.js` | Keyboard input → movement intents (touch lives in `main.js`, reusing these) |
 | `grid.js` | Arena cells, flood-fill claim, seams, `applyClaim()` |
 | `marker.js` | Player movement, cutting, perimeter logic |
 | `enemy.js` | Blobs: bounce, spawn, collision, `isFrozen`/`isShielded` guards |
@@ -39,10 +40,10 @@ On Windows use `python` not `python3`.
 | `game.js` | State machine: lives, score, level/zone, `scoreCut()` |
 | `audio.js` | Low-level Web-Audio: SFX, synth, MP3 registry, beat analyser |
 | `audio-director.js` | Music policy: scene cues, interrupt/resume jingles, sonar (currently off) |
-| `fx.js` | Particles + screen shake |
+| `fx.js` | Particles (embers/explosions, glow/grav) + screen shake |
 | `render.js` | All drawing (canvas): field, blobs, power-up icons, HUD, overlays |
 | `render-pixi.js` | Phase 9 Pixi.js renderer — same `render(view)` contract, opt-in via `?pixi` |
-| `main.js` | Game loop + state routing + event wiring + renderer switch (`USE_PIXI`) |
+| `main.js` | Game loop + state routing + event wiring + renderer switch (`USE_PIXI`) + touch controls |
 
 ## Key design rules (§14)
 - Player is **only vulnerable while cutting** — riding the perimeter is always safe.

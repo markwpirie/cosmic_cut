@@ -137,12 +137,28 @@ Open decisions (Mark to decide):
 - [ ] Re-enable the on-screen beat readout only if needed (`config.AUDIO.debugBeat`).
 
 ## Roadmap (later phases — see §11)
-- [ ] **Phase 7** — touch controls for mobile (input abstraction). **Next major phase.**
+- [x] **Phase 7** — **touch controls done.** Relative virtual joystick on the canvas
+      (swipe = heading, two fingers = slow draw); taps advance menus; a swipe begins the
+      level. In `main.js`, built on `control.press/release/setSlow`. Verify on a real iPhone.
 - [ ] **Phase 8** — PWA, installable on iPhone home screen.
-- [x] **Phase 9** — Pixi.js graphics layer **started** (see the in-progress section
-      above + PHASE9.md). Real sprites / glass blocks / richer particles still to come.
-- [ ] **Phase 10** — boss / picture-reveal levels (X-5), **SUPER mode** (clear 5-5 → 2×
-      enemies), scoring polish, final feel.
+- [x] **Phase 9** — Pixi.js graphics layer: bloom, rounded edges, gorgeous glass
+      (TilingSprite shimmer + refraction), churning nebula (DisplacementFilter), glowy
+      particles, rainbow Qix, lightning storms + crackles. (See PHASE9.md; sprite-based
+      stars + glass-block depth still open.)
+- [~] **Phase 10** — **boss done for X-5** (big rainbow lightning Qix, `config.BOSS`).
+      Still to come: picture-reveal levels, **SUPER mode** (clear 5-5 → 2× enemies),
+      scoring polish, final feel.
+
+## Verify on the boss's return (written blind — needs real-device / in-browser eyes)
+- [ ] **Touch on a real iPhone** — swipe steering feel, two-finger slow, menu taps, no
+      pinch-zoom, canvas fills screen. Tune the 16px dead-zone if needed.
+- [ ] **Boss at 1-5** (and every X-5) — looms bigger, rainbow + lightning + pulsing core;
+      confirm it doesn't jitter (surge span capped for that reason). Tune `config.BOSS`.
+- [ ] **Lightning intensity** — ambient storm cadence (`stormTimer` 5–13s), cut crackle
+      threshold (danger ≥ 0.32). Dial back in render-pixi if too busy.
+- [ ] **GPU budget** — the scene now runs bloom + 2 displacement filters + masked additive
+      sprites. If context-loss/blank, drop `GLASS.refraction`/`NEBULA.warp` to 0 or lower
+      `BLOOM.resolution`/`pixelSize`.
 
 ## Deferred (captured, not blocking — §15)
 - [ ] **ZOOM** scoring tuning (kill + distance values). *(Slow-cut bonus + darker glass: done.)*
