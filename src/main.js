@@ -67,7 +67,7 @@ function loadLevel() {
   grid.reset();
   resetMarker();
   const lv = game.currentLevel();
-  enemy.reset({ qix: lv.qix || [], blobs: lv.blobs || [], hunters: lv.hunters || [] });
+  enemy.reset({ qix: lv.qix || [], blobs: lv.blobs || [], hunters: lv.hunters || [], boss: lv.boss });
   sparx.reset(lv.sparx || 0, lv.fastSparx || 0);
   control.reset();
   fx.reset();
@@ -87,7 +87,7 @@ function respawn() {
   const spot = grid.respawnNode();
   homeMarker(spot.col, spot.row);
   const rlv = game.currentLevel();
-  enemy.reset({ qix: rlv.qix || [], blobs: rlv.blobs || [], hunters: rlv.hunters || [] });
+  enemy.reset({ qix: rlv.qix || [], blobs: rlv.blobs || [], hunters: rlv.hunters || [], boss: rlv.boss });
   sparx.reset(rlv.sparx || 0, rlv.fastSparx || 0);
   control.reset();
   powerups.reset();

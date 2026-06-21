@@ -218,6 +218,20 @@ export const QIX = {
   glowAlpha:   [0.10, 0.30, 0.95],  // alphas matching each pass
 };
 
+// BOSS Qix (the star of every X-5 level): a huge, faster, longer-ribboned sheaf that
+// surges more often and lasts longer — rendered rainbow with constant lightning arcs +
+// a pulsing core (render-pixi). Multipliers over the base QIX values. Marked on the
+// FIRST qix of a boss level (levels.js sets `boss: sub === 5`).
+export const BOSS = {
+  sizeMult:          1.7,  // body radius
+  spanBaseMult:      1.9,  // larger compact span (always looms bigger)
+  spanMaxMult:       1.45, // even wider surges
+  linesMult:         1.8,  // longer twisting ribbon
+  endpointSpeedMult: 1.3,  // sweeps faster
+  surgeIntervalMult: 0.55, // surges roughly twice as often
+  surgeHoldMult:     1.7,  // and holds the surge longer
+};
+
 // Polygon Blob visual tuning — the alternative enemy shape: a ring of orbiting
 // vertices with internal diagonals, oscillating radius and slow rotation. Used
 // for regular Blobs and Hunter Blobs. Collision uses a bounding radius.

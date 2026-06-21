@@ -9,7 +9,7 @@
 // All bouncers reflect off the arena wall and claimed territory. Touching the
 // marker or in-progress cut while cutting is death (main.js owns the consequence).
 
-import { field, CELL, COLS, ROWS, QIX, BLOB_POLY, BLOB_TYPES, MARKER, nodeX, nodeY } from "./config.js";
+import { field, CELL, COLS, ROWS, QIX, BOSS, BLOB_POLY, BLOB_TYPES, MARKER, nodeX, nodeY } from "./config.js";
 import { cellSolid } from "./grid.js";
 import { isFrozen, isShielded } from "./powerups.js";
 
@@ -58,13 +58,13 @@ function launch(b) {
 }
 
 // One sweeping endpoint for the sheaf: offset from centre, with its own velocity.
-function makeEndpoint(span) {
+function makeEndpoint(span, speed) {
   const a = Math.random() * Math.PI * 2;
   return {
     x: (Math.random() * 2 - 1) * span,
     y: (Math.random() * 2 - 1) * span,
-    vx: Math.cos(a) * QIX.endpointSpeed,
-    vy: Math.sin(a) * QIX.endpointSpeed,
+    vx: Math.cos(a) * speed,
+    vy: Math.sin(a) * speed,
   };
 }
 
@@ -79,9 +79,9 @@ function makeVerts() {
   }));
 }
 
-function makeEnemy(ti, r, c, shape, hunter) {
+function makeEnemy(ti, r, c, shape, hunter, boss = false) {
   const type = BLOB_TYPES[ti] || BLOB_TYPES[0];
-  const radius = type.radius * QIX.sizeScale;
+  const radius = type.radius * QIX.sizeScale * (boss ? BOSS.sizeMult : 1);
   const b = {
     x: field.x + (c + 0.5) * CELL,
     y: field.y + (r + 0.5) * CELL,
@@ -93,13 +93,23 @@ function makeEnemy(ti, r, c, shape, hunter) {
     shape,
   };
   if (shape === "sheaf") {
-    b.e1 = makeEndpoint(QIX.spanBase);
-    b.e2 = makeEndpoint(QIX.spanBase);
+    b.boss = boss;
+    // Per-enemy sheaf params (default to QIX; the boss scales them up). sheafSpan/
+    // stepSheaf read these, so the boss is bigger/faster/longer without touching others.
+    b.spanBase   = QIX.spanBase     * (boss ? BOSS.spanBaseMult : 1);
+    b.spanMax    = QIX.spanMax      * (boss ? BOSS.spanMaxMult : 1);
+    b.lines      = Math.round(QIX.lines * (boss ? BOSS.linesMult : 1));
+    b.endptSpeed = QIX.endpointSpeed * (boss ? BOSS.endpointSpeedMult : 1);
+    b.surgeHoldT = QIX.surgeHold    * (boss ? BOSS.surgeHoldMult : 1);
+    b.surgeIntMin = QIX.surgeIntervalMin * (boss ? BOSS.surgeIntervalMult : 1);
+    b.surgeIntMax = QIX.surgeIntervalMax * (boss ? BOSS.surgeIntervalMult : 1);
+    b.e1 = makeEndpoint(b.spanBase, b.endptSpeed);
+    b.e2 = makeEndpoint(b.spanBase, b.endptSpeed);
     b.hist = [];                                   // {ax,ay,bx,by}, newest first
     b.surge = 0;                                   // 0..1 expansion envelope
     b.surging = false;
     b.surgeHold = 0;
-    b.surgeTimer = QIX.surgeIntervalMin + Math.random() * (QIX.surgeIntervalMax - QIX.surgeIntervalMin);
+    b.surgeTimer = b.surgeIntMin + Math.random() * (b.surgeIntMax - b.surgeIntMin);
   } else {
     b.verts = makeVerts();
     b.bodyRot = Math.random() * Math.PI * 2;
@@ -112,17 +122,18 @@ function makeEnemy(ti, r, c, shape, hunter) {
 //   qix     — BLOB_TYPES indices for sheaf Qix
 //   blobs   — BLOB_TYPES indices for polygon Blobs
 //   hunters — BLOB_TYPES indices for polygon Hunter Blobs (drift toward player)
-export function reset({ qix = [], blobs: polyIdx = [], hunters = [] } = {}) {
+export function reset({ qix = [], blobs: polyIdx = [], hunters = [], boss = false } = {}) {
   blobs.length = 0;
   const specs = [
-    ...qix.map(ti => ({ ti, shape: "sheaf", hunter: false })),
+    // On a boss level the FIRST Qix becomes the boss (big rainbow lightning sheaf).
+    ...qix.map((ti, i) => ({ ti, shape: "sheaf", hunter: false, boss: boss && i === 0 })),
     ...polyIdx.map(ti => ({ ti, shape: "poly", hunter: false })),
     ...hunters.map(ti => ({ ti, shape: "poly", hunter: true })),
   ];
   const cells = spawnCells(specs.length);
   specs.forEach((s, i) => {
     const [r, c] = cells[i];
-    blobs.push(makeEnemy(s.ti, r, c, s.shape, s.hunter));
+    blobs.push(makeEnemy(s.ti, r, c, s.shape, s.hunter, s.boss));
   });
 }
 reset();
@@ -133,7 +144,7 @@ const smooth = (t) => t * t * (3 - 2 * t); // smoothstep ease
 
 // Current half-size of the sheaf body box.
 function sheafSpan(b) {
-  const base = QIX.spanBase + (QIX.spanMax - QIX.spanBase) * smooth(b.surge);
+  const base = b.spanBase + (b.spanMax - b.spanBase) * smooth(b.surge);
   return base * (1 + QIX.twist * Math.sin(b.t * QIX.twistFreq));
 }
 
@@ -156,8 +167,8 @@ function stepSheaf(b, dt) {
   b.surgeTimer -= dt;
   if (b.surgeTimer <= 0 && !b.surging) {
     b.surging = true;
-    b.surgeHold = QIX.surgeHold;
-    b.surgeTimer = QIX.surgeIntervalMin + Math.random() * (QIX.surgeIntervalMax - QIX.surgeIntervalMin);
+    b.surgeHold = b.surgeHoldT;
+    b.surgeTimer = b.surgeIntMin + Math.random() * (b.surgeIntMax - b.surgeIntMin);
   }
   if (b.surging) {
     b.surgeHold -= dt;
@@ -167,7 +178,7 @@ function stepSheaf(b, dt) {
   b.surge += (target - b.surge) * Math.min(1, dt * QIX.surgeEase);
 
   const span = sheafSpan(b);
-  const spd  = QIX.endpointSpeed * (1 + (QIX.surgeSpeedMult - 1) * b.surge);
+  const spd  = b.endptSpeed * (1 + (QIX.surgeSpeedMult - 1) * b.surge);
   for (const e of [b.e1, b.e2]) {
     const vlen = Math.hypot(e.vx, e.vy) || 1; // keep speed at target magnitude
     e.vx = (e.vx / vlen) * spd;
@@ -180,7 +191,7 @@ function stepSheaf(b, dt) {
     else if (e.y > span) { e.y = span; e.vy = -Math.abs(e.vy); }
   }
   b.hist.unshift(liveSeg(b)); // clamped to the arena (see liveSeg)
-  if (b.hist.length > QIX.lines) b.hist.length = QIX.lines;
+  if (b.hist.length > b.lines) b.hist.length = b.lines;
 }
 
 // --- Accessors for render ---

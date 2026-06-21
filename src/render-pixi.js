@@ -810,6 +810,12 @@ function drawSheaf(g, b) {
         .stroke({ width: pass.w, color: c, alpha: pass.a * (1 - age * 0.85), cap: "round" });
     }
   }
+  if (boss) { // a pulsing rainbow heart at the body centre
+    const pulse = 0.65 + 0.35 * Math.sin(t * 4.5);
+    g.circle(b.x, b.y, 18 * pulse).fill({ color: hueColor(t * 100), alpha: 0.45 });
+    g.circle(b.x, b.y, 9 * pulse).fill({ color: hueColor(t * 100 + 120), alpha: 0.6 });
+    g.circle(b.x, b.y, 4).fill({ color: 0xffffff, alpha: 0.95 });
+  }
   drawSheafLightning(g, b, H, t, boss);
 }
 
