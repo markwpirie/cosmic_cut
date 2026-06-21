@@ -106,6 +106,8 @@ export const GLASS = {
   speed: 14,           // diagonal scroll speed (px/sec) of the near layer
   scaleA: 1.0,         // near layer tile scale
   scaleB: 1.7,         // far/parallax layer tile scale (bigger, slower → depth)
+  refraction: 34,      // px the nebula BEHIND the glass is displaced (0 = off) — the
+                       //   "looking through glass" bend. Higher = thicker/wavier glass.
 };
 
 // Phase 9 — NEBULA smoke-warp (Pixi-only). A DisplacementFilter driven by a slowly

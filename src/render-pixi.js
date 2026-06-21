@@ -38,6 +38,8 @@ let app = null;
 let G = {};          // named Graphics layers, cleared + redrawn each frame
 let bgSprite = null; // baked nebula/galaxy texture
 let dispSprite = null; // noise map driving the nebula smoke-warp DisplacementFilter
+let refractSprite = null; // nebula copy, extra-displaced + glass-masked → refraction
+let refractMask = null;   // glass-shape mask (in bgRoot space) for refractSprite
 let worldRoot = null; // shaken container holding the play-field glow layers
 let glassMask = null; // union of claimed cells, used to clip the specular sweep to glass
 let sweepGroup = null; // masked container holding the additive reflection TilingSprites
@@ -100,7 +102,22 @@ export async function init(canvas) {
     bgRoot.addChild(dispSprite);
     bgSprite.filters = [new DisplacementFilter({ sprite: dispSprite, scale: NEBULA.warp })];
   }
-  bgRoot.addChild(bgSprite, G.stars);
+  bgRoot.addChild(bgSprite);
+
+  // Glass refraction: a second copy of the nebula (same texture, transform-synced to
+  // bgSprite each frame so it lines up), displaced MORE than the base, and masked to
+  // the claimed-glass shape. Result: the gas bends where glass sits over it — refraction
+  // — continuous with the un-bent nebula around it. Lives in bgRoot so it stays aligned
+  // with the real nebula (no shake offset). 0 disables (saves a filtered draw).
+  if (NEBULA.warp > 0 && GLASS.refraction > 0) {
+    refractSprite = new Sprite(bgSprite.texture);
+    refractSprite.anchor.set(0.5);
+    refractSprite.filters = [new DisplacementFilter({ sprite: dispSprite, scale: GLASS.refraction })];
+    refractMask = new Graphics();
+    refractSprite.mask = refractMask;
+    bgRoot.addChild(refractSprite, refractMask);
+  }
+  bgRoot.addChild(G.stars);
 
   worldRoot.addChild(G.glass); // claimed-glass fill + emissive rim
 
@@ -524,6 +541,12 @@ function drawBackground(beat) {
     dispSprite.x = WIDTH / 2 + 55 * Math.sin(tt * 0.25 * e);   // drift
     dispSprite.y = HEIGHT / 2 + 55 * Math.cos(tt * 0.21 * e);
   }
+  if (refractSprite) {                          // keep the refraction copy aligned to the nebula
+    refractSprite.position.copyFrom(bgSprite.position);
+    refractSprite.scale.copyFrom(bgSprite.scale);
+    refractSprite.rotation = bgSprite.rotation;
+    refractSprite.alpha = bgSprite.alpha;
+  }
   const dt = Math.min(0.05, (t - starLast) / 1000);
   starLast = t;
   const ts = t / 1000;
@@ -569,6 +592,7 @@ function drawClaimed(wipeR = -1) {
 // transparency + additive blend make it read as drifting light on glass, not a band.
 function drawGlassSweep(wipeR = -1) {
   const gm = glassMask; gm.clear();
+  const rm = refractMask; if (rm) rm.clear();
   let any = false;
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
@@ -576,8 +600,14 @@ function drawGlassSweep(wipeR = -1) {
       const px = field.x + c * CELL, py = field.y + r * CELL;
       if (wipeR >= 0 && Math.hypot(px + CELL / 2 - CX, py + CELL / 2 - CY) <= wipeR) continue;
       gm.rect(px, py, CELL, CELL);
+      if (rm) rm.rect(px, py, CELL, CELL);
       any = true;
     }
+  }
+  // Refraction: reveal the extra-displaced nebula copy only where glass is.
+  if (refractSprite) {
+    refractSprite.visible = any && GLASS.refraction > 0;
+    if (refractSprite.visible) rm.fill({ color: 0xffffff });
   }
   const on = any && GLASS.opacity > 0;
   sweepGroup.visible = on;
@@ -969,6 +999,7 @@ export function render(view = {}) {
   // behind, e.g. the play field showing through the title screen.
   for (const key in G) { G[key].clear(); G[key].x = 0; G[key].y = 0; }
   if (sweepGroup) sweepGroup.visible = false; // re-enabled by drawGlassSweep when glass exists
+  if (refractSprite) refractSprite.visible = false; // ditto (glass refraction)
   beginText();
 
   drawBackground(beat);
