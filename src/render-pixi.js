@@ -13,8 +13,9 @@
 // to mirror render.js closely and keep the port easy to reason about. Glow is
 // faked with a few widening, fading stroke passes (Pixi has no shadowBlur).
 
-import { Application, Container, Graphics, Sprite, Texture, Text } from "pixi.js";
-import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, QIX, BLOB_POLY, SPARX, MARKER } from "./config.js";
+import { Application, Container, Graphics, Sprite, Texture, Text, Rectangle } from "pixi.js";
+import { AdvancedBloomFilter } from "pixi-filters";
+import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, QIX, BLOB_POLY, SPARX, MARKER, BLOOM, CORNERS } from "./config.js";
 import * as powerups from "./powerups.js";
 import { grid, slowFill, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
 import { marker, mode, dir, trail, slowActive } from "./marker.js";
@@ -36,6 +37,8 @@ function theme() { return THEMES[game.currentLevel().zone - 1] || THEMES[0]; }
 let app = null;
 let G = {};          // named Graphics layers, cleared + redrawn each frame
 let bgSprite = null; // baked nebula/galaxy texture
+let worldRoot = null; // shaken container holding the play-field glow layers
+let glassMask = null; // union of claimed cells, used to clip the specular sweep to glass
 let starsState = null;
 let starLast = 0;
 
@@ -57,19 +60,62 @@ export async function init(canvas) {
   });
   app.ticker.stop(); // main.js's loop drives us; we render manually each frame
 
-  // Background: a baked nebula+galaxy sprite, then a Graphics for live stars.
-  bgSprite = new Sprite(bakeDeepSpaceTexture());
-  app.stage.addChild(bgSprite);
-
-  // Build the layer stack in paint order.
-  const order = [
-    "stars", "bloom", "glass", "seams", "arena", "perimeter", "trail",
+  // Create all named Graphics layers up front; we parent them into the right
+  // container below. (`render()` clears every one of these each frame.)
+  const allLayers = [
+    "stars", "glass", "sweep", "seams", "arena", "perimeter", "trail",
     "solar", "enemy", "sparx", "powerup", "marker", "particles", "vignette", "overlay",
   ];
-  for (const name of order) {
-    G[name] = new Graphics();
-    app.stage.addChild(G[name]);
+  for (const name of allLayers) G[name] = new Graphics();
+
+  // --- Layer tree (Phase 9 §1 bloom) ---------------------------------------
+  // bloomGroup gets the AdvancedBloomFilter so the whole lit scene glows as one
+  // (cross-layer halation, not per-stroke fakery). Inside it:
+  //   bgRoot   — nebula sprite + parallax stars (glow, never shakes)
+  //   worldRoot— the play field + actors (glow AND shakes on screen-shake)
+  // The HUD/overlay text and the danger/dim frames sit OUTSIDE the bloom so they
+  // stay crisp and readable.
+  const bloomGroup = new Container();
+  const bgRoot = new Container();
+  worldRoot = new Container();
+
+  bgSprite = new Sprite(bakeDeepSpaceTexture());
+  bgRoot.addChild(bgSprite, G.stars);
+
+  for (const name of ["glass", "sweep", "seams", "arena", "perimeter", "trail",
+    "solar", "enemy", "sparx", "powerup", "marker", "particles"]) {
+    worldRoot.addChild(G[name]);
   }
+
+  // Specular sweep is clipped to the claimed glass: glassMask (the union of filled
+  // cells, rebuilt each frame) masks G.sweep, so the smooth light-bar only shows on
+  // glass instead of being painted per-cell (which read as 8px staircase squares).
+  glassMask = new Graphics();
+  worldRoot.addChild(glassMask);
+  G.sweep.mask = glassMask;
+
+  bloomGroup.addChild(bgRoot, worldRoot);
+  if (BLOOM.enabled) {
+    const bloom = new AdvancedBloomFilter({
+      threshold: BLOOM.threshold,
+      bloomScale: BLOOM.bloomScale,
+      brightness: BLOOM.brightness,
+      blur: BLOOM.blur,
+      quality: BLOOM.quality,
+      pixelSize: { x: BLOOM.pixelSize, y: BLOOM.pixelSize }, // <1 supersamples (smoothest), >1 = blocky
+    });
+    // Render the bloom buffer at (at least) the screen's pixel density so the glow
+    // isn't computed low-res and upscaled — the usual cause of a "pixelated" bloom.
+    const dpr = (typeof window !== "undefined" && window.devicePixelRatio) || 1;
+    bloom.resolution = BLOOM.resolution || dpr;
+    bloomGroup.filters = [bloom];
+    // Sample the full screen so glow isn't clipped to layer bounds.
+    bloomGroup.filterArea = new Rectangle(0, 0, WIDTH, HEIGHT);
+  }
+  app.stage.addChild(bloomGroup);
+
+  // Non-bloomed overlays on top, in paint order.
+  app.stage.addChild(G.vignette, G.overlay);
   uiLayer = new Container();
   app.stage.addChild(uiLayer);
 
@@ -105,10 +151,159 @@ function centerText(str, y, size, color, alpha = 1, weight = "700") {
 
 // --- Glow stroke helper: draw a path several times, widening + fading --------
 // build(g) issues the path commands (moveTo/lineTo/…); we stroke it per pass.
-function glow(g, build, passes) {
+// `cap` defaults to "round" (nice rounded ends for continuous polylines like the
+// trail), but paths built from many disjoint per-cell segments (the perimeter)
+// must use "butt" — round caps bulge + overlap-brighten at every node, which reads
+// as a beaded/"pixely" line. See drawPerimeter.
+function glow(g, build, passes, cap = "round") {
   for (const p of passes) {
     build(g);
-    g.stroke({ width: p.w, color: p.c, alpha: p.a, cap: "round", join: "round" });
+    g.stroke({ width: p.w, color: p.c, alpha: p.a, cap, join: "round" });
+  }
+}
+
+// --- Rounded territory edges (our signature look) --------------------------
+// Trace the boundary of a cell region into continuous CLOSED loops of pixel points,
+// so the edges can be stroked with rounded corners (round joins on disjoint per-cell
+// segments can't do this — they just bead). `inside(r,c)` = is the cell part of the
+// region (out-of-bounds counts as outside). Each region cell emits its EXPOSED sides
+// as directed edges oriented region-on-the-left; we then walk start→end into loops.
+function traceLoops(inside) {
+  const edges = new Map(); // startKey "c,r" -> [{ec,er}, …]
+  const add = (sc, sr, ec, er) => {
+    const k = sc + "," + sr; const a = edges.get(k);
+    if (a) a.push({ ec, er }); else edges.set(k, [{ ec, er }]);
+  };
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (!inside(r, c)) continue;
+      if (!inside(r - 1, c)) add(c + 1, r, c, r);         // top    → leftward
+      if (!inside(r, c - 1)) add(c, r, c, r + 1);         // left   → downward
+      if (!inside(r + 1, c)) add(c, r + 1, c + 1, r + 1); // bottom → rightward
+      if (!inside(r, c + 1)) add(c + 1, r + 1, c + 1, r); // right  → upward
+    }
+  }
+  const loops = [];
+  const guardMax = COLS * ROWS * 4 + 16;
+  for (const start of edges.keys()) {
+    while ((edges.get(start) || []).length) {
+      const pts = [];
+      let cur = start, indir = null, guard = 0;
+      while (guard++ < guardMax) {
+        const list = edges.get(cur);
+        if (!list || !list.length) break;
+        const [cc, cr] = cur.split(",").map(Number);
+        // At a pinch (node with >1 exit) prefer straight > left > right > back so loops
+        // stay coherent instead of pairing branches arbitrarily.
+        let pick = 0;
+        if (list.length > 1 && indir) {
+          let best = 9;
+          for (let j = 0; j < list.length; j++) {
+            const ox = Math.sign(list[j].ec - cc), oy = Math.sign(list[j].er - cr);
+            const dot = indir.x * ox + indir.y * oy, cross = indir.x * oy - indir.y * ox;
+            const rank = dot > 0 ? 0 : dot < 0 ? 3 : (cross > 0 ? 1 : 2);
+            if (rank < best) { best = rank; pick = j; }
+          }
+        } else {
+          pick = list.length - 1;
+        }
+        const e = list.splice(pick, 1)[0];
+        pts.push({ x: nx(cc), y: ny(cr) });
+        indir = { x: Math.sign(e.ec - cc), y: Math.sign(e.er - cr) };
+        cur = e.ec + "," + e.er;
+        if (cur === start) break;
+      }
+      if (pts.length >= 3) loops.push(simplifyLoop(pts));
+    }
+  }
+  return loops;
+}
+
+// Drop points that sit mid-run (no direction change) so only real corners remain —
+// keeps arcTo well-behaved and lets the corner radius smooth staircases.
+function simplifyLoop(pts) {
+  const n = pts.length, out = [];
+  for (let i = 0; i < n; i++) {
+    const a = pts[(i - 1 + n) % n], b = pts[i], c = pts[(i + 1) % n];
+    if (Math.sign(b.x - a.x) === Math.sign(c.x - b.x) &&
+        Math.sign(b.y - a.y) === Math.sign(c.y - b.y)) continue;
+    out.push(b);
+  }
+  return out.length >= 3 ? out : pts;
+}
+function simplifyOpen(pts) {
+  if (pts.length <= 2) return pts.slice();
+  const out = [pts[0]];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const a = pts[i - 1], b = pts[i], c = pts[i + 1];
+    if (Math.sign(b.x - a.x) === Math.sign(c.x - b.x) &&
+        Math.sign(b.y - a.y) === Math.sign(c.y - b.y)) continue;
+    out.push(b);
+  }
+  out.push(pts[pts.length - 1]);
+  return out;
+}
+
+// Link a set of undirected unit segments (the interior glass seams) into maximal
+// polyline chains so they can be drawn with rounded corners like everything else.
+// segs: array of [aCol, aRow, bCol, bRow]. Returns arrays of {x,y} pixel points.
+function traceChains(segs) {
+  const nk = (x, y) => x + "," + y;
+  const ek = (a, b) => (a < b ? a + "|" + b : b + "|" + a);
+  const adj = new Map();
+  const link = (k, n) => { const s = adj.get(k); if (s) s.add(n); else adj.set(k, new Set([n])); };
+  for (const [ax, ay, bx, by] of segs) { const a = nk(ax, ay), b = nk(bx, by); link(a, b); link(b, a); }
+  const pt = (k) => { const [c, r] = k.split(",").map(Number); return { x: nx(c), y: ny(r) }; };
+  const used = new Set();
+  const chains = [];
+  const walk = (a, b) => {
+    const path = [a, b]; used.add(ek(a, b));
+    let prev = a, cur = b;
+    while (true) {
+      const nbrs = adj.get(cur);
+      if (!nbrs || nbrs.size !== 2) break;        // stop at junctions + endpoints
+      let next = null;
+      for (const n of nbrs) if (n !== prev && !used.has(ek(cur, n))) { next = n; break; }
+      if (next === null) break;
+      used.add(ek(cur, next)); path.push(next); prev = cur; cur = next;
+      if (cur === a) break;                        // closed loop
+    }
+    return path.map(pt);
+  };
+  for (const [k, nbrs] of adj) if (nbrs.size !== 2)            // chains anchored at ends/junctions
+    for (const n of nbrs) if (!used.has(ek(k, n))) chains.push(walk(k, n));
+  for (const [k, nbrs] of adj)                                // leftover pure loops
+    for (const n of nbrs) if (!used.has(ek(k, n))) chains.push(walk(k, n));
+  return chains;
+}
+
+// Issue path commands for a polyline with rounded corners (arcTo), radius R clamped
+// per-corner to half the shorter adjacent edge. `closed` loops vs open trail.
+function roundedPath(g, pts, R, closed) {
+  const n = pts.length;
+  if (n < 2) return;
+  const D = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  if (R <= 0 || n === 2) {
+    g.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < n; i++) g.lineTo(pts[i].x, pts[i].y);
+    if (closed) g.closePath();
+    return;
+  }
+  if (closed) {
+    const s = { x: (pts[n - 1].x + pts[0].x) / 2, y: (pts[n - 1].y + pts[0].y) / 2 };
+    g.moveTo(s.x, s.y);
+    for (let i = 0; i < n; i++) {
+      const prev = pts[(i - 1 + n) % n], cur = pts[i], next = pts[(i + 1) % n];
+      g.arcTo(cur.x, cur.y, next.x, next.y, Math.min(R, D(prev, cur) / 2, D(cur, next) / 2));
+    }
+    g.closePath();
+  } else {
+    g.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < n - 1; i++) {
+      const prev = pts[i - 1], cur = pts[i], next = pts[i + 1];
+      g.arcTo(cur.x, cur.y, next.x, next.y, Math.min(R, D(prev, cur) / 2, D(cur, next) / 2));
+    }
+    g.lineTo(pts[n - 1].x, pts[n - 1].y);
   }
 }
 
@@ -130,20 +325,24 @@ function bakeDeepSpaceTexture() {
   cv.width = WIDTH; cv.height = HEIGHT;
   const g = cv.getContext("2d");
   g.fillStyle = COLORS.bg; g.fillRect(0, 0, WIDTH, HEIGHT);
+  // Palette pass (Phase 9 §2): restrained, cyan-hero void. Retinted off the old
+  // purple/magenta mix toward deep teal-blue and muted indigo, and dropped a touch
+  // in alpha for a deeper near-black void — magenta is now reserved for boss energy
+  // (see TODO §1 art-direction). Zone-independent, so safe regardless of THEMES.
   const clouds = [
-    { x: WIDTH * 0.22, y: HEIGHT * 0.28, r: 320, c: "rgba(120,40,180,0.16)" },
-    { x: WIDTH * 0.80, y: HEIGHT * 0.66, r: 360, c: "rgba(20,110,170,0.15)" },
-    { x: WIDTH * 0.62, y: HEIGHT * 0.18, r: 240, c: "rgba(200,60,120,0.10)" },
-    { x: WIDTH * 0.12, y: HEIGHT * 0.78, r: 280, c: "rgba(60,60,200,0.11)" },
-    { x: WIDTH * 0.50, y: HEIGHT * 0.50, r: 420, c: "rgba(40,20,90,0.10)" },
+    { x: WIDTH * 0.22, y: HEIGHT * 0.28, r: 320, c: "rgba(40,95,155,0.13)" },
+    { x: WIDTH * 0.80, y: HEIGHT * 0.66, r: 360, c: "rgba(20,110,170,0.13)" },
+    { x: WIDTH * 0.62, y: HEIGHT * 0.18, r: 240, c: "rgba(30,120,150,0.08)" },
+    { x: WIDTH * 0.12, y: HEIGHT * 0.78, r: 280, c: "rgba(50,55,140,0.09)" },
+    { x: WIDTH * 0.50, y: HEIGHT * 0.50, r: 420, c: "rgba(30,22,72,0.08)" },
   ];
   for (const n of clouds) {
     const rg = g.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r);
     rg.addColorStop(0, n.c); rg.addColorStop(1, "rgba(0,0,0,0)");
     g.fillStyle = rg; g.fillRect(0, 0, WIDTH, HEIGHT);
   }
-  bakeGalaxy(g, WIDTH * 0.74, HEIGHT * 0.30, 130, -0.5, "rgba(190,210,255,0.55)", "rgba(120,90,220,0.22)");
-  bakeGalaxy(g, WIDTH * 0.20, HEIGHT * 0.70, 95, 0.7, "rgba(255,225,200,0.45)", "rgba(220,90,150,0.18)");
+  bakeGalaxy(g, WIDTH * 0.74, HEIGHT * 0.30, 130, -0.5, "rgba(190,215,255,0.50)", "rgba(70,120,200,0.20)");
+  bakeGalaxy(g, WIDTH * 0.20, HEIGHT * 0.70, 95, 0.7, "rgba(210,235,255,0.42)", "rgba(60,140,170,0.18)");
   for (let i = 0; i < 260; i++) {
     g.globalAlpha = 0.1 + Math.random() * 0.4;
     g.fillStyle = STAR_TINTS[(Math.random() * STAR_TINTS.length) | 0];
@@ -191,54 +390,112 @@ function drawClaimed(wipeR = -1) {
   const fillNormal = th.claimedFill;
   const fillSlow = th.claimedFillSlow || COLORS.claimedFillSlow;
 
-  // Two moving diagonal "glisten" bands, computed per filled cell so the shimmer
-  // only ever appears on claimed glass (and naturally follows its shape) — the
-  // canvas renderer clips a gradient to the same effect.
-  const t = now() / 1000;
-  const span = field.w + field.h;                 // diagonal extent
-  const bandHalf = 90;                            // band half-width, px
-  const b1 = ((t * 0.16) % 1) * (span + bandHalf * 2) - bandHalf;          // L→R
-  const b2 = ((t * 0.09 + 0.5) % 1) * (span + bandHalf * 2) - bandHalf;    // slower
-  const glint = (u) => {
-    let a = 0;
-    const d1 = Math.abs(u - b1); if (d1 < bandHalf) a += 0.13 * (1 - d1 / bandHalf);
-    const d2 = Math.abs(u - b2); if (d2 < bandHalf) a += 0.07 * (1 - d2 / bandHalf);
-    return a;
-  };
+  const visible = (px, py) => !(wipeR >= 0 && Math.hypot(px + CELL / 2 - CX, py + CELL / 2 - CY) <= wipeR);
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (grid[r][c] !== FILLED) continue;
+      const px = field.x + c * CELL, py = field.y + r * CELL;
+      if (!visible(px, py)) continue;
+      g.rect(px, py, CELL, CELL).fill(slowFill[r][c] ? fillSlow : fillNormal);
+    }
+  }
 
+  // Glass treatment (Phase 9 §3): trace the claimed region's outline as continuous
+  // loops and stroke it in the zone's hero colour with rounded corners — bloom turns
+  // it into a crisp emissive rim, giving claimed territory the luminous-glass-panel
+  // look. (visible() excludes wiped cells during the level-complete ripple.)
+  const insideGlass = (rr, cc) => rr >= 0 && rr < ROWS && cc >= 0 && cc < COLS &&
+    grid[rr][cc] === FILLED && visible(field.x + cc * CELL, field.y + rr * CELL);
+  const rimLoops = traceLoops(insideGlass);
+  for (const lp of rimLoops) roundedPath(g, lp, CORNERS.radius, true);
+  g.stroke({ width: 1.5, color: th.frontier, alpha: 0.55 });
+}
+
+// Smooth specular sweep over the glass. Instead of a per-cell white alpha (which
+// staircases into 8px squares), we rebuild glassMask = the union of claimed cells,
+// then paint two soft diagonal light-bars across the whole field into G.sweep —
+// G.sweep is masked by glassMask, so the bars show ONLY on glass, smoothly. Each
+// bar is several widening, fading stroked passes (a poor-man's gaussian) so it
+// reads as a soft gradient, not a hard-edged stripe. BLOOM then haloes it.
+function drawGlassSweep(wipeR = -1) {
+  const gm = glassMask; gm.clear();
+  let any = false;
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       if (grid[r][c] !== FILLED) continue;
       const px = field.x + c * CELL, py = field.y + r * CELL;
       if (wipeR >= 0 && Math.hypot(px + CELL / 2 - CX, py + CELL / 2 - CY) <= wipeR) continue;
-      g.rect(px, py, CELL, CELL).fill(slowFill[r][c] ? fillSlow : fillNormal);
-      const a = glint((px - field.x) + (py - field.y)); // diagonal coordinate
-      if (a > 0.003) g.rect(px, py, CELL, CELL).fill({ color: "#ffffff", alpha: a });
+      gm.rect(px, py, CELL, CELL);
+      any = true;
     }
   }
+  const g = G.sweep; g.clear();
+  if (!any) return;
+  gm.fill({ color: 0xffffff }); // the mask shape (coverage only; colour irrelevant)
+
+  // Two bars travelling along the field diagonal (constant u = (x-fx)+(y-fy)). Each
+  // bar is a fat low-alpha stroke aligned to the (1,-1) iso-line, drawn off-field at
+  // both ends (the mask trims it). Multiple passes soften the falloff.
+  // Each "light ray" travels along the field diagonal (constant u = (x-fx)+(y-fy)).
+  // To read as a reflection on glass rather than a hard moving line, we (1) draw it in
+  // short segments whose brightness follows a soft bell ALONG the ray — peaking where
+  // it crosses the glass centre and fading to nothing at the ends — and (2) stack wide,
+  // faint, round-capped passes so the edges melt. Masked to glass; bloom haloes it.
+  const t = now() / 1000;
+  const span = field.w + field.h;
+  const L = span;                                   // half-length: well past the field
+  const dx = Math.SQRT1_2, dy = -Math.SQRT1_2;      // ray direction (1,-1) normalised
+  const sigma = span * 0.30;                        // along-length falloff width
+  const SEG = 18, segLen = (2 * L) / SEG;
+  const bar = (phase, speed, peak) => {
+    const u = (t * speed + phase) % 1 * span;        // travelling band centre
+    const cx = field.x + u / 2, cy = field.y + u / 2;// a point on the ray (its midpoint)
+    const sMid = (CX - cx) * dx + (CY - cy) * dy;    // ray param nearest the field centre
+    for (let i = 0; i < SEG; i++) {
+      const s0 = -L + i * segLen, s1 = s0 + segLen, sc = (s0 + s1) / 2;
+      const env = Math.exp(-(((sc - sMid) / sigma) ** 2)); // bright mid-glass → fades to ends
+      const a = peak * env;
+      if (a < 0.004) continue;
+      const x0 = cx + dx * s0, y0 = cy + dy * s0, x1 = cx + dx * s1, y1 = cy + dy * s1;
+      // BUTT caps: the short wide segments fuse into one continuous bar. (Round caps
+      // turned each segment into a ~width-diameter circle → a string of orbs.)
+      glow(g, (gg) => gg.moveTo(x0, y0).lineTo(x1, y1), [
+        { w: 175, c: "#ffffff", a: a * 0.10 },
+        { w: 115, c: "#ffffff", a: a * 0.18 },
+        { w: 66,  c: "#ffffff", a: a * 0.30 },
+        { w: 30,  c: "#ffffff", a: a * 0.55 },
+      ], "butt");
+    }
+  };
+  bar(0.0, 0.16, 0.16);   // brighter, faster
+  bar(0.5, 0.09, 0.10);   // dimmer, slower
 }
 
 function drawSeams() {
   const g = G.seams; g.clear();
+  // Collect the visible interior seam segments (as col/row node pairs), then link
+  // them into chains and stroke with the same rounded corners as everything else.
+  const segs = [];
   for (const key of seams) {
     const [kind, a, b] = key.split(":");
     const p = Number(a), q = Number(b);
     if (kind === "h") {
-      if (!(cellSolid(p - 1, q) && cellSolid(p, q))) continue;
-      const x = field.x + q * CELL, y = field.y + p * CELL;
-      g.moveTo(x, y).lineTo(x + CELL, y);
+      if (cellSolid(p - 1, q) && cellSolid(p, q)) segs.push([q, p, q + 1, p]);
     } else {
-      if (!(cellSolid(q, p - 1) && cellSolid(q, p))) continue;
-      const x = field.x + p * CELL, y = field.y + q * CELL;
-      g.moveTo(x, y).lineTo(x, y + CELL);
+      if (cellSolid(q, p - 1) && cellSolid(q, p)) segs.push([p, q, p, q + 1]);
     }
   }
+  if (!segs.length) return;
+  for (const ch of traceChains(segs)) roundedPath(g, simplifyOpen(ch), CORNERS.radius, false);
   g.stroke({ width: 1.25, color: theme().seam });
 }
 
 function drawArena() {
   const g = G.arena; g.clear();
-  glow(g, gg => gg.rect(field.x, field.y, field.w, field.h), [
+  // Rounded so the arena's own corners (drawn on top of the glass) match the rounded
+  // glass rim — otherwise the sharp rect corner shows through as a hard corner where
+  // claimed glass meets a wall (e.g. the SE corner). Same radius keeps them aligned.
+  glow(g, gg => gg.roundRect(field.x, field.y, field.w, field.h, CORNERS.radius), [
     { w: 6, c: theme().arena, a: 0.18 },
     { w: 2, c: theme().arena, a: 1 },
   ]);
@@ -247,22 +504,15 @@ function drawArena() {
 function drawPerimeter(beat) {
   const g = G.perimeter; g.clear();
   const col = theme().frontier;
-  const build = (gg) => {
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        if (grid[r][c] !== EMPTY) continue;
-        const x = field.x + c * CELL, y = field.y + r * CELL;
-        if (cellSolid(r - 1, c)) { gg.moveTo(x, y); gg.lineTo(x + CELL, y); }
-        if (cellSolid(r + 1, c)) { gg.moveTo(x, y + CELL); gg.lineTo(x + CELL, y + CELL); }
-        if (cellSolid(r, c - 1)) { gg.moveTo(x, y); gg.lineTo(x, y + CELL); }
-        if (cellSolid(r, c + 1)) { gg.moveTo(x + CELL, y); gg.lineTo(x + CELL, y + CELL); }
-      }
-    }
-  };
+  // Trace the open region's outline as continuous loops, then stroke with rounded
+  // corners — the perimeter is the boundary of the EMPTY area (against glass + walls).
+  const loops = traceLoops((r, c) => r >= 0 && r < ROWS && c >= 0 && c < COLS && grid[r][c] === EMPTY);
+  if (!loops.length) return;
+  const build = (gg) => { for (const lp of loops) roundedPath(gg, lp, CORNERS.radius, true); };
   glow(g, build, [
     { w: 7 + beat * 3, c: col, a: 0.16 },
     { w: 3.5 + beat * 2, c: col, a: Math.min(1, 0.85 + beat * 0.15) },
-  ]);
+  ]); // round join/cap on continuous loops → smooth rounded corners
 }
 
 function drawTrail(beat) {
@@ -270,11 +520,12 @@ function drawTrail(beat) {
   if (mode !== "cutting" || trail.length === 0) return;
   const heat = Math.min(1, trail.length / (2 * ROWS));
   const col = slowActive ? "#5fd0ff" : heat > 0.85 ? "#ff5a3c" : heat > 0.5 ? "#ffae3c" : theme().trail;
-  const build = (gg) => {
-    gg.moveTo(nx(trail[0].col), ny(trail[0].row));
-    for (let i = 1; i < trail.length; i++) gg.lineTo(nx(trail[i].col), ny(trail[i].row));
-    gg.lineTo(marker.x, marker.y);
-  };
+  // The live cut line, rounded to match the perimeter (its corners are our signature
+  // look). Points = trail nodes + the marker's current sub-node position.
+  const raw = trail.map((t) => ({ x: nx(t.col), y: ny(t.row) }));
+  raw.push({ x: marker.x, y: marker.y });
+  const pts = simplifyOpen(raw);
+  const build = (gg) => roundedPath(gg, pts, CORNERS.radius, false);
   glow(g, build, [
     { w: (slowActive ? 7 : 5) + heat * 3 + beat * 2, c: col, a: 0.2 },
     { w: 3 + heat * 2.5 + beat * 2, c: col, a: 1 },
@@ -445,11 +696,24 @@ function drawDangerEdge(danger) {
   const g = G.vignette; g.clear();
   if (!danger || danger <= 0.02) return;
   const pulse = 0.6 + 0.4 * Math.sin(now() / 90);
-  // approximate the radial vignette with a translucent border frame
-  const a = 0.5 * danger * pulse;
-  const t = 90;
-  g.rect(0, 0, WIDTH, t).rect(0, HEIGHT - t, WIDTH, t).rect(0, 0, t, HEIGHT).rect(WIDTH - t, 0, t, HEIGHT)
-    .fill({ color: "#ff1e1e", alpha: a * 0.5 });
+  const base = 0.5 * danger * pulse;
+  // The old version stacked 4 full-length strips, so the corners got TWO reds on top
+  // of each other → darker corners. Instead build the vignette from concentric frames,
+  // each made of NON-overlapping strips (corners belong to one strip only), with alpha
+  // fading inward for a soft glow creeping in from the edges.
+  const bands = 6, depth = 100, step = depth / bands;
+  const frame = (inset, thick, alpha) => {
+    const w = WIDTH - 2 * inset, h = HEIGHT - 2 * inset;
+    g.rect(inset, inset, w, thick)                              // top (full width)
+     .rect(inset, inset + h - thick, w, thick)                 // bottom (full width)
+     .rect(inset, inset + thick, thick, h - 2 * thick)         // left (between)
+     .rect(inset + w - thick, inset + thick, thick, h - 2 * thick) // right (between)
+     .fill({ color: "#ff1e1e", alpha });
+  };
+  for (let i = 0; i < bands; i++) {
+    const k = 1 - i / bands;                 // outermost band brightest
+    frame(i * step, step + 0.5, base * 0.55 * k * k);
+  }
 }
 
 function wipeRadius(transT) {
@@ -594,6 +858,7 @@ export function render(view = {}) {
 
   if (game.state === "levelcomplete") {
     drawClaimed(wipeRadius(transT));
+    drawGlassSweep(wipeRadius(transT));
     [G.seams, G.perimeter, G.trail, G.solar, G.enemy, G.sparx, G.powerup].forEach(g => g.clear());
     drawArena();
     drawParticles();
@@ -607,6 +872,7 @@ export function render(view = {}) {
   }
 
   drawClaimed();
+  drawGlassSweep();
   drawSeams();
   drawArena();
   drawPerimeter(beat);
@@ -633,10 +899,10 @@ export function render(view = {}) {
   finishFrame();
 }
 
-// World layers shake; UI/overlay stays steady (matches the canvas renderer).
+// World container shakes as one; bg/stars, UI and overlays stay steady
+// (matches the canvas renderer). Shaking the parent keeps the bloom coherent.
 function applyShake(off) {
-  const worldLayers = [G.glass, G.seams, G.arena, G.perimeter, G.trail, G.solar, G.enemy, G.sparx, G.powerup, G.marker, G.particles];
-  for (const g of worldLayers) { g.x = off.x; g.y = off.y; }
+  if (worldRoot) { worldRoot.x = off.x; worldRoot.y = off.y; }
 }
 
 function finishFrame() {

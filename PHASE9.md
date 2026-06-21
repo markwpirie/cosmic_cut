@@ -54,14 +54,30 @@ or errors, open DevTools (F12) → Console; Pixi API mistakes show up there.
 - Screen shake (offsets world layers; UI stays steady).
 
 ## Roadmap / next (polish that earns Pixi its keep)
-- [ ] **Real glow** via `pixi-filters` (`GlowFilter`/`AdvancedBloomFilter`) or an
-      additive-blend glow layer, replacing the multi-pass stroke fake.
-- [x] **Glisten confined to claimed cells** — the moving glint is now computed
-      per filled cell (two diagonal sweeps), so it no longer leaks a grey band over
-      the open field.
-- [ ] **Richer cell-accurate gloss** — replace the per-cell bands with a masked
-      moving specular gradient (Pixi mask + `FillGradient`) to match/*beat* the
-      canvas gloss.
+- [x] **Real glow** via `pixi-filters` `AdvancedBloomFilter` — applied to a bloom-group
+      container (bg + world layers) so the whole lit scene haloes as one; HUD/overlay
+      text and the dim/danger frames sit outside the bloom and stay crisp. Importmap
+      gains `pixi-filters@6`; knobs in `config.BLOOM`. The old multi-pass strokes now
+      *feed* the bloom instead of faking it.
+- [x] **Glisten confined to claimed cells** — the moving glint is masked to the glass
+      union (`glassMask` → `G.sweep`), so it never leaks over the open field.
+- [x] **Rounded territory edges (signature look)** — perimeter, glass rim, interior
+      seams, the live cut line, AND the arena border are traced as continuous loops/
+      polylines (`traceLoops`/`traceChains`) and stroked with rounded corners
+      (`roundedPath`/`roundRect`). Radius in `config.CORNERS.radius`. Also fixed the
+      beaded "pixely" perimeter (round caps → butt) and the doubled-up darker danger
+      corners (overlapping strips → concentric non-overlapping frames).
+- [~] **Specular gloss — INTERIM** — the sweep is currently soft diagonal light-bars
+      (segmented strokes, along-length brightness bell) masked to the glass. **Mark's
+      verdict: still not the desired look** — reads as bands, not glass.
+- [ ] **GORGEOUS GLASS (next, agreed direction)** — replace the stroke sweep with a
+      **`TilingSprite` + additive blend, clipped by the Graphics `glassMask`**. Bake a
+      seamless diagonal streak/noise texture, scroll `tilePosition` for organic drifting
+      reflections, `blendMode: 'add'` so the starfield shows through (no flat white band).
+      Likely also round the glass **fill** to the smoothed outline so the body curves
+      with the rim. (Watch: additive blend *inside* the bloom-filtered container.)
+- [ ] **Bigger corner radius** option — Chaikin/Catmull-Rom curve smoothing (no per-edge
+      cap) + rounded fill, if we want rounder than the ~½-cell arcTo limit.
 - [ ] **Sprite-based stars/particles** (ParticleContainer) for cheaper, denser FX.
 - [ ] **Glass blocks with depth** — bevel/refraction look for claimed territory.
 - [ ] **Boss picture-reveal** (X-5): claimed cells reveal a hidden image (Pixi mask

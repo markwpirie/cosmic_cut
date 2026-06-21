@@ -27,8 +27,10 @@ export function getActiveEffects(){ return { freeze: effects.freeze, boost: effe
 // For render: the active gust as {dir, time} or null (drives the wind streaks).
 export function getSolarWind()    { return effects.solarwind > 0 ? { dir: solarDir, time: effects.solarwind } : null; }
 
-// Set by aimZoom(), consumed by main.js the same frame (event-driven, cross-frame safe).
-export let lastZoomResult = null;
+// End ZOOM aim mode (called from main.js once a dash direction is committed to the
+// marker). The dash itself lives in marker.js; powerups just owns the floating
+// pickup + the aim gate.
+export function endAiming() { aiming = false; savedZoom = null; }
 
 // --- Lifecycle ---
 export function reset() {
@@ -40,7 +42,6 @@ export function reset() {
   effects.boost  = 0;
   effects.shield = 0;
   effects.solarwind = 0;
-  lastZoomResult = null;
 }
 
 // --- Per-frame update ---
@@ -137,6 +138,14 @@ export function checkClaim() {
   return collected;
 }
 
+// DEV/TEST ONLY: drop a ZOOM pickup right on the marker so it's collected next
+// frame (arrows appear immediately). Bound to the Z key in main.js — remove this
+// and its key handler before shipping. Used to test the ZOOM aim/teleport path.
+export function devSpawnZoom(mx, my) {
+  if (aiming) return;
+  zoom = { x: mx, y: my, vx: 0, vy: 0, angle: 0 };
+}
+
 // --- ZOOM touch ---
 // Call each frame while playing. Returns true when the player touches the ZOOM
 // marker, entering aiming mode. main.js handles the aiming UI.
@@ -151,45 +160,13 @@ export function checkZoomTouch(mx, my) {
   return false;
 }
 
-// Commit ZOOM in chosen direction — called from main.js keydown.
-export function aimZoom(markerCol, markerRow, dx, dy) {
-  // Walk to the arena wall in the chosen direction.
-  let tc = markerCol;
-  let tr = markerRow;
-  while (tc + dx >= 0 && tc + dx <= COLS && tr + dy >= 0 && tr + dy <= ROWS) {
-    tc += dx;
-    tr += dy;
-  }
-  const startX = nodeX(markerCol);
-  const startY = nodeY(markerRow);
-  const endX   = nodeX(tc);
-  const endY   = nodeY(tr);
-
-  const killIndices = [];
-  for (let i = 0; i < blobs.length; i++) {
-    const b = blobs[i];
-    if (distToSeg(b.x, b.y, startX, startY, endX, endY) < b.radius + MARKER.radius) {
-      killIndices.push(i);
-    }
-  }
-  const killedBlobs = killIndices.map(i => ({ x: blobs[i].x, y: blobs[i].y, radius: blobs[i].radius, color: blobs[i].color }));
-  removeBlobs(killIndices);
-
-  lastZoomResult = {
-    targetCol: tc,
-    targetRow: tr,
-    kills: killIndices.length,
-    distance: Math.round(Math.hypot(endX - startX, endY - startY)),
-    killedBlobs,
-  };
-  savedZoom = null;
-  aiming = false;
-}
+// NOTE: ZOOM no longer teleports. The dash (a real 2× cut, invulnerable, kills on
+// contact) is started on the marker via marker.startZoomDash() from main.js's keydown;
+// main.js calls endAiming() here once the dash is committed. See marker.js + main.js.
 
 // Cancel ZOOM aiming — restores the floating marker.
 export function cancelZoom() {
   aiming = false;
-  lastZoomResult = null;
   if (savedZoom) { zoom = savedZoom; savedZoom = null; }
 }
 

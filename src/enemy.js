@@ -267,6 +267,26 @@ export function cells() {
   }));
 }
 
+// ZOOM dash kill-sweep: destroy every blob whose body the ship passed through as it
+// moved from (x0,y0)→(x1,y1) this frame. Segment-based so nothing tunnels through at
+// dash speed. Returns the killed blobs' {x,y,radius,color} (does NOT touch lastKilled,
+// which the SPLIT path owns). Iterates backwards so splices stay valid.
+export function killNear(x0, y0, x1, y1, reach) {
+  const killed = [];
+  for (let i = blobs.length - 1; i >= 0; i--) {
+    const b = blobs[i];
+    let near;
+    if (b.shape === "poly") {
+      near = distToSeg(b.x, b.y, x0, y0, x1, y1) < hitRadius(b) + reach;
+    } else {
+      const s = liveSeg(b);
+      near = segSegDist(s.ax, s.ay, s.bx, s.by, x0, y0, x1, y1) < QIX.lineHitPad + reach;
+    }
+    if (near) { killed.push({ x: b.x, y: b.y, radius: b.radius, color: b.color }); blobs.splice(i, 1); }
+  }
+  return killed;
+}
+
 // --- Geometry helpers ---
 
 function distToSeg(px, py, ax, ay, bx, by) {

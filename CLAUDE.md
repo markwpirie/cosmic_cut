@@ -46,10 +46,17 @@ On Windows use `python` not `python3`.
 
 ## Key design rules (§14)
 - Player is **only vulnerable while cutting** — riding the perimeter is always safe.
+- **Self-trail death (Qix rule):** touching your own in-progress cut line kills you
+  (`marker.selfHit`, set in `onArrive` when the marker lands on a node already in the
+  trail). Prevents walling off un-claimable islands. The marker is also **invulnerable
+  while aiming a ZOOM and during a ZOOM dash** (handled by the `invuln` gate in `main.js`).
 - Claim keeps the blob's region open; blobs trapped on the smaller side die (SPLIT).
 - Power-ups spawn in open cells; collected by claiming the region containing them.
 - **Slow cut:** holding SPACE while cutting crawls the marker, tags the cut slow (`grid.slowFill`), renders darker glass, and scores ×2 area. It's a *commitment* — armed only by holding SPACE as you leave the boundary or within `MARKER.slowArmWindow` (1s); after that SPACE is inert, and releasing mid-cut cancels it (must hold the whole line). Slow state flows control.js → marker.js (`slowActive`/`lastCutSlow`) → grid/game/render.
-- ZOOM exception: floats freely, collected by marker touch, then player aims with arrow keys.
+- **ZOOM is a dash:** floats freely, collected by marker touch → aim with a direction key →
+  the ship rockets across the field **drawing a real cut** at `ZOOM.dashSpeedMult`× speed,
+  invulnerable, killing any enemy it flies through (`enemy.killNear`); the cut claims on
+  landing. Started via `marker.startZoomDash()`. (No longer a teleport.)
 - Sonar ping is currently **off** (`AUDIO.sonar.enabled: false` in `config.js`) — may be redesigned.
 
 ## Conventions

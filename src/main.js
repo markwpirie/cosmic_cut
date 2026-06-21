@@ -7,7 +7,7 @@
 
 import * as control from "./control.js"; // also registers keyboard listeners
 import * as grid from "./grid.js";
-import { marker, mode, trail, lastCutLength, lastCutSlow, update as updateMarker, reset as resetMarker, home as homeMarker } from "./marker.js";
+import { marker, mode, trail, lastCutLength, lastCutSlow, zoomDash, selfHit, startZoomDash, snapToNode, update as updateMarker, reset as resetMarker, home as homeMarker } from "./marker.js";
 import * as enemy from "./enemy.js";
 import * as game from "./game.js";
 import { render } from "./render.js";
@@ -145,6 +145,12 @@ window.addEventListener("keydown", (e) => {
     else if (e.key === "Enter" || e.key === " ") { game.startRun(menuSel); audio.ui(); }
     return;
   }
+  // DEV/TEST: Z drops a ZOOM on the marker (instant pickup) to test the aim path.
+  // Remove this and powerups.devSpawnZoom before shipping.
+  if ((e.key === "z" || e.key === "Z") && game.state === "playing" && !powerups.isAiming()) {
+    powerups.devSpawnZoom(marker.x, marker.y); return;
+  }
+
   // ZOOM direction selection — absorbs input until the player picks a direction.
   if (powerups.isAiming()) {
     const zoomDirs = {
@@ -154,9 +160,13 @@ window.addEventListener("keydown", (e) => {
       ArrowRight: {dx:1,dy:0}, d: {dx:1,dy:0}, D: {dx:1,dy:0},
     };
     const d = zoomDirs[e.key];
-    if (d) {
-      powerups.aimZoom(marker.col, marker.row, d.dx, d.dy);
-      // Result is consumed in the game loop next frame.
+    if (d && startZoomDash(d.dx, d.dy)) {
+      // Dash committed on the marker — leave aim mode and let it rip. If the chosen
+      // heading can't start a cut (e.g. pressing along the wall), startZoomDash
+      // returns false and we stay aiming so the player can pick another direction.
+      powerups.endAiming();
+      audio.powerupPickup();
+      popups.push({ text: "ZOOM!", x: marker.x, y: marker.y - 20, t: 0 });
     }
     return; // swallow all keys (including non-directional) during aiming
   }
@@ -196,39 +206,42 @@ function loop(now) {
 
   if (game.state === "playing") {
     const prevCount = enemy.blobs.length;
+    const aiming = powerups.isAiming();      // frozen while picking a ZOOM dash direction
+    const dashing = zoomDash;                // a ZOOM dash is driving the cut this frame
+    const px0 = marker.x, py0 = marker.y;    // pre-move position, for the dash kill-sweep
     powerups.update(dt);
 
-    // Consume a ZOOM result before moving the marker so the teleport lands cleanly,
-    // and no cut-state from the previous frame bleeds into updateMarker.
-    if (powerups.lastZoomResult) {
-      const zr = powerups.lastZoomResult;
-      powerups.lastZoomResult = null;
-      homeMarker(zr.targetCol, zr.targetRow);
-      if (zr.kills > 0) {
-        game.addScore(POWERUPS.ZOOM.killPoints * zr.kills + POWERUPS.ZOOM.distPoints * zr.distance);
-        for (const k of zr.killedBlobs) {
+    if (!aiming) updateMarker(dt);
+
+    // ZOOM dash kill-sweep: destroy every enemy the ship flew through this frame.
+    // (zoomDash clears itself the instant the dash's cut closes, so we use the
+    // start-of-frame `dashing` flag to still sweep that final segment.)
+    let dashKilled = [];
+    if (dashing) {
+      dashKilled = enemy.killNear(px0, py0, marker.x, marker.y, POWERUPS.ZOOM.dashKillReach);
+      if (dashKilled.length) {
+        game.addScore(POWERUPS.ZOOM.killPoints * dashKilled.length);
+        for (const k of dashKilled) {
           fx.burst(k.x, k.y, k.color, 22, 300);
           fx.ring(k.x, k.y, k.color, 16, 240, 0.7);
           fx.ring(k.x, k.y, "#ffffff", 10, 180, 0.35);
         }
-        audio.kill();
-        director.kill();
-        fx.addShake(10);
-        scorePulseT = 0;
+        popups.push({ text: `ZOOM +${POWERUPS.ZOOM.killPoints * dashKilled.length}`, x: marker.x, y: marker.y - 20, t: 0 });
+        audio.kill(); director.kill(); fx.addShake(8); scorePulseT = 0;
       }
-      popups.push({ text: "ZOOM!", x: marker.x, y: marker.y - 20, t: 0 });
     }
 
-    if (!powerups.isAiming()) updateMarker(dt);
-    if (powerups.checkZoomTouch(marker.x, marker.y)) {
-      homeMarker(marker.col, marker.row);
+    // Touch a floating ZOOM → enter aim mode. Snap to the current node (keeping any
+    // in-progress cut) so the dash can begin cleanly; the keydown handler fires it.
+    if (!aiming && powerups.checkZoomTouch(marker.x, marker.y)) {
+      snapToNode();
       popups.push({ text: "AIM!", x: marker.x, y: marker.y - 24, t: 0 });
       audio.powerupPickup();
     }
     enemy.update(dt, marker.x, marker.y);
     sparx.update(dt, marker, trail);
     const gained = grid.percent - prevPercent;
-    const kills = prevCount - enemy.blobs.length;
+    const kills = prevCount - enemy.blobs.length - dashKilled.length; // claim SPLIT kills only
 
     // A claim just landed → score it, pop-up, sound + particles + shake.
     if (gained >= POPUP_MIN_PCT) {
@@ -269,9 +282,14 @@ function loop(now) {
 
     prevPercent = grid.percent;
 
-    // Sparx kill on perimeter AND while cutting — check before blob-only test.
-    const sparxHit = sparx.collides(marker);
-    const hit = sparxHit || enemy.collides(marker, mode, trail);
+    // Death checks. The player is invulnerable to enemies while AIMING a ZOOM (frozen)
+    // and during the DASH itself — the dash kills on contact instead (above). But
+    // riding over your OWN cut line is ALWAYS fatal, even mid-dash (selfHit), which is
+    // what stops you walling off un-claimable islands.
+    const invuln = aiming || dashing;
+    const sparxHit = invuln ? null : sparx.collides(marker);
+    let hit = sparxHit || (invuln ? null : enemy.collides(marker, mode, trail));
+    if (!hit && selfHit) hit = { x: marker.x, y: marker.y, radius: 6, self: true };
     if (hit) {
       deathPoint = { x: marker.x, y: marker.y };
       deathBlob  = { x: hit.x, y: hit.y, radius: hit.radius || 6 };
@@ -285,14 +303,17 @@ function loop(now) {
       transT = 0;
       if (game.state === "gameover") { audio.gameOver(); if (game.newHigh) audio.highScore(); }
     } else {
-      // Near miss: a blob grazed your trail without hitting → small reward.
-      const nm = enemy.pollNearMiss(marker, mode, trail);
-      if (nm > 0) {
-        game.addScore(POINTS.nearMiss * nm);
-        popups.push({ text: "NEAR MISS", x: marker.x, y: marker.y - 12, t: 0 });
-        audio.nearMiss();
-        fx.addShake(3);
-        scorePulseT = 0;
+      // Near miss: a blob grazed your trail without hitting → small reward. Skipped
+      // while aiming/dashing (you're invulnerable then, so it's not a "miss").
+      if (!invuln) {
+        const nm = enemy.pollNearMiss(marker, mode, trail);
+        if (nm > 0) {
+          game.addScore(POINTS.nearMiss * nm);
+          popups.push({ text: "NEAR MISS", x: marker.x, y: marker.y - 12, t: 0 });
+          audio.nearMiss();
+          fx.addShake(3);
+          scorePulseT = 0;
+        }
       }
       if (grid.percent >= game.currentLevel().target) {
         game.completeLevel();

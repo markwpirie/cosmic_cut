@@ -76,6 +76,32 @@ export const THEMES = [
   { frontier: "#ffd24d", claimedFill: "rgba(255, 205, 60, 0.15)", claimedFillSlow: "rgba(44, 32, 4, 0.62)",  trail: "#ffdf80", seam: "rgba(255, 220, 120, 0.4)", arena: "#a3851f" }, // 5 gold
 ];
 
+// Phase 9 art-direction §1: BLOOM (Pixi-only, AdvancedBloomFilter from pixi-filters).
+// The single biggest upgrade toward the reference look — only bright neon things
+// (perimeter, trail, enemies, stars, marker) glow; the dark void/glass stays dark
+// thanks to the brightness `threshold`. Applied to the world layers only, so HUD
+// text stays crisp. Mark tunes these by eye — all live knobs in one place.
+export const BLOOM = {
+  enabled: true,
+  threshold: 0.55,   // 0..1 — only pixels brighter than this bloom (raise = less glow)
+  bloomScale: 1.5,     // intensity of the added glow
+  brightness: 2.0,   // overall brightness multiplier of the result
+  // --- smoothness / anti-pixelation (the "glossy not blocky" knobs) ---
+  blur: 8,          // glow SPREAD radius. Low values keep the hard 8px cell edges →
+                     //   blocky halos; raise it to melt them into a soft glossy haze.
+  quality: 5,       // # of blur passes. Too few = visible stepping/banding. Higher = smoother (costlier).
+  pixelSize: 0.5,      // Kawase-blur sample spacing. 1 = smooth; >1 = deliberately retro/blocky; <1 = supersampled (smoothest, costliest).
+  resolution: 0,     // bloom render resolution. 0 = match device pixel ratio (crisp on retina);
+                     //   set 2+ to force a sharper-than-screen bloom buffer (less pixelated upscale).
+};
+
+// Phase 9 — our signature look: ROUNDED territory edges. The perimeter frontier, the
+// claimed-glass rim, and the live cut line are traced as continuous loops/polylines and
+// stroked with rounded corners (Pixi-only). `radius` is the corner radius in px, clamped
+// per-corner to half the shortest adjacent edge — so on the 8px grid, ~4 fully rounds the
+// staircases into smooth scallops, while lower values just soften the corners "slightly".
+export const CORNERS = { radius: 4 };
+
 // Scoring (Phase 5, §9). Point values are deliberately gathered here so they're
 // easy to balance once the game is played. A cut scores base points per % it
 // claims, multiplied by any bonuses it triggers (BLOCK OUT / MEGA-CUT by size,
@@ -87,7 +113,7 @@ export const POINTS = {
   // LONG tiers by cut length, measured in field-heights (×ROWS). LONG starts at 2×.
   longHeights: 2, superLongHeights: 3, megaLongHeights: 4,
   longMult: 1.5, superLongMult: 2, megaLongMult: 3,
-  slowCutMult: 2,      // a SLOW DRAW (SPACE held) doubles the cut's area points (§"Stix")
+  slowCutMult: 10,      // a SLOW DRAW (SPACE held) 10x the cut's area points (§"Stix")
   splitMult: 2,        // each SPLIT grants ×2 to the level multiplier (§14)
   perKill: 500,        // points per Blob destroyed (juicy, §"nice points on kill")
   nearMiss: 150,       // points when a blob grazes your trail without hitting
@@ -155,7 +181,7 @@ export const QIX = {
   endpointSpeed:     95,  // base px/sec the endpoints sweep within the box
   surgeSpeedMult:   2.4,  // endpoint speed multiplier at full surge
   spanBase:          26,  // typical half-length (compact, twisty)
-  spanMax:          150,  // half-length at full surge (≈ stick spanning 50% screen)
+  spanMax:          250,  // half-length at full surge (≈ stick spanning 50% screen)
   surgeIntervalMin:   3,  // min seconds between surges
   surgeIntervalMax:   7,  // max seconds between surges
   surgeHold:        0.6,  // seconds a surge stays expanded before settling
@@ -211,6 +237,9 @@ export const POWERUPS = {
   SOLARWIND: { duration: 3.5, color: "#ffaa00", label: "SOLAR WIND", gustMult: 1.6   },
   BOOST:     { duration: 8, color: "#39ff14", label: "BOOST",     speedMult:    1.5  },
   SHIELD:    { duration: 6, color: "#ff80ff", label: "SHIELD"                        },
+  // ZOOM is a DASH: pick a direction, then rocket across the field DRAWING A CUT at
+  // dashSpeedMult× speed — invulnerable, killing any enemy the ship flies through
+  // (within dashKillReach px of its body). The cut claims normally when it lands.
   ZOOM:      { duration: 0, color: "#ff4400", label: "ZOOM",      killPoints:   80,
-                                                                   distPoints:    1   },
+               dashSpeedMult: 2, dashKillReach: 9 },
 };

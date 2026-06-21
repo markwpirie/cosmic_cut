@@ -5,8 +5,17 @@ as-built decisions in §14/§16. Tick items off as they land.
 
 ## Done recently
 - [x] **Phase 6 — power-ups.** Freeze, Solar Wind, Boost, Shield, **ZOOM** all built
-      (`powerups.js`). ZOOM = touch the floating pickup → aim with a direction key →
-      rocket to that wall, killing blobs in the path. Config in `config.POWERUPS`.
+      (`powerups.js`). **ZOOM is a DASH** (redesigned): touch the floating pickup → aim
+      with a direction key → the ship **rockets across the field DRAWING A REAL CUT** at
+      `ZOOM.dashSpeedMult`× speed, **invulnerable**, killing any enemy it flies through
+      (`ZOOM.dashKillReach`); the cut claims normally when it lands. Logic in
+      `marker.startZoomDash()` + the dash kill-sweep `enemy.killNear()`; wired in `main.js`.
+      Config in `config.POWERUPS.ZOOM`. *(Dev: press **Z** in-play to spawn a ZOOM on the
+      ship for testing — remove `devSpawnZoom` + its key before shipping.)*
+- [x] **Self-trail death (Qix rule).** Riding over your own in-progress cut line now
+      **kills you** (`marker.selfHit`, checked in `onArrive` via a trail-node Set) — fixes
+      the bug where you could wall off un-claimable islands. Works for normal cuts and
+      dashes alike; shared logic, so it fixes canvas + Pixi.
 - [x] **Enemy roster overhaul.** Two enemy shapes in `enemy.js`: the **star Qix**
       (line-sheaf — sticks surge to ~50% screen then settle, line-segment collision)
       and **polygon Blobs** (+ **Hunter Blobs** that drift at the player). **Sparx** +
@@ -41,9 +50,21 @@ as-built decisions in §14/§16. Tick items off as they land.
       field, perimeter/trail, enemies (sheaf + poly + sparx), power-ups, rocket marker,
       particles, HUD + all overlays. Renderer switch + async init in `main.js`.
 - [x] **Glisten confined to claimed cells** (was leaking a grey band over the whole field).
-- [ ] **Real glow** via `pixi-filters` (GlowFilter / bloom) instead of multi-pass strokes.
-- [ ] **Cell-masked specular gradient** for richer glass (current glint is per-cell bands).
+- [x] **Real glow** via `pixi-filters` `AdvancedBloomFilter` (replaces the multi-pass
+      stroke fake — the strokes now feed the bloom instead of faking it). Anti-pixelation
+      knobs exposed in `config.BLOOM` (`blur`/`quality`/`pixelSize`/`resolution`).
+- [x] **Cell-masked specular gradient** for glass — the sweep is now smooth diagonal
+      light-bars masked to the glass union (`glassMask` → `G.sweep`), not a per-cell white
+      alpha (which staircased into 8px squares).
+- [x] **Rounded territory edges (signature look)** — perimeter, glass rim, and the live
+      cut line are traced as continuous loops/polylines (`traceLoops`) and stroked with
+      rounded corners (`roundedPath` via `arcTo`). Corner radius in `config.CORNERS.radius`
+      (clamped per-corner; ~4 smooths the 8px staircases into scallops). Fixed the
+      separate "beaded/pixely perimeter" bug (was round caps on per-cell segments).
 - [ ] Sprite-based stars/particles (ParticleContainer); glass-block depth; boss reveal.
+- [ ] *Perf note:* `traceLoops` runs every frame (cheap at 90×65); cache on claim if needed.
+- [ ] *Watch:* rounded-edge tracer pinch-points (diagonal cell touches) use a turn
+      preference — eyeball diagonal cuts for any stray connecting line.
 - [ ] Verify in-browser (written blind — watch the DevTools console for v8 API mismatches).
 
 ### Phase 9 — the "beautiful" art-direction pass (reference board in `assets/`)
@@ -58,9 +79,20 @@ Void" visual storyboard. **This is the target look.** Visual DNA to hit:
 - **Thin, wide sci-fi typography**; calm data-viz HUD.
 
 Sequenced implementation (each step is visible, tune as we go — Mark is the eyes):
-- [ ] **1. Bloom** — `AdvancedBloomFilter` (from `pixi-filters`) on the Pixi stage.
-- [ ] **2. Palette pass** — lock cyan-hero / magenta-boss; darken the void.
-- [ ] **3. Glass treatment** — emissive borders + refraction for claimed cells (panel-7 look).
+- [x] **1. Bloom** — `AdvancedBloomFilter` (`pixi-filters@6` via importmap) on a
+      bloom-group container holding bg+world; HUD/overlays excluded so text stays
+      crisp. Knobs in `config.BLOOM` (threshold/bloomScale/brightness/blur/quality).
+- [~] **2. Palette pass** — *first pass:* retinted the Pixi void bake to restrained
+      cyan/teal-blue and reserved magenta for boss energy. **Open decision (Mark):**
+      keep the 5-zone `THEMES` colour journey or flatten all zones to cyan-hero?
+      (Left `THEMES` untouched pending that call — tune under bloom.)
+- [~] **3. Glass treatment** — *in progress.* Emissive hero-colour rim traced around
+      claimed glass (rounded), plus a masked specular sweep. **Current sweep (segmented
+      soft light-bars) is INTERIM — not the desired look.** Next, agreed direction:
+      **`TilingSprite` (seamless diagonal streak/noise texture) + additive blend, clipped
+      by the Graphics `glassMask`**, scrolling `tilePosition` for organic drifting
+      reflections that let the starfield show through. Likely round the glass *fill* too
+      so the body curves with the rim. See PHASE9.md "GORGEOUS GLASS".
 - [ ] **4. Grid + vignette + ambient particles** — the atmospheric depth.
 - [ ] **5. Energy enemies** — glow cores + particle trails (keep our shapes, make them radiate).
 - [ ] **6. Typography** — sci-fi web font for HUD + titles.
