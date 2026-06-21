@@ -256,7 +256,7 @@ function loop(now) {
       audio.claimWhoosh(); // the "schooooofff" as the line closes
       if (res.labels.length) audio.bonus(res.labels.length + 1, TIMING.rewardStep); // doof doof doof
       fx.burst(marker.x, marker.y, zoneColor(), 12 + Math.round(gained), 150);
-      fx.addShake(Math.min(12, 2 + gained * 0.25));
+      fx.addShake(Math.min(28, 8 + gained * 0.55)); // the satisfying "thud" on a completed cut
     }
     if (kills > 0) {
       audio.kill();

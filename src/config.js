@@ -95,6 +95,28 @@ export const BLOOM = {
                      //   set 2+ to force a sharper-than-screen bloom buffer (less pixelated upscale).
 };
 
+// Phase 9 — GLASS shimmer (Pixi-only). The claimed-glass reflection is two additive,
+// diagonally-scrolling TilingSprites of a baked streak/noise texture, clipped to the
+// glass shape — organic drifting light that lets the starfield show through (instead of
+// a flat white band). `opacity` scales both layers; layer B is the slower, larger
+// parallax. `speed` is px/sec of tile drift; `tint` colours the reflection.
+export const GLASS = {
+  opacity: 0.4,        // overall reflection strength (0 = off). Additive + bloom, so keep low.
+  tint: "#7fd4ff",     // cyan-leaning glass tint (less "bold white")
+  speed: 14,           // diagonal scroll speed (px/sec) of the near layer
+  scaleA: 1.0,         // near layer tile scale
+  scaleB: 1.7,         // far/parallax layer tile scale (bigger, slower → depth)
+};
+
+// Phase 9 — NEBULA smoke-warp (Pixi-only). A DisplacementFilter driven by a slowly
+// scrolling noise map churns the baked nebula so it curls like volumetric smoke
+// (local turbulence, not just a sliding image). `warp` = displacement strength in px
+// (0 = off, static drift only); `evolve` scales how fast it churns.
+export const NEBULA = {
+  warp: 22,
+  evolve: 1,
+};
+
 // Phase 9 — our signature look: ROUNDED territory edges. The perimeter frontier, the
 // claimed-glass rim, and the live cut line are traced as continuous loops/polylines and
 // stroked with rounded corners (Pixi-only). `radius` is the corner radius in px, clamped

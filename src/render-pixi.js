@@ -13,9 +13,9 @@
 // to mirror render.js closely and keep the port easy to reason about. Glow is
 // faked with a few widening, fading stroke passes (Pixi has no shadowBlur).
 
-import { Application, Container, Graphics, Sprite, Texture, Text, Rectangle } from "pixi.js";
+import { Application, Container, Graphics, Sprite, TilingSprite, Texture, Text, Rectangle, DisplacementFilter } from "pixi.js";
 import { AdvancedBloomFilter } from "pixi-filters";
-import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, QIX, BLOB_POLY, SPARX, MARKER, BLOOM, CORNERS } from "./config.js";
+import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, QIX, BLOB_POLY, SPARX, MARKER, BLOOM, CORNERS, GLASS, NEBULA } from "./config.js";
 import * as powerups from "./powerups.js";
 import { grid, slowFill, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
 import { marker, mode, dir, trail, slowActive } from "./marker.js";
@@ -37,8 +37,12 @@ function theme() { return THEMES[game.currentLevel().zone - 1] || THEMES[0]; }
 let app = null;
 let G = {};          // named Graphics layers, cleared + redrawn each frame
 let bgSprite = null; // baked nebula/galaxy texture
+let dispSprite = null; // noise map driving the nebula smoke-warp DisplacementFilter
 let worldRoot = null; // shaken container holding the play-field glow layers
 let glassMask = null; // union of claimed cells, used to clip the specular sweep to glass
+let sweepGroup = null; // masked container holding the additive reflection TilingSprites
+let sweepA = null, sweepB = null; // two parallax reflection layers
+let sweepLast = 0;    // timestamp for sweep scroll dt
 let starsState = null;
 let starLast = 0;
 
@@ -63,7 +67,7 @@ export async function init(canvas) {
   // Create all named Graphics layers up front; we parent them into the right
   // container below. (`render()` clears every one of these each frame.)
   const allLayers = [
-    "stars", "glass", "sweep", "seams", "arena", "perimeter", "trail",
+    "stars", "glass", "seams", "arena", "perimeter", "trail",
     "solar", "enemy", "sparx", "powerup", "marker", "particles", "vignette", "overlay",
   ];
   for (const name of allLayers) G[name] = new Graphics();
@@ -80,19 +84,48 @@ export async function init(canvas) {
   worldRoot = new Container();
 
   bgSprite = new Sprite(bakeDeepSpaceTexture());
+  bgSprite.anchor.set(0.5);                  // centre-anchored so it can drift/breathe/rotate
+  bgSprite.position.set(WIDTH / 2, HEIGHT / 2);
+  // Smoke-warp: an oversized noise map (renderable:false — it only supplies the texture
+  // + transform) drives a DisplacementFilter on the nebula so it churns like volumetric
+  // smoke. Scrolling/rotating the map each frame animates the turbulence.
+  if (NEBULA.warp > 0) {
+    dispSprite = new Sprite(bakeNoiseTexture());
+    dispSprite.anchor.set(0.5);
+    dispSprite.width = WIDTH * 1.5; dispSprite.height = HEIGHT * 1.5;
+    dispSprite.position.set(WIDTH / 2, HEIGHT / 2);
+    // Stays renderable so its transform actually updates each frame (renderable:false
+    // can freeze the transform in v8 → no churn). It's added BEHIND the opaque, oversized
+    // nebula, so the noise itself is never visible — bgSprite covers it.
+    bgRoot.addChild(dispSprite);
+    bgSprite.filters = [new DisplacementFilter({ sprite: dispSprite, scale: NEBULA.warp })];
+  }
   bgRoot.addChild(bgSprite, G.stars);
 
-  for (const name of ["glass", "sweep", "seams", "arena", "perimeter", "trail",
+  worldRoot.addChild(G.glass); // claimed-glass fill + emissive rim
+
+  // GLASS shimmer: two additive, diagonally-scrolling TilingSprites of a baked
+  // streak/noise texture, grouped and clipped to the claimed shape by glassMask
+  // (rebuilt each frame). Additive + transparency = organic drifting reflections
+  // that let the starfield show through, instead of a flat painted band. The pair
+  // gives parallax depth (B is larger + slower).
+  const streak = bakeGlassStreakTexture();
+  const SW = WIDTH + 128, SH = HEIGHT + 128; // oversize so screen-shake never exposes an edge
+  sweepGroup = new Container();
+  sweepA = new TilingSprite({ texture: streak, width: SW, height: SH });
+  sweepB = new TilingSprite({ texture: streak, width: SW, height: SH });
+  for (const s of [sweepA, sweepB]) { s.position.set(-64, -64); s.blendMode = "add"; s.tint = GLASS.tint; }
+  sweepA.tileScale.set(GLASS.scaleA);
+  sweepB.tileScale.set(GLASS.scaleB);
+  sweepGroup.addChild(sweepB, sweepA); // far layer behind near layer
+  glassMask = new Graphics();
+  sweepGroup.mask = glassMask;
+  worldRoot.addChild(sweepGroup, glassMask);
+
+  for (const name of ["seams", "arena", "perimeter", "trail",
     "solar", "enemy", "sparx", "powerup", "marker", "particles"]) {
     worldRoot.addChild(G[name]);
   }
-
-  // Specular sweep is clipped to the claimed glass: glassMask (the union of filled
-  // cells, rebuilt each frame) masks G.sweep, so the smooth light-bar only shows on
-  // glass instead of being painted per-cell (which read as 8px staircase squares).
-  glassMask = new Graphics();
-  worldRoot.addChild(glassMask);
-  G.sweep.mask = glassMask;
 
   bloomGroup.addChild(bgRoot, worldRoot);
   if (BLOOM.enabled) {
@@ -160,6 +193,69 @@ function glow(g, build, passes, cap = "round") {
     build(g);
     g.stroke({ width: p.w, color: p.c, alpha: p.a, cap, join: "round" });
   }
+}
+
+// Seamless, tileable streak+noise texture for the glass reflection TilingSprites.
+// Diagonal bands (intensity follows (x+y) over a period that divides the tile, so it
+// wraps cleanly) modulated by periodic sines for organic shimmer. White with alpha;
+// the TilingSprite tints + additively blends it.
+function bakeGlassStreakTexture() {
+  const S = 256, P = 64; // S % P === 0 → diagonal bands tile seamlessly
+  const cv = document.createElement("canvas");
+  cv.width = S; cv.height = S;
+  const ctx2 = cv.getContext("2d");
+  const img = ctx2.createImageData(S, S), d = img.data;
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const u = ((x + y) % P) / P;                         // 0..1 across a diagonal band
+      let band = Math.exp(-(((u - 0.5) / 0.16) ** 2));     // soft main streak
+      band += 0.30 * Math.exp(-(((u - 0.14) / 0.05) ** 2)); // a thin secondary glint
+      const n = 0.5 + 0.5 * Math.sin((2 * Math.PI * (2 * x + y)) / S)
+                            * Math.sin((2 * Math.PI * (x - 3 * y)) / S); // periodic → tiles
+      const a = Math.max(0, Math.min(1, band * (0.16 + 0.40 * n)));
+      const i = (y * S + x) * 4;
+      d[i] = d[i + 1] = d[i + 2] = 255;
+      d[i + 3] = (a * 255) | 0;
+    }
+  }
+  ctx2.putImageData(img, 0, 0);
+  return wrapTexture(Texture.from(cv));
+}
+
+// Mark a texture's sampler as repeating (so scrolling/tiling has no seam). v8's exact
+// wrap API varies a little between builds, so set it a couple of ways.
+function wrapTexture(tex) {
+  const src = tex.source;
+  if (src) {
+    if (src.style) { src.style.addressMode = "repeat"; src.style.update?.(); }
+    src.addressModeU = "repeat"; src.addressModeV = "repeat";
+  }
+  return tex;
+}
+
+// Smooth, tileable RG noise for the nebula DisplacementFilter. R drives horizontal
+// offset, G vertical; built from summed sines at integer frequencies over the tile so
+// it wraps seamlessly when the map scrolls. Two different field mixes for R vs G give
+// organic 2D churn rather than uniform shear.
+function bakeNoiseTexture() {
+  const S = 256;
+  const cv = document.createElement("canvas");
+  cv.width = S; cv.height = S;
+  const ctx2 = cv.getContext("2d");
+  const img = ctx2.createImageData(S, S), d = img.data;
+  const f = (x, y, fx, fy, ph) => Math.sin((2 * Math.PI * (fx * x + fy * y)) / S + ph);
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const r = 0.5 + 0.26 * f(x, y, 1, 0, 0) + 0.15 * f(x, y, 0, 1, 1.3) + 0.09 * f(x, y, 2, 1, 2.1);
+      const gg = 0.5 + 0.26 * f(x, y, 0, 1, 0.7) + 0.15 * f(x, y, 1, 0, 2.0) + 0.09 * f(x, y, 1, 2, 0.4);
+      const i = (y * S + x) * 4;
+      d[i] = Math.max(0, Math.min(255, r * 255)) | 0;
+      d[i + 1] = Math.max(0, Math.min(255, gg * 255)) | 0;
+      d[i + 2] = 128; d[i + 3] = 255;
+    }
+  }
+  ctx2.putImageData(img, 0, 0);
+  return wrapTexture(Texture.from(cv));
 }
 
 // --- Rounded territory edges (our signature look) --------------------------
@@ -309,15 +405,54 @@ function roundedPath(g, pts, R, closed) {
 
 // --- Baked deep-space texture (nebula + galaxies + dust) --------------------
 const STAR_TINTS = ["#cfeaff", "#ffffff", "#bcdcff", "#ffe6c4", "#ffd0e8", "#d6c4ff"];
-function bakeGalaxy(g, cx, cy, r, tilt, core, arm) {
+const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+// Organic, colourful nebula: many overlapping ADDITIVE gas daubs (so overlaps build
+// luminous colour), a soft core glow (not a hard white disc), bright filament wisps,
+// and dark dust lanes for structure. `cols` is an array of [r,g,b]; `flatten` squashes
+// it vertically. Replaces the old clean radial "galaxy" that read as a white circle.
+function bakeNebula(g, cx, cy, R, cols, flatten = 0.82) {
+  const pick = () => cols[(Math.random() * cols.length) | 0];
   g.save();
-  g.translate(cx, cy); g.rotate(tilt); g.scale(1, 0.42);
-  const disc = g.createRadialGradient(0, 0, 0, 0, 0, r);
-  disc.addColorStop(0, core); disc.addColorStop(0.25, arm); disc.addColorStop(1, "rgba(0,0,0,0)");
-  g.fillStyle = disc; g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.fill();
-  const k = g.createRadialGradient(0, 0, 0, 0, 0, r * 0.3);
-  k.addColorStop(0, "rgba(255,255,255,0.9)"); k.addColorStop(1, "rgba(255,255,255,0)");
-  g.fillStyle = k; g.beginPath(); g.arc(0, 0, r * 0.3, 0, Math.PI * 2); g.fill();
+  g.translate(cx, cy);
+  g.globalCompositeOperation = "lighter";
+  for (let i = 0; i < 70; i++) {                       // glowing gas
+    const ang = Math.random() * Math.PI * 2, rad = Math.sqrt(Math.random()) * R;
+    const x = Math.cos(ang) * rad, y = Math.sin(ang) * rad * flatten;
+    const br = R * (0.10 + Math.random() * 0.30), c = pick();
+    const grd = g.createRadialGradient(x, y, 0, x, y, br);
+    grd.addColorStop(0, rgba(c, (0.045 + Math.random() * 0.085).toFixed(3)));
+    grd.addColorStop(1, rgba(c, 0));
+    g.fillStyle = grd; g.beginPath(); g.arc(x, y, br, 0, Math.PI * 2); g.fill();
+  }
+  const core = g.createRadialGradient(0, 0, 0, 0, 0, R * 0.55); // soft core, not a disc
+  core.addColorStop(0, "rgba(255,255,255,0.15)");
+  core.addColorStop(0.45, "rgba(210,230,255,0.05)");
+  core.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = core; g.beginPath(); g.arc(0, 0, R * 0.55, 0, Math.PI * 2); g.fill();
+  g.lineCap = "round";                                  // soft flowing filament wisps
+  for (let i = 0; i < 6; i++) {
+    const c = pick();
+    g.strokeStyle = rgba(c, (0.035 + Math.random() * 0.04).toFixed(3));
+    g.lineWidth = 1 + Math.random() * 1.5;
+    g.shadowBlur = 6 + Math.random() * 6; g.shadowColor = rgba(c, 0.5); // blur → wisp, not glyph
+    let x = (Math.random() - 0.5) * R * 0.7, y = (Math.random() - 0.5) * R * flatten * 0.7;
+    g.beginPath(); g.moveTo(x, y);
+    for (let k = 0; k < 3; k++) {                        // smooth curves, not jagged lineTo
+      const mx = x + (Math.random() - 0.5) * R * 0.5, my = y + (Math.random() - 0.5) * R * flatten * 0.5;
+      x += (Math.random() - 0.5) * R * 0.55; y += (Math.random() - 0.5) * R * flatten * 0.55;
+      g.quadraticCurveTo(mx, my, x, y);
+    }
+    g.stroke();
+  }
+  g.shadowBlur = 0;
+  g.globalCompositeOperation = "source-over";           // dark dust lanes
+  for (let i = 0; i < 6; i++) {
+    const x = (Math.random() - 0.5) * R * 1.2, y = (Math.random() - 0.5) * R * flatten * 1.2;
+    const br = R * (0.08 + Math.random() * 0.22);
+    const grd = g.createRadialGradient(x, y, 0, x, y, br);
+    grd.addColorStop(0, "rgba(4,3,10,0.55)"); grd.addColorStop(1, "rgba(4,3,10,0)");
+    g.fillStyle = grd; g.beginPath(); g.arc(x, y, br, 0, Math.PI * 2); g.fill();
+  }
   g.restore();
 }
 function bakeDeepSpaceTexture() {
@@ -341,8 +476,10 @@ function bakeDeepSpaceTexture() {
     rg.addColorStop(0, n.c); rg.addColorStop(1, "rgba(0,0,0,0)");
     g.fillStyle = rg; g.fillRect(0, 0, WIDTH, HEIGHT);
   }
-  bakeGalaxy(g, WIDTH * 0.74, HEIGHT * 0.30, 130, -0.5, "rgba(190,215,255,0.50)", "rgba(70,120,200,0.20)");
-  bakeGalaxy(g, WIDTH * 0.20, HEIGHT * 0.70, 95, 0.7, "rgba(210,235,255,0.42)", "rgba(60,140,170,0.18)");
+  // Two colourful nebulae (blue/pink/teal + teal/green/red accent) — organic clouds
+  // with filaments + dust, not white discs. Low per-daub alpha keeps the void dark.
+  bakeNebula(g, WIDTH * 0.74, HEIGHT * 0.28, 205, [[90, 150, 255], [235, 120, 200], [120, 225, 255], [255, 205, 215]], 0.85);
+  bakeNebula(g, WIDTH * 0.20, HEIGHT * 0.72, 165, [[60, 220, 205], [120, 255, 160], [255, 95, 95], [110, 150, 255]], 0.80);
   for (let i = 0; i < 260; i++) {
     g.globalAlpha = 0.1 + Math.random() * 0.4;
     g.fillStyle = STAR_TINTS[(Math.random() * STAR_TINTS.length) | 0];
@@ -370,7 +507,23 @@ function initStars() {
 // --- Per-frame scene draws -------------------------------------------------
 function drawBackground(beat) {
   const t = now();
-  bgSprite.alpha = 0.85 + 0.1 * Math.sin(t / 3500) + beat * 0.15;
+  const tt = t / 1000;
+  // Opaque (alpha 1) so it fully hides the displacement-map sprite sitting behind it;
+  // oversized + centre-anchored so the breathe/drift never exposes a screen edge. The
+  // "pulse" now comes from scale-breathing + the smoke-warp, not alpha.
+  bgSprite.alpha = 1;
+  bgSprite.scale.set(1.15 + 0.03 * Math.sin(tt * 0.18));
+  bgSprite.rotation = 0.012 * Math.sin(tt * 0.05);
+  bgSprite.x = WIDTH / 2 + 16 * Math.sin(tt * 0.06);
+  bgSprite.y = HEIGHT / 2 + 12 * Math.cos(tt * 0.05);
+  // Churn the smoke: a perpetual slow swirl (continuous rotation) plus a gentle drift of
+  // the displacement map → the nebula curls and evolves. NEBULA.evolve scales the rate.
+  if (dispSprite) {
+    const e = NEBULA.evolve;
+    dispSprite.rotation = tt * 0.12 * e;                       // perpetual swirl
+    dispSprite.x = WIDTH / 2 + 55 * Math.sin(tt * 0.25 * e);   // drift
+    dispSprite.y = HEIGHT / 2 + 55 * Math.cos(tt * 0.21 * e);
+  }
   const dt = Math.min(0.05, (t - starLast) / 1000);
   starLast = t;
   const ts = t / 1000;
@@ -411,12 +564,9 @@ function drawClaimed(wipeR = -1) {
   g.stroke({ width: 1.5, color: th.frontier, alpha: 0.55 });
 }
 
-// Smooth specular sweep over the glass. Instead of a per-cell white alpha (which
-// staircases into 8px squares), we rebuild glassMask = the union of claimed cells,
-// then paint two soft diagonal light-bars across the whole field into G.sweep —
-// G.sweep is masked by glassMask, so the bars show ONLY on glass, smoothly. Each
-// bar is several widening, fading stroked passes (a poor-man's gaussian) so it
-// reads as a soft gradient, not a hard-edged stripe. BLOOM then haloes it.
+// Glass reflection. Rebuild glassMask = the union of claimed cells (which clips the
+// sweepGroup), then scroll the two additive TilingSprites diagonally. The texture's
+// transparency + additive blend make it read as drifting light on glass, not a band.
 function drawGlassSweep(wipeR = -1) {
   const gm = glassMask; gm.clear();
   let any = false;
@@ -429,46 +579,18 @@ function drawGlassSweep(wipeR = -1) {
       any = true;
     }
   }
-  const g = G.sweep; g.clear();
-  if (!any) return;
-  gm.fill({ color: 0xffffff }); // the mask shape (coverage only; colour irrelevant)
+  const on = any && GLASS.opacity > 0;
+  sweepGroup.visible = on;
+  if (!on) return;
+  gm.fill({ color: 0xffffff }); // mask coverage (colour irrelevant)
 
-  // Two bars travelling along the field diagonal (constant u = (x-fx)+(y-fy)). Each
-  // bar is a fat low-alpha stroke aligned to the (1,-1) iso-line, drawn off-field at
-  // both ends (the mask trims it). Multiple passes soften the falloff.
-  // Each "light ray" travels along the field diagonal (constant u = (x-fx)+(y-fy)).
-  // To read as a reflection on glass rather than a hard moving line, we (1) draw it in
-  // short segments whose brightness follows a soft bell ALONG the ray — peaking where
-  // it crosses the glass centre and fading to nothing at the ends — and (2) stack wide,
-  // faint, round-capped passes so the edges melt. Masked to glass; bloom haloes it.
-  const t = now() / 1000;
-  const span = field.w + field.h;
-  const L = span;                                   // half-length: well past the field
-  const dx = Math.SQRT1_2, dy = -Math.SQRT1_2;      // ray direction (1,-1) normalised
-  const sigma = span * 0.30;                        // along-length falloff width
-  const SEG = 18, segLen = (2 * L) / SEG;
-  const bar = (phase, speed, peak) => {
-    const u = (t * speed + phase) % 1 * span;        // travelling band centre
-    const cx = field.x + u / 2, cy = field.y + u / 2;// a point on the ray (its midpoint)
-    const sMid = (CX - cx) * dx + (CY - cy) * dy;    // ray param nearest the field centre
-    for (let i = 0; i < SEG; i++) {
-      const s0 = -L + i * segLen, s1 = s0 + segLen, sc = (s0 + s1) / 2;
-      const env = Math.exp(-(((sc - sMid) / sigma) ** 2)); // bright mid-glass → fades to ends
-      const a = peak * env;
-      if (a < 0.004) continue;
-      const x0 = cx + dx * s0, y0 = cy + dy * s0, x1 = cx + dx * s1, y1 = cy + dy * s1;
-      // BUTT caps: the short wide segments fuse into one continuous bar. (Round caps
-      // turned each segment into a ~width-diameter circle → a string of orbs.)
-      glow(g, (gg) => gg.moveTo(x0, y0).lineTo(x1, y1), [
-        { w: 175, c: "#ffffff", a: a * 0.10 },
-        { w: 115, c: "#ffffff", a: a * 0.18 },
-        { w: 66,  c: "#ffffff", a: a * 0.30 },
-        { w: 30,  c: "#ffffff", a: a * 0.55 },
-      ], "butt");
-    }
-  };
-  bar(0.0, 0.16, 0.16);   // brighter, faster
-  bar(0.5, 0.09, 0.10);   // dimmer, slower
+  const t = now();
+  const dt = Math.min(0.05, (t - sweepLast) / 1000); sweepLast = t;
+  const v = GLASS.speed * dt;                 // diagonal drift (scroll both axes)
+  sweepA.tilePosition.x -= v;        sweepA.tilePosition.y -= v;
+  sweepB.tilePosition.x -= v * 0.45; sweepB.tilePosition.y -= v * 0.45; // parallax: slower
+  sweepA.alpha = GLASS.opacity;
+  sweepB.alpha = GLASS.opacity * 0.6;
 }
 
 function drawSeams() {
@@ -846,6 +968,7 @@ export function render(view = {}) {
   // (and reset any shake offset) — otherwise the previous state's scene lingers
   // behind, e.g. the play field showing through the title screen.
   for (const key in G) { G[key].clear(); G[key].x = 0; G[key].y = 0; }
+  if (sweepGroup) sweepGroup.visible = false; // re-enabled by drawGlassSweep when glass exists
   beginText();
 
   drawBackground(beat);
@@ -859,7 +982,8 @@ export function render(view = {}) {
   if (game.state === "levelcomplete") {
     drawClaimed(wipeRadius(transT));
     drawGlassSweep(wipeRadius(transT));
-    [G.seams, G.perimeter, G.trail, G.solar, G.enemy, G.sparx, G.powerup].forEach(g => g.clear());
+    drawSeams(); // keep the interior glass lines visible through the celebration
+    [G.perimeter, G.trail, G.solar, G.enemy, G.sparx, G.powerup].forEach(g => g.clear());
     drawArena();
     drawParticles();
     drawMarker();
