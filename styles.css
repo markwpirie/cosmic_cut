@@ -48,3 +48,19 @@ canvas {
   -webkit-user-select: none;
   user-select: none;
 }
+
+/* Small screens (iPhone): Pixi's autoDensity writes INLINE style.width/height on
+   the canvas (800×680px). max-width clamps the width but the inline height then
+   wins over `height:auto` → the arena stretches tall/distorts. !important +
+   aspect-ratio beats the inline style and keeps the arena undistorted. */
+@media (max-width: 840px) {
+  canvas {
+    width: 100% !important;
+    height: auto !important;
+    aspect-ratio: 800 / 680;
+  }
+  main { padding: 0.25rem; }
+}
+
+/* iOS: no rubber-band scroll behind the game. */
+body { overscroll-behavior: none; }

@@ -181,6 +181,11 @@ Open decisions (Mark to decide):
 ## Verify on the boss's return (written blind — needs real-device / in-browser eyes)
 - [ ] **Touch on a real iPhone** — swipe steering feel, two-finger slow, menu taps, no
       pinch-zoom, canvas fills screen. Tune the 16px dead-zone if needed.
+      *Update (2026-07-02): verified on an EMULATED iPhone 13 (Playwright touch events):
+      taps drive title→menu→intro, swipes steer + cut, no JS errors. Fixed a real bug —
+      Pixi's `autoDensity` inline style stretched the arena tall on narrow screens;
+      now clamped undistorted via `aspect-ratio` in `styles.css` (@media ≤840px).
+      Real-device feel check still wanted; play landscape for the biggest arena.*
 - [ ] **Boss at 1-5** (and every X-5) — looms bigger, rainbow + lightning + pulsing core;
       confirm it doesn't jitter (surge span capped for that reason). Tune `config.BOSS`.
 - [ ] **Lightning intensity** — ambient storm cadence (`stormTimer` 5–13s), cut crackle
