@@ -6,6 +6,8 @@
 // `glow`/`shrink`/`grav` are optional richness fields the Pixi renderer honours (the
 // canvas renderer just draws size/color/life and ignores them — backward compatible).
 
+import { FX } from "./config.js"; // pure data — fx stays browser-API-free
+
 const particles = []; // see shape above
 let shake = 0;        // current shake magnitude (px), decays over time
 
@@ -78,6 +80,19 @@ export function explode(x, y, color, power = 1) {
       x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
       life: 0.22, max: 0.22, size: 2 + Math.random() * 2.2,
       color: "#ffffff", glow: true, shrink: true,
+    });
+  }
+  // Third wave: slow neon dust that hangs and drifts after the flash — the kill
+  // leaves a lingering glowing cloud instead of vanishing in half a second.
+  const nd = Math.round(FX.dustCount * power);
+  for (let i = 0; i < nd; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const s = FX.dustSpeedMin + Math.random() * (FX.dustSpeedMax - FX.dustSpeedMin);
+    particles.push({
+      x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+      life: FX.dustLifeMin + Math.random() * (FX.dustLifeMax - FX.dustLifeMin),
+      max: FX.dustLifeMax,
+      size: 1 + Math.random() * 0.8, color, glow: true, shrink: true,
     });
   }
 }

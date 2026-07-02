@@ -168,6 +168,25 @@ export const SHIP_TRAIL = {
 // `max` is a hard cap; when full the oldest die first (perf fallback knob #1).
 export const AMBIENT = { max: 500 };
 
+// Art pass — ENERGY enemies (Pixi-only). Enemies read as beings of light: pulsing
+// halo cores, drifting particle wakes, spark dribbles. Rates are per second.
+export const ENERGY = {
+  corePulse: 3,        // rad/sec of the core halo breathing
+  coreHalo: 0.16,      // peak alpha of the outer halo (bloom amplifies it)
+  wakeRate: 60,        // wake motes/sec shed by each blob body
+  endpointSparkRate: 9,// sparks/sec shed by each live Qix stick endpoint
+  sparxRate: 25,       // sparks/sec dribbled by a sparx on the perimeter
+  sparxLatchRate: 200, // sparks/sec while a Fast Sparx is latched to your cut (danger shower)
+};
+
+// Art pass — FX enrichment knobs read by fx.js (pure data, keeps fx browser-API-free).
+// The kill explosion now leaves a hanging cloud of slow neon dust after the fast spray.
+export const FX = {
+  dustCount: 18,       // dust motes per 1.0 power
+  dustLifeMin: 1.2, dustLifeMax: 1.8,
+  dustSpeedMin: 20, dustSpeedMax: 70,
+};
+
 // Scoring (Phase 5, §9). Point values are deliberately gathered here so they're
 // easy to balance once the game is played. A cut scores base points per % it
 // claims, multiplied by any bonuses it triggers (BLOCK OUT / MEGA-CUT by size,

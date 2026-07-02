@@ -15,7 +15,7 @@
 
 import { Application, Container, Graphics, Sprite, TilingSprite, Texture, Text, Rectangle, DisplacementFilter } from "pixi.js";
 import { AdvancedBloomFilter } from "pixi-filters";
-import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, QIX, BLOB_POLY, SPARX, MARKER, BLOOM, CORNERS, GLASS, NEBULA, STARFIELD, SHIP_TRAIL, AMBIENT } from "./config.js";
+import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, QIX, BLOB_POLY, SPARX, MARKER, BLOOM, CORNERS, GLASS, NEBULA, STARFIELD, SHIP_TRAIL, AMBIENT, ENERGY } from "./config.js";
 import * as powerups from "./powerups.js";
 import { grid, slowFill, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
 import { marker, mode, dir, trail, slowActive, zoomDash } from "./marker.js";
@@ -59,6 +59,7 @@ let starWind = STARFIELD.baseAngle; // current scroll heading; rotates slowly ea
 // Hard-capped at AMBIENT.max: when full, the oldest non-mote dies first.
 const ambient = [];
 let ambientLast = 0;
+let ambDt = 0.016; // last frame's dt — lets draw-time emitters (enemies/sparx) rate-scale
 function spawnAmbient(p) {
   if (ambient.length >= AMBIENT.max) {
     const i = ambient.findIndex(q => !q.mote);
@@ -70,7 +71,7 @@ function spawnAmbient(p) {
 function updateAmbient() {
   const t = now();
   const dt = Math.min(0.05, ambientLast ? (t - ambientLast) / 1000 : 0.016);
-  ambientLast = t;
+  ambientLast = t; ambDt = dt;
   for (let i = ambient.length - 1; i >= 0; i--) {
     const p = ambient[i];
     p.x += p.vx * dt; p.y += p.vy * dt;
@@ -906,6 +907,28 @@ function drawEnemies() {
   const g = G.enemy; g.clear();
   for (const b of blobs) (b.shape === "sheaf" ? drawSheaf : drawPoly)(g, b);
 }
+
+// Energy-being treatment: a breathing double halo around a body core (bloom turns it
+// radiant) + a drifting wake of body-coloured motes. Emission pauses while FREEZE holds
+// the enemies still (a stationary blob shedding a wake reads wrong).
+function energyCore(g, x, y, r, color, phase) {
+  const pulse = 0.5 + 0.5 * Math.sin(now() / 1000 * ENERGY.corePulse + phase);
+  g.circle(x, y, r * 4).fill({ color, alpha: ENERGY.coreHalo * 0.5 * pulse });
+  g.circle(x, y, r * 2.5).fill({ color, alpha: ENERGY.coreHalo * pulse });
+}
+function emitWake(b) {
+  if (game.state !== "playing" || powerups.isFrozen()) return;
+  let n = ENERGY.wakeRate * ambDt + Math.random();
+  for (; n >= 1; n--) {
+    spawnAmbient({
+      x: b.x + (Math.random() - 0.5) * 8, y: b.y + (Math.random() - 0.5) * 8,
+      vx: (b.vx || 0) * 0.25 + (Math.random() - 0.5) * 20,
+      vy: (b.vy || 0) * 0.25 + (Math.random() - 0.5) * 20,
+      life: 0.45 + Math.random() * 0.35, max: 0.8,
+      size: 1 + Math.random(), color: b.color, glow: true, shrink: true,
+    });
+  }
+}
 function drawSheaf(g, b) {
   const H = qixLines(b);
   if (!H.length) return;
@@ -934,8 +957,23 @@ function drawSheaf(g, b) {
     g.circle(b.x, b.y, 18 * pulse).fill({ color: hueColor(t * 100), alpha: 0.45 });
     g.circle(b.x, b.y, 9 * pulse).fill({ color: hueColor(t * 100 + 120), alpha: 0.6 });
     g.circle(b.x, b.y, 4).fill({ color: 0xffffff, alpha: 0.95 });
-  } else { // glowy 3D nucleus at the sheaf's body centre
+  } else { // glowy 3D nucleus wrapped in a breathing energy halo
+    energyCore(g, b.x, b.y, 5, b.color, b.t || 0);
     sphere(g, b.x, b.y, 5, b.color, { glow: 0.3 });
+  }
+  emitWake(b);
+  // The live stick's endpoints occasionally shed sparks — sells "made of energy".
+  if (game.state === "playing" && !powerups.isFrozen()) {
+    const s0 = H[0];
+    for (const [px, py] of [[s0.ax, s0.ay], [s0.bx, s0.by]]) {
+      if (Math.random() < ENERGY.endpointSparkRate * ambDt) {
+        spawnAmbient({
+          x: px, y: py, vx: (Math.random() - 0.5) * 60, vy: (Math.random() - 0.5) * 60,
+          life: 0.25 + Math.random() * 0.2, max: 0.45,
+          size: 1.4, color: boss ? hueColor(t * 120) : b.color, glow: true, shrink: true,
+        });
+      }
+    }
   }
   drawSheafLightning(g, b, H, t, boss);
 }
@@ -968,7 +1006,9 @@ function drawPoly(g, b) {
     g.moveTo(verts[i].x, verts[i].y).lineTo(verts[i + half].x, verts[i + half].y)
       .stroke({ width: 1.6, color: b.color, alpha: 0.5 });
   }
+  energyCore(g, b.x, b.y, 4, b.color, b.t * 1.7); // breathing halo under the core
   sphere(g, b.x, b.y, 4, b.color, { glow: 0.28 }); // glowy 3D core
+  emitWake(b);
   if (b.hunter) {
     const dx = marker.x - b.x, dy = marker.y - b.y, d = Math.hypot(dx, dy);
     if (d > 0) {
@@ -992,6 +1032,27 @@ function drawSparx() {
     const rot = s.t * (s.fast ? 6 : 3.5);
     diamond(g, s.x, s.y, r, rot, "#ffffff", 0.9 * pulse);
     diamond(g, s.x, s.y, r * 1.5, rot + Math.PI / 4, col, 0.55 * pulse);
+
+    // Energy dribble: constant small sparks along the perimeter; a latched Fast
+    // Sparx erupts in a red danger shower + crackles as it rockets up your cut.
+    if (game.state === "playing" && !powerups.isFrozen()) {
+      const rate = s.latched ? ENERGY.sparxLatchRate : ENERGY.sparxRate;
+      let n = rate * ambDt + Math.random();
+      for (; n >= 1; n--) {
+        const a = Math.random() * Math.PI * 2, sp = s.latched ? 40 + Math.random() * 90 : 15 + Math.random() * 35;
+        spawnAmbient({
+          x: s.x + (Math.random() - 0.5) * 4, y: s.y + (Math.random() - 0.5) * 4,
+          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+          life: 0.2 + Math.random() * 0.25, max: 0.45,
+          size: s.latched ? 1.8 : 1.3, color: col, glow: true, shrink: true, grav: !s.latched,
+        });
+      }
+      if (s.latched && Math.random() < 0.25) {
+        const a = Math.random() * Math.PI * 2, len = 14 + Math.random() * 10;
+        drawBolt(g, s.x, s.y, s.x + Math.cos(a) * len, s.y + Math.sin(a) * len, col,
+          { jitter: 6, segs: 4, w: 1.2, a: 0.8 });
+      }
+    }
   }
 }
 function diamond(g, x, y, r, rot, color, alpha) {
