@@ -15,7 +15,7 @@
 
 import { Application, Container, Graphics, Sprite, TilingSprite, Texture, Text, Rectangle, DisplacementFilter } from "pixi.js";
 import { AdvancedBloomFilter } from "pixi-filters";
-import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, QIX, BOSS, BLOB_POLY, SPARX, MARKER, BLOOM, CORNERS, GLASS, NEBULA,STARFIELD, SHIP_TRAIL, AMBIENT, ENERGY, IMPACT, GRID_BG, MOTES, VIGNETTE, HUD } from "./config.js";
+import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, QIX, BOSS, BLOB_POLY, SPARX, MARKER, BLOOM, CORNERS, GLASS, NEBULA,STARFIELD, SHIP_TRAIL, SHIP_VIS, AMBIENT, ENERGY, IMPACT, GRID_BG, MOTES, VIGNETTE, HUD } from "./config.js";
 import * as powerups from "./powerups.js";
 import { grid, slowFill, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
 import { marker, mode, dir, trail, slowActive, zoomDash } from "./marker.js";
@@ -110,6 +110,19 @@ function seedMotes() {
       phase: Math.random() * Math.PI * 2, tw: 0.6 + Math.random() * 1.2, // twinkle phase/speed
     });
   }
+}
+
+// --- Ship visibility: spawn beacon + riding locator (config.SHIP_VIS) --------
+// The beacon re-fires whenever a level (re)starts or the ship respawns, so the eye
+// finds the ship instantly even while it sits still on the bright perimeter.
+let beaconT = 99;      // seconds since the beacon was triggered
+let prevStateR = null; // renderer-side state tracker (main.js owns the real machine)
+function updateBeacon() {
+  if (game.state !== prevStateR) {
+    if (game.state === "intro" || (prevStateR === "dead" && game.state === "playing")) beaconT = 0;
+    prevStateR = game.state;
+  }
+  beaconT += ambDt;
 }
 
 // --- Ship ribbon trail (Phase 9 art pass step 3) -----------------------------
@@ -1240,6 +1253,30 @@ function drawMarker() {
   // helper to place a local point into world space
   const c = Math.cos(angle), s = Math.sin(angle);
   const P = (lx, ly) => [marker.x + lx * c - ly * s, marker.y + lx * s + ly * c];
+  // Contrast backplate: a soft dark disc silhouettes the hull against the bright
+  // perimeter/bloom (the hull + border otherwise both blow out to white).
+  if (SHIP_VIS.backplateAlpha > 0) {
+    g.circle(marker.x, marker.y, r * SHIP_VIS.backplateR)
+      .fill({ color: COLORS.bg, alpha: SHIP_VIS.backplateAlpha });
+  }
+  // Spawn beacon: double expanding ring + hull flash on level (re)start / respawn.
+  if (beaconT < SHIP_VIS.beaconTime) {
+    const k = beaconT / SHIP_VIS.beaconTime;
+    for (const off of [0, 0.35]) {
+      const kk = Math.max(0, k - off);
+      if (kk <= 0 || kk >= 1) continue;
+      g.circle(marker.x, marker.y, 8 + kk * SHIP_VIS.beaconR)
+        .stroke({ width: 2.5 * (1 - kk), color: "#ffffff", alpha: 0.85 * (1 - kk) });
+    }
+    g.circle(marker.x, marker.y, r * 1.6).fill({ color: "#ffffff", alpha: 0.35 * (1 - k) });
+  }
+  // Riding locator: a faint periodic pulse so the idle/riding ship keeps announcing
+  // itself (while cutting the hot trail does that job already).
+  if (SHIP_VIS.locatorPeriod > 0 && mode === "riding" && game.state === "playing") {
+    const k = (now() / 1000 % SHIP_VIS.locatorPeriod) / SHIP_VIS.locatorPeriod;
+    g.circle(marker.x, marker.y, 6 + k * SHIP_VIS.locatorR)
+      .stroke({ width: 1.5, color: "#ffffff", alpha: SHIP_VIS.locatorAlpha * (1 - k) });
+  }
   // flame
   const flick = 0.6 + 0.4 * Math.sin(now() / 45);
   const flame = (hot ? r * 2.2 : r * 1.5) * flick;
@@ -1522,6 +1559,7 @@ export function render(view = {}) {
 
   drawBackground(beat);
   const dtA = updateAmbient(); // ambient particles tick in every state (so leftovers decay)
+  updateBeacon();              // ship spawn-beacon triggers on level (re)start / respawn
   if (game.state !== "dead") deathSpawned = false; // re-arm the death eruption latch
 
   if (game.state === "title" || game.state === "menu") {

@@ -162,6 +162,23 @@ export const SHIP_TRAIL = {
   emitDash: 520,       // …during a ZOOM dash (rocketing)
 };
 
+// Art pass — SHIP VISIBILITY (Pixi-only). The white-cyan hull can vanish against the
+// bright cyan perimeter (both bloom to white), worst right after a level (re)start
+// when the ship sits still on the border. Three fixes, all tunable:
+//   backplate — a soft dark disc under the hull silhouettes it against bright lines
+//   beacon    — expanding "you are here" rings for a moment on level start / respawn
+//   locator   — a faint periodic pulse ring while riding (cutting needs no help —
+//               the hot trail already points at you)
+export const SHIP_VIS = {
+  backplateAlpha: 0.55,  // darkness of the silhouette disc (0 = off)
+  backplateR: 2.6,       // disc radius, ×MARKER.radius
+  beaconTime: 1.4,       // seconds the spawn beacon plays
+  beaconR: 80,           // px the beacon rings expand to
+  locatorPeriod: 1.6,    // seconds between riding locator pulses (0 = off)
+  locatorR: 26,          // px the locator ring expands to
+  locatorAlpha: 0.35,    // peak alpha of the locator ring
+};
+
 // Art pass — renderer-local AMBIENT particles (Pixi-only). Continuous, presentation-
 // only emission (thruster embers, enemy wakes, sparx sparks, dust motes) lives in
 // render-pixi.js, NOT fx.js — fx stays the gameplay-event system main.js talks to.
