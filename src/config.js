@@ -145,6 +145,29 @@ export const STARFIELD = {
 // staircases into smooth scallops, while lower values just soften the corners "slightly".
 export const CORNERS = { radius: 4 };
 
+// Art pass — SHIP TRAIL (Pixi-only). The rocket leaves a glowing ribbon that fades
+// behind it (per-segment tapered strokes; bloom supplies the glow) plus a stream of
+// thruster embers from the renderer-local ambient particle system. Emission rates
+// are particles/second — they scale with the state (riding / cutting / ZOOM dash).
+export const SHIP_TRAIL = {
+  life: 0.45,          // seconds a ribbon point lives
+  minDist: 2.5,        // px moved before a new ribbon point is recorded
+  width: 5,            // ribbon stroke width at the ship (tapers to 0)
+  alpha: 0.55,         // ribbon alpha at the ship (fades quadratically)
+  colorCut: "#ffd24d", // ribbon while cutting (hot); riding uses theme().trail
+  colorSlow: "#9fd8ff",// ribbon during a SLOW DRAW (glass blue)
+  colorDash: "#ff5ca8",// ribbon during a ZOOM dash (danger pink — earned exception)
+  emitRide: 100,       // thruster embers/sec while riding the perimeter
+  emitCut: 280,        // …while cutting (engine runs hot)
+  emitDash: 520,       // …during a ZOOM dash (rocketing)
+};
+
+// Art pass — renderer-local AMBIENT particles (Pixi-only). Continuous, presentation-
+// only emission (thruster embers, enemy wakes, sparx sparks, dust motes) lives in
+// render-pixi.js, NOT fx.js — fx stays the gameplay-event system main.js talks to.
+// `max` is a hard cap; when full the oldest die first (perf fallback knob #1).
+export const AMBIENT = { max: 500 };
+
 // Scoring (Phase 5, §9). Point values are deliberately gathered here so they're
 // easy to balance once the game is played. A cut scores base points per % it
 // claims, multiplied by any bonuses it triggers (BLOCK OUT / MEGA-CUT by size,

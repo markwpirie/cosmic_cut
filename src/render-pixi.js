@@ -15,10 +15,10 @@
 
 import { Application, Container, Graphics, Sprite, TilingSprite, Texture, Text, Rectangle, DisplacementFilter } from "pixi.js";
 import { AdvancedBloomFilter } from "pixi-filters";
-import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, QIX, BLOB_POLY, SPARX, MARKER, BLOOM, CORNERS, GLASS, NEBULA, STARFIELD } from "./config.js";
+import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, QIX, BLOB_POLY, SPARX, MARKER, BLOOM, CORNERS, GLASS, NEBULA, STARFIELD, SHIP_TRAIL, AMBIENT } from "./config.js";
 import * as powerups from "./powerups.js";
 import { grid, slowFill, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
-import { marker, mode, dir, trail, slowActive } from "./marker.js";
+import { marker, mode, dir, trail, slowActive, zoomDash } from "./marker.js";
 import { blobs, qixLines, polyVerts, boundRadius } from "./enemy.js";
 import { sparxList } from "./sparx.js";
 import * as game from "./game.js";
@@ -52,6 +52,93 @@ let starsState = null;
 let starLast = 0;
 let starWind = STARFIELD.baseAngle; // current scroll heading; rotates slowly each frame
 
+// --- Ambient particles (presentation-only, renderer-local) ------------------
+// Continuous emission (thruster embers, enemy wakes, sparx sparks, dust motes)
+// lives here instead of fx.js — fx stays the gameplay-EVENT system main.js owns.
+// Same particle shape as fx so drawParticles() renders both with one code path.
+// Hard-capped at AMBIENT.max: when full, the oldest non-mote dies first.
+const ambient = [];
+let ambientLast = 0;
+function spawnAmbient(p) {
+  if (ambient.length >= AMBIENT.max) {
+    const i = ambient.findIndex(q => !q.mote);
+    if (i < 0) return;            // board is all motes (shouldn't happen) — drop it
+    ambient.splice(i, 1);
+  }
+  ambient.push(p);
+}
+function updateAmbient() {
+  const t = now();
+  const dt = Math.min(0.05, ambientLast ? (t - ambientLast) / 1000 : 0.016);
+  ambientLast = t;
+  for (let i = ambient.length - 1; i >= 0; i--) {
+    const p = ambient[i];
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    if (p.grav) p.vy += 260 * dt;
+    p.vx *= Math.exp(-dt * 2.2); p.vy *= Math.exp(-dt * 2.2);
+    if (p.mote) continue;         // motes are persistent (wrap/twinkle handled at draw)
+    p.life -= dt;
+    if (p.life <= 0) ambient.splice(i, 1);
+  }
+  return dt;
+}
+function clearAmbient() { // drop transient particles (menus, level loads); keep motes
+  for (let i = ambient.length - 1; i >= 0; i--) if (!ambient[i].mote) ambient.splice(i, 1);
+}
+
+// --- Ship ribbon trail (Phase 9 art pass step 3) -----------------------------
+// A glowing tail that streams behind the rocket: timestamped points recorded as
+// the ship moves, drawn as per-segment tapered strokes (Pixi strokes are uniform
+// width, so the taper needs one stroke per segment). Bloom supplies the glow.
+const ribbon = [];
+function updateRibbon(dt) {
+  const t = now();
+  const last = ribbon[ribbon.length - 1];
+  if (!last || Math.hypot(marker.x - last.x, marker.y - last.y) >= SHIP_TRAIL.minDist) {
+    ribbon.push({ x: marker.x, y: marker.y, t });
+  }
+  while (ribbon.length && (t - ribbon[0].t) / 1000 > SHIP_TRAIL.life) ribbon.shift();
+
+  // Thruster embers stream from the tail while the ship is actually moving.
+  if (dir && last && (marker.x !== last.x || marker.y !== last.y)) {
+    const rate = zoomDash ? SHIP_TRAIL.emitDash : mode === "cutting" ? SHIP_TRAIL.emitCut : SHIP_TRAIL.emitRide;
+    const angle = Math.atan2(dir.dy, dir.dx);
+    const tx = marker.x - Math.cos(angle) * MARKER.radius * 1.2;
+    const ty = marker.y - Math.sin(angle) * MARKER.radius * 1.2;
+    let n = rate * dt + Math.random(); // fractional accumulation without module state
+    for (; n >= 1; n--) {
+      const hot = mode === "cutting" || zoomDash;
+      const back = angle + Math.PI + (Math.random() - 0.5) * 0.7;
+      const sp = 30 + Math.random() * 50;
+      spawnAmbient({
+        x: tx + (Math.random() - 0.5) * 3, y: ty + (Math.random() - 0.5) * 3,
+        vx: Math.cos(back) * sp, vy: Math.sin(back) * sp,
+        life: 0.2 + Math.random() * 0.2, max: 0.4,
+        size: hot ? 2.4 : 1.8,
+        color: zoomDash ? (Math.random() < 0.5 ? SHIP_TRAIL.colorDash : "#ffffff")
+             : hot ? (Math.random() < 0.4 ? "#ffffff" : SHIP_TRAIL.colorCut)
+             : theme().trail,
+        glow: true, shrink: true,
+      });
+    }
+  }
+}
+function drawRibbon() {
+  const g = G.ribbon;
+  const t = now();
+  const col = zoomDash ? SHIP_TRAIL.colorDash
+    : mode === "cutting" ? (slowActive ? SHIP_TRAIL.colorSlow : SHIP_TRAIL.colorCut)
+    : theme().trail;
+  for (let i = 1; i < ribbon.length; i++) {
+    const a = ribbon[i - 1], b = ribbon[i];
+    if (Math.hypot(b.x - a.x, b.y - a.y) > 40) continue; // respawn teleport — don't streak
+    const age = Math.min(1, (t - b.t) / 1000 / SHIP_TRAIL.life);
+    if (age >= 1) continue;                              // fully faded (e.g. frozen on death)
+    g.moveTo(a.x, a.y).lineTo(b.x, b.y)
+      .stroke({ width: Math.max(0.5, SHIP_TRAIL.width * (1 - age)), color: col, alpha: SHIP_TRAIL.alpha * (1 - age) * (1 - age), cap: "round" });
+  }
+}
+
 // Text pool — reuse Text objects across frames (creating them per frame is slow).
 let uiLayer = null;
 const textPool = [];
@@ -74,7 +161,7 @@ export async function init(canvas) {
   // container below. (`render()` clears every one of these each frame.)
   const allLayers = [
     "stars", "glass", "seams", "arena", "perimeter", "trail",
-    "solar", "enemy", "sparx", "powerup", "marker", "particles", "vignette", "overlay",
+    "solar", "enemy", "sparx", "powerup", "ribbon", "marker", "particles", "vignette", "overlay",
   ];
   for (const name of allLayers) G[name] = new Graphics();
 
@@ -144,7 +231,7 @@ export async function init(canvas) {
   worldRoot.addChild(sweepGroup, glassMask);
 
   for (const name of ["seams", "arena", "perimeter", "trail",
-    "solar", "enemy", "sparx", "powerup", "marker", "particles"]) {
+    "solar", "enemy", "sparx", "powerup", "ribbon", "marker", "particles"]) {
     worldRoot.addChild(G[name]);
   }
 
@@ -966,13 +1053,20 @@ function drawMarker() {
   // flame
   const flick = 0.6 + 0.4 * Math.sin(now() / 45);
   const flame = (hot ? r * 2.2 : r * 1.5) * flick;
-  g.poly([...P(-r * 0.9, -r * 0.4), ...P(-r * 0.9 - flame, 0), ...P(-r * 0.9, r * 0.4)])
+  g.poly([...P(-r * 0.9, -r * 0.35), ...P(-r * 0.9 - flame, 0), ...P(-r * 0.9, r * 0.35)])
     .fill({ color: hot ? "#ffd24d" : "#7df9ff", alpha: 0.9 });
-  // hull
-  g.poly([...P(r * 1.6, 0), ...P(-r * 0.9, -r), ...P(-r * 0.4, 0), ...P(-r * 0.9, r)]).fill(color);
-  // cockpit
-  const [cx, cy] = P(r * 0.3, 0);
-  g.circle(cx, cy, r * 0.28).fill({ color: "#ffffff", alpha: 0.95 });
+  // hull — swept vector dart: long nose, swept-back wing tips, notched tail
+  const hull = [...P(r * 2.0, 0), ...P(-r * 1.1, -r * 0.9), ...P(-r * 0.5, 0), ...P(-r * 1.1, r * 0.9)];
+  g.poly(hull).fill(color);
+  g.poly(hull).stroke({ width: 1, color: "#ffffff", alpha: hot ? 0.9 : 0.55, join: "round" }); // crisp vector edge
+  // spine — thin bright line nose → tail notch
+  g.moveTo(...P(r * 2.0, 0)).lineTo(...P(-r * 0.5, 0)).stroke({ width: 1, color: "#ffffff", alpha: 0.7 });
+  // cockpit — short visor slit across the body
+  g.moveTo(...P(r * 0.7, -r * 0.28)).lineTo(...P(r * 0.7, r * 0.28))
+    .stroke({ width: r * 0.32, color: "#ffffff", alpha: 0.95, cap: "round" });
+  // engine bead at the notch
+  const [ex, ey] = P(-r * 0.55, 0);
+  sphere(g, ex, ey, r * 0.3, hot ? "#ffd24d" : "#7df9ff");
   // ZOOM aim arrows
   if (powerups.isAiming()) {
     const rr = 28, pulse = 0.6 + 0.4 * Math.sin(now() / 150);
@@ -989,8 +1083,8 @@ function beginTextNote() { /* no-op marker for readability */ }
 
 function drawParticles() {
   const g = G.particles; g.clear();
-  for (const p of fx.getParticles()) {
-    const k = Math.max(0, p.life / p.max);
+  const one = (p) => {
+    const k = p.mote ? 1 : Math.max(0, p.life / p.max);
     const r = (p.size || 2) * (p.shrink ? 0.4 + 0.6 * k : 1);
     if (p.glow) {
       g.circle(p.x, p.y, r * 2.6).fill({ color: p.color, alpha: 0.16 * k });   // soft halo
@@ -1000,7 +1094,9 @@ function drawParticles() {
     } else {
       g.rect(p.x - r / 2, p.y - r / 2, r, r).fill({ color: p.color, alpha: k });
     }
-  }
+  };
+  for (const p of fx.getParticles()) one(p); // gameplay-event particles (fx.js)
+  for (const p of ambient) one(p);           // renderer-local ambient particles
 }
 
 function drawDangerEdge(danger) {
@@ -1162,9 +1258,13 @@ export function render(view = {}) {
   beginText();
 
   drawBackground(beat);
+  const dtA = updateAmbient(); // ambient particles tick in every state (so leftovers decay)
 
-  if (game.state === "title") { drawTitle(); finishFrame(); return; }
-  if (game.state === "menu") { drawMenu(menuSel); finishFrame(); return; }
+  if (game.state === "title" || game.state === "menu") {
+    ribbon.length = 0; clearAmbient();
+    if (game.state === "title") drawTitle(); else drawMenu(menuSel);
+    finishFrame(); return;
+  }
 
   // Apply screen shake to the world layers via stage position offset.
   const off = fx.shakeOffset ? fx.shakeOffset() : { x: 0, y: 0 };
@@ -1196,6 +1296,9 @@ export function render(view = {}) {
   drawEnemies();
   drawSparx();
   drawPowerUps();
+  if (game.state === "playing") updateRibbon(dtA);
+  else if (game.state !== "dead") ribbon.length = 0; // keep the tail on the death frame
+  drawRibbon();
   drawMarker();
   drawParticles();
   drawDangerEdge(danger);
