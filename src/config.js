@@ -40,12 +40,14 @@ export const MARKER = {
 // under MARKER.speed (200) so the player can always outrun them. The pulse is a
 // cheap nod to the design's "expanding/contracting" Blob (full shape in Phase 9).
 export const BLOB = { pulse: 2 };
+// Art pass: enemies OWN the warm/pink end of the palette (cyan is the world's hero
+// colour, magenta/pink/violet = danger) — a heat spectrum from slow violet to fast red.
 export const BLOB_TYPES = [
-  { name: "blue",  color: "#3c6cff", radius: 13, speed: 85 },
-  { name: "cyan",  color: "#3cf0ff", radius: 11, speed: 105 },
-  { name: "green", color: "#57ff8f", radius: 10, speed: 130 },
-  { name: "amber", color: "#ffb83c", radius: 8,  speed: 155 },
-  { name: "red",   color: "#ff4d3c", radius: 7,  speed: 182 },
+  { name: "violet",  color: "#a06bff", radius: 13, speed: 85 },
+  { name: "magenta", color: "#ff3df0", radius: 11, speed: 105 },
+  { name: "pink",    color: "#ff5ca8", radius: 10, speed: 130 },
+  { name: "orange",  color: "#ff8a3c", radius: 8,  speed: 155 },
+  { name: "red",     color: "#ff4d3c", radius: 7,  speed: 182 },
 ];
 
 // Neon palette (§10). Glass blocks / slow-cut shading arrive in Phase 9.
@@ -53,9 +55,9 @@ export const BLOB_TYPES = [
 // the play-field palette is themed per zone (THEMES below).
 export const COLORS = {
   bg: "#05030f",
-  marker: "#ff3df0",
+  marker: "#eaffff",      // hot white-cyan — pink/magenta is reserved for danger now
   hud: "#ffffff",
-  hudAccent: "#ff3df0",
+  hudAccent: "#ff3df0",   // magenta = danger/bonus accents only
   locked: "#3a3550",      // dimmed zone chip on the start screen
   // defaults (zone-1 cyan) used by menu/fallback
   frontier: "#7df9ff",
@@ -66,14 +68,16 @@ export const COLORS = {
   trail: "#5ad6ff",
 };
 
-// Per-zone field palette — each zone re-themes the frontier/claim/trail/seam/
-// arena so the world's mood shifts as you climb (zone 1 cyan → 2 orange → …).
+// Per-zone field palette — ART PASS (cyan-hero discipline, per the NEXUS reference
+// board): every zone's playfield stays in the cyan/teal family (identity = subtle
+// temperature shifts only), while the zone's OLD hue lives on as a restrained
+// `accent` (seam tint, arena border, ZONE labels). Pink/magenta now MEANS danger.
 export const THEMES = [
-  { frontier: "#7df9ff", claimedFill: "rgba(25, 230, 255, 0.16)", claimedFillSlow: "rgba(4, 30, 44, 0.62)",  trail: "#5ad6ff", seam: "rgba(125, 249, 255, 0.4)", arena: "#1f8fa3" }, // 1 cyan
-  { frontier: "#ffb24d", claimedFill: "rgba(255, 150, 40, 0.16)", claimedFillSlow: "rgba(44, 22, 4, 0.62)",  trail: "#ffc266", seam: "rgba(255, 185, 110, 0.4)", arena: "#a3631f" }, // 2 orange
-  { frontier: "#79ff9e", claimedFill: "rgba(60, 255, 140, 0.15)", claimedFillSlow: "rgba(6, 38, 20, 0.62)",  trail: "#7affb0", seam: "rgba(130, 255, 180, 0.4)", arena: "#1fa35a" }, // 3 green
-  { frontier: "#bb8cff", claimedFill: "rgba(165, 120, 255, 0.16)", claimedFillSlow: "rgba(24, 14, 46, 0.64)", trail: "#c9a6ff", seam: "rgba(190, 160, 255, 0.4)", arena: "#5a2fa3" }, // 4 violet
-  { frontier: "#ffd24d", claimedFill: "rgba(255, 205, 60, 0.15)", claimedFillSlow: "rgba(44, 32, 4, 0.62)",  trail: "#ffdf80", seam: "rgba(255, 220, 120, 0.4)", arena: "#a3851f" }, // 5 gold
+  { frontier: "#7df9ff", claimedFill: "rgba(25, 230, 255, 0.16)",  claimedFillSlow: "rgba(4, 30, 44, 0.62)",  trail: "#5ad6ff", seam: "rgba(125, 249, 255, 0.35)", arena: "#1f8fa3", accent: "#19e6ff" }, // 1 pure teal-cyan (the hero look)
+  { frontier: "#8fc9ff", claimedFill: "rgba(90, 180, 255, 0.16)",  claimedFillSlow: "rgba(6, 22, 44, 0.62)",  trail: "#6fb4ff", seam: "rgba(255, 185, 110, 0.28)", arena: "#a3631f", accent: "#ffb24d" }, // 2 ice-blue, ember accents
+  { frontier: "#7dffd4", claimedFill: "rgba(40, 255, 200, 0.15)",  claimedFillSlow: "rgba(5, 36, 30, 0.62)",  trail: "#5affc9", seam: "rgba(130, 255, 180, 0.28)", arena: "#1fa35a", accent: "#79ff9e" }, // 3 sea-green cyan
+  { frontier: "#a8c4ff", claimedFill: "rgba(140, 170, 255, 0.15)", claimedFillSlow: "rgba(16, 18, 46, 0.64)", trail: "#8fb0ff", seam: "rgba(190, 160, 255, 0.28)", arena: "#5a2fa3", accent: "#bb8cff" }, // 4 steel-blue, violet whisper
+  { frontier: "#eaffff", claimedFill: "rgba(200, 245, 255, 0.14)", claimedFillSlow: "rgba(20, 34, 44, 0.62)", trail: "#c8f6ff", seam: "rgba(255, 220, 120, 0.28)", arena: "#a3851f", accent: "#ffd24d" }, // 5 white-hot electric cyan, gold accents
 ];
 
 // Phase 9 art-direction §1: BLOOM (Pixi-only, AdvancedBloomFilter from pixi-filters).

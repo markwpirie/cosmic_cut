@@ -551,8 +551,10 @@ function bakeDeepSpaceTexture() {
   }
   // Two colourful nebulae (blue/pink/teal + teal/green/red accent) — organic clouds
   // with filaments + dust, not white discs. Low per-daub alpha keeps the void dark.
-  bakeNebula(g, WIDTH * 0.74, HEIGHT * 0.28, 205, [[90, 150, 255], [235, 120, 200], [120, 225, 255], [255, 205, 215]], 0.85);
-  bakeNebula(g, WIDTH * 0.20, HEIGHT * 0.72, 165, [[60, 220, 205], [120, 255, 160], [255, 95, 95], [110, 150, 255]], 0.80);
+  // Art pass: cooled palettes — the pink/warm daubs are gone so the void reads
+  // cyan/teal/blue and magenta stays reserved for enemy & boss energy.
+  bakeNebula(g, WIDTH * 0.74, HEIGHT * 0.28, 205, [[90, 150, 255], [110, 190, 235], [120, 225, 255], [190, 225, 245]], 0.85);
+  bakeNebula(g, WIDTH * 0.20, HEIGHT * 0.72, 165, [[60, 220, 205], [120, 255, 200], [80, 140, 220], [110, 150, 255]], 0.80);
   for (let i = 0; i < 260; i++) {
     g.globalAlpha = 0.1 + Math.random() * 0.4;
     g.fillStyle = STAR_TINTS[(Math.random() * STAR_TINTS.length) | 0];
@@ -1040,7 +1042,7 @@ const ny = (row) => field.y + row * CELL;
 // --- HUD + overlays --------------------------------------------------------
 function drawHUD(scorePulseT) {
   const L = game.currentLevel();
-  drawText(`ZONE ${L.label}`, 12, 10, { size: 18, color: theme().frontier });
+  drawText(`ZONE ${L.label}`, 12, 10, { size: 18, color: theme().accent || theme().frontier });
   drawText(`${percent.toFixed(0)}/${L.target}%`, 110, 10, { size: 18 });
   drawText("♥".repeat(game.lives), 220, 10, { size: 18, color: COLORS.marker });
   if (game.levelMult > 1) drawText(`×${game.levelMult}`, 330, 10, { size: 18, color: COLORS.hudAccent });
@@ -1100,7 +1102,7 @@ function drawMenu(menuSel) {
 
 function drawIntro() {
   const L = game.currentLevel();
-  centerText(`ZONE ${L.label}`, CY - 30, 52, theme().frontier);
+  centerText(`ZONE ${L.label}`, CY - 30, 52, theme().accent || theme().frontier);
   centerText(L.boss ? `BOSS — CLAIM ${L.target}%` : `CLAIM ${L.target}%`, CY + 24, 26, COLORS.hudAccent, 1, "600");
   centerText("press a direction to begin", CY + 72, 17, COLORS.hud, 1, "500");
   centerText("hold SPACE while cutting for a SLOW DRAW — double points, dark glass", CY + 104, 14, COLORS.locked, 1, "500");
