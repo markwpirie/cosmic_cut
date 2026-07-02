@@ -339,6 +339,15 @@ export const BOSS = {
   endpointSpeedMult: 1.3,  // sweeps faster
   surgeIntervalMult: 0.55, // surges roughly twice as often
   surgeHoldMult:     1.7,  // and holds the surge longer
+  // Art pass — multi-stage visual escalation (Pixi-only, presentation on top of the
+  // unchanged boss logic). Crossing each claim-% threshold visibly angers the boss:
+  // bigger hotter core + rotating ring, more/likelier arcs, faster rainbow spin;
+  // at the final stage it strobes double bolts, sheds rainbow motes and pumps out
+  // slow flare rings every `flarePeriod` seconds.
+  stages: [25, 50, 75], // claim-% thresholds; stage = how many are crossed (0–3)
+  stageCore: 0.35,      // core pulse radius grows ×(1 + stage·this)
+  stageArcs: 1,         // extra lash arcs per stage
+  flarePeriod: 2,       // seconds between stage-3 flare rings
 };
 
 // Polygon Blob visual tuning — the alternative enemy shape: a ring of orbiting

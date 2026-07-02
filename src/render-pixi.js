@@ -15,7 +15,7 @@
 
 import { Application, Container, Graphics, Sprite, TilingSprite, Texture, Text, Rectangle, DisplacementFilter } from "pixi.js";
 import { AdvancedBloomFilter } from "pixi-filters";
-import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, QIX, BLOB_POLY, SPARX, MARKER, BLOOM, CORNERS, GLASS, NEBULA, STARFIELD, SHIP_TRAIL, AMBIENT, ENERGY, IMPACT, GRID_BG, MOTES, VIGNETTE, HUD } from "./config.js";
+import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, QIX, BOSS, BLOB_POLY, SPARX, MARKER, BLOOM, CORNERS, GLASS, NEBULA,STARFIELD, SHIP_TRAIL, AMBIENT, ENERGY, IMPACT, GRID_BG, MOTES, VIGNETTE, HUD } from "./config.js";
 import * as powerups from "./powerups.js";
 import { grid, slowFill, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
 import { marker, mode, dir, trail, slowActive, zoomDash } from "./marker.js";
@@ -45,6 +45,12 @@ let glassMask = null; // union of claimed cells, used to clip the specular sweep
 let sweepGroup = null; // masked container holding the additive reflection TilingSprites
 let sweepA = null, sweepB = null; // two parallax reflection layers
 let sweepLast = 0;    // timestamp for sweep scroll dt
+// Boss multi-stage escalation (presentation-only): stage = how many claim-%
+// thresholds (BOSS.stages) have been crossed. The boss visibly angers per stage.
+function bossStage() { return BOSS.stages.filter((s) => percent >= s).length; }
+let bossFlareT = 0;   // countdown to the next stage-3 flare ring
+let bossFlare = null; // { x, y, age } — the currently-expanding flare ring
+
 let stormTimer = 3;   // seconds until the next ambient void lightning strike
 let storm = null;     // { x0,y0,x1,y1,life,max } the current ambient bolt
 let stormFlash = 0;   // brief screen-flash envelope after a strike
@@ -1038,17 +1044,45 @@ function drawSheaf(g, b) {
       const age = i / N;
       const s = H[i];
       const c = boss
-        ? ((pass.w < 2 && i < 2) ? 0xffffff : hueColor(t * 80 + i * 16 + b.t * 30))
+        ? ((pass.w < 2 && i < 2) ? 0xffffff : hueColor(t * (80 + bossStage() * 50) + i * 16 + b.t * 30))
         : (i < 2 ? 0xffffff : b.color);
       g.moveTo(s.ax, s.ay).lineTo(s.bx, s.by)
         .stroke({ width: pass.w, color: c, alpha: pass.a * (1 - age * 0.85), cap: "round" });
     }
   }
-  if (boss) { // a pulsing rainbow heart at the body centre
-    const pulse = 0.65 + 0.35 * Math.sin(t * 4.5);
+  if (boss) { // a pulsing rainbow heart — grows + gains a rotating ring per stage
+    const stage = bossStage();
+    const grow = 1 + stage * BOSS.stageCore;
+    const pulse = (0.65 + 0.35 * Math.sin(t * (4.5 + stage))) * grow;
     g.circle(b.x, b.y, 18 * pulse).fill({ color: hueColor(t * 100), alpha: 0.45 });
     g.circle(b.x, b.y, 9 * pulse).fill({ color: hueColor(t * 100 + 120), alpha: 0.6 });
-    g.circle(b.x, b.y, 4).fill({ color: 0xffffff, alpha: 0.95 });
+    g.circle(b.x, b.y, 4 * grow).fill({ color: 0xffffff, alpha: 0.95 });
+    if (stage >= 1) { // rotating arc-ring: the boss is "charging"
+      const R = 26 * grow, a0 = t * (1.2 + stage * 0.6);
+      for (let k = 0; k < 3; k++) {
+        const s0 = a0 + (k * Math.PI * 2) / 3;
+        g.arc(b.x, b.y, R, s0, s0 + 1.1).stroke({ width: 2, color: hueColor(t * 140 + k * 120), alpha: 0.55 });
+      }
+    }
+    if (stage >= 3) { // final fury: slow flare rings + shed rainbow motes
+      bossFlareT -= ambDt;
+      if (bossFlareT <= 0) { bossFlareT = BOSS.flarePeriod; bossFlare = { x: b.x, y: b.y, age: 0 }; }
+      if (game.state === "playing" && Math.random() < 30 * ambDt) {
+        const a = Math.random() * Math.PI * 2, sp = 20 + Math.random() * 50;
+        spawnAmbient({
+          x: b.x, y: b.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+          life: 0.8 + Math.random() * 0.6, max: 1.4,
+          size: 1.6, color: hueColor(t * 120 + Math.random() * 360), glow: true, shrink: true,
+        });
+      }
+    }
+    if (bossFlare) {
+      bossFlare.age += ambDt;
+      const k = bossFlare.age / 0.9;
+      if (k >= 1) bossFlare = null;
+      else g.circle(bossFlare.x, bossFlare.y, 20 + k * 240)
+        .stroke({ width: 3 * (1 - k), color: hueColor(t * 100), alpha: 0.5 * (1 - k) });
+    }
   } else { // glowy 3D nucleus wrapped in a breathing energy halo
     energyCore(g, b.x, b.y, 5, b.color, b.t || 0);
     sphere(g, b.x, b.y, 5, b.color, { glow: 0.3 });
@@ -1073,13 +1107,16 @@ function drawSheaf(g, b) {
 // Electric crackle on the Qix: a flickering bolt along the live stick (constant on the
 // boss, occasional otherwise) plus, for the boss, arcs lashing out around it.
 function drawSheafLightning(g, b, H, t, boss) {
+  const stage = boss ? bossStage() : 0;
   const s = H[0]; // newest = live stick
-  if (Math.random() < (boss ? 0.7 : 0.12)) {
+  if (Math.random() < (boss ? 0.7 + stage * 0.1 : 0.12)) {
     drawBolt(g, s.ax, s.ay, s.bx, s.by, boss ? hueColor(t * 120 + 40) : b.color,
       { jitter: boss ? 26 : 13, segs: boss ? 9 : 6, w: boss ? 2.4 : 1.5, a: boss ? 0.9 : 0.55 });
+    if (stage >= 3) // final fury: a second simultaneous bolt strobes the live stick
+      drawBolt(g, s.ax, s.ay, s.bx, s.by, hueColor(t * 120 + 200), { jitter: 30, segs: 9, w: 1.8, a: 0.7 });
   }
   if (boss) {
-    const arcs = 1 + (Math.random() * 2 | 0);
+    const arcs = 1 + stage * BOSS.stageArcs + (Math.random() * 2 | 0);
     for (let k = 0; k < arcs; k++) {
       if (Math.random() > 0.6) continue;
       const ang = Math.random() * Math.PI * 2, len = 70 + Math.random() * 150;
