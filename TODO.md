@@ -182,10 +182,13 @@ Open decisions (Mark to decide):
 - [ ] **Touch on a real iPhone** — swipe steering feel, two-finger slow, menu taps, no
       pinch-zoom, canvas fills screen. Tune the 16px dead-zone if needed.
       *Update (2026-07-02): verified on an EMULATED iPhone 13 (Playwright touch events):
-      taps drive title→menu→intro, swipes steer + cut, no JS errors. Fixed a real bug —
-      Pixi's `autoDensity` inline style stretched the arena tall on narrow screens;
-      now clamped undistorted via `aspect-ratio` in `styles.css` (@media ≤840px).
-      Real-device feel check still wanted; play landscape for the biggest arena.*
+      taps drive title→menu→intro, swipes steer + cut, no JS errors. Fixed two real
+      bugs — (1) Pixi's `autoDensity` inline style distorted the arena (landscape was
+      800×390!); now a global contain-fit rule in `styles.css` (`min(100vw, 100dvh·ratio,
+      800px)` + `aspect-ratio`) gives the biggest undistorted arena at every size.
+      (2) Vertical swipes scrolled the page on iOS — page now fully locked
+      (`position:fixed` body + `overflow:hidden` + document-level non-passive
+      `touchmove` preventDefault in `main.js`). Real-device feel check still wanted.*
 - [ ] **Boss at 1-5** (and every X-5) — looms bigger, rainbow + lightning + pulsing core;
       confirm it doesn't jitter (surge span capped for that reason). Tune `config.BOSS`.
 - [ ] **Lightning intensity** — ambient storm cadence (`stormTimer` 5–13s), cut crackle

@@ -230,6 +230,10 @@ function touchGesture() {
   return false;
 }
 if (canvas && typeof window !== "undefined" && "ontouchstart" in window) {
+  // Belt-and-braces for iOS Safari: even with touch-action:none + a fixed body,
+  // some versions still pan/bounce the page on vertical swipes. The game owns the
+  // whole page, so no touch should ever scroll it — swipes move the SHIP.
+  document.addEventListener("touchmove", (e) => e.preventDefault(), { passive: false });
   canvas.addEventListener("touchstart", (e) => {
     e.preventDefault();
     if (e.touches.length >= 2) control.setSlow(true);
