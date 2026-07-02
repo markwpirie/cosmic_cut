@@ -82,27 +82,43 @@ Sequenced implementation (each step is visible, tune as we go — Mark is the ey
 - [x] **1. Bloom** — `AdvancedBloomFilter` (`pixi-filters@6` via importmap) on a
       bloom-group container holding bg+world; HUD/overlays excluded so text stays
       crisp. Knobs in `config.BLOOM` (threshold/bloomScale/brightness/blur/quality).
-- [~] **2. Palette pass** — *first pass:* retinted the Pixi void bake to restrained
-      cyan/teal-blue and reserved magenta for boss energy. **Open decision (Mark):**
-      keep the 5-zone `THEMES` colour journey or flatten all zones to cyan-hero?
-      (Left `THEMES` untouched pending that call — tune under bloom.)
-- [~] **3. Glass treatment** — *in progress.* Emissive hero-colour rim traced around
-      claimed glass (rounded), plus a masked specular sweep. **Current sweep (segmented
-      soft light-bars) is INTERIM — not the desired look.** Next, agreed direction:
-      **`TilingSprite` (seamless diagonal streak/noise texture) + additive blend, clipped
-      by the Graphics `glassMask`**, scrolling `tilePosition` for organic drifting
-      reflections that let the starfield show through. Likely round the glass *fill* too
-      so the body curves with the rim. See PHASE9.md "GORGEOUS GLASS".
-- [ ] **4. Grid + vignette + ambient particles** — the atmospheric depth.
-- [ ] **5. Energy enemies** — glow cores + particle trails (keep our shapes, make them radiate).
-- [ ] **6. Typography** — sci-fi web font for HUD + titles.
+- [x] **2. Palette pass — DONE (cyan-hero flattening).** Mark chose disciplined
+      cyan-hero: all 5 `THEMES` zones now stay in the cyan/teal family (temperature
+      shifts only) with the old zone hue kept as a restrained `accent` (seams, arena,
+      ZONE labels). `COLORS.marker` → white-cyan; `BLOB_TYPES` recoloured to the warm
+      violet→red band so **pink/magenta = danger**. Nebula daubs cooled.
+- [x] **3. Glass treatment** — TilingSprite shimmer (2 additive parallax layers,
+      glass-masked) + nebula refraction landed earlier; verified in-browser this pass.
+      *Tune `GLASS.opacity/tint` under Mark's eye.*
+- [x] **4. Grid + vignette + ambient particles** — faint breathing holo-lattice over
+      EMPTY cells only (claiming swaps tech-void for glass — `drawHoloGrid`), 40
+      twinkling wrap-around dust motes, baked corner vignette Sprite (no new filter).
+      Knobs: `config.GRID_BG/MOTES/VIGNETTE`.
+- [x] **5. Energy enemies** — breathing halo cores (`energyCore`), body-coloured
+      particle wakes, Qix endpoint sparks, sparx perimeter spark dribble, latched
+      Fast-Sparx red danger shower + mini-bolts, kill explosions leave lingering
+      neon dust (`fx.explode` 3rd wave, `config.FX`). Knobs: `config.ENERGY`.
+- [x] **6. Typography** — **Orbitron** (Google Fonts, offline fallback to system-ui,
+      ≤1.5s wait in `init()`); full HUD redesign: bracket-framed ZONE chip, **eased
+      claim-progress bar** with target tick + claim flash, lives as mini ship darts,
+      SCORE underline flare, hairline separator. Knobs: `config.HUD`.
+
+Also landed in the art super-upgrade pass (2026-07-02):
+- [x] **Ship upgrade** — swept-dart vector hull + **glowing ribbon tail** (per-segment
+      tapered strokes, state-coloured: ride cyan / cut hot / slow glass-blue / dash pink)
+      + thruster embers from a new renderer-local **ambient particle system**
+      (`config.SHIP_TRAIL`, `config.AMBIENT` cap — perf fallback knob #1).
+- [x] **Player-death impact** — spark eruption + expanding shock ring + radial magenta
+      arcs + white flash at the hit point (`config.IMPACT`).
+- [x] **Boss multi-stage escalation** — presentation-only, keyed to claim %
+      (`BOSS.stages` 25/50/75): core grows + rotating charge ring, more arcs, faster
+      rainbow; stage 3 strobes double bolts + flare rings + rainbow motes.
 
 Open decisions (Mark to decide):
 - [ ] **Name** — *deferred.* Concern: **"Qix" is a Taito trademark** — using it in the
       product name risks infringement (the genre/mechanic itself isn't protected, just
       the name). Pick an original name (COSMIC CUT or new). Not legal advice — flagging.
-- [ ] **Enemy style** — evolve current shapes to glow like energy (preferred) vs move
-      to the simpler abstract points in the board.
+- [x] **Enemy style** — decided: energy beings (glow cores + wakes), built above.
 - [ ] **Procedural vs assets** — bring in art assets (logo, boss bursts, rich
       backgrounds; possibly AI-generated) while gameplay stays crisp procedural vectors.
 
@@ -148,6 +164,19 @@ Open decisions (Mark to decide):
 - [~] **Phase 10** — **boss done for X-5** (big rainbow lightning Qix, `config.BOSS`).
       Still to come: picture-reveal levels, **SUPER mode** (clear 5-5 → 2× enemies),
       scoring polish, final feel.
+
+## Verify by eye (art super-upgrade pass — all steps WERE checked headless in
+## Chrome: zero console errors, screenshots at each step; these need taste, not triage)
+- [ ] **Palette across zones 2–5** — headless run only covered zone 1; confirm the
+      ice-blue / sea-green / steel-blue / white-hot zone temperatures read distinct
+      and the seam/arena accents carry the old zone identity.
+- [ ] **Glass shimmer strength** (`GLASS.opacity/tint`) under the new cyan palette.
+- [ ] **Ribbon + thruster feel** — `SHIP_TRAIL` life/width/rates; ZOOM-dash colour.
+- [ ] **Particle density** — `ENERGY` rates + `AMBIENT.max` (drop first if GPU strain).
+- [ ] **HUD layout at devicePixelRatio** — Orbitron sizes, bar position (`config.HUD`),
+      and the DevTools-offline fallback (system-ui) still laying out sanely.
+- [ ] **Boss stages on a real X-5 run** — stage beats at 25/50/75% (headless test
+      faked the thresholds; the real percent path needs a playthrough).
 
 ## Verify on the boss's return (written blind — needs real-device / in-browser eyes)
 - [ ] **Touch on a real iPhone** — swipe steering feel, two-finger slow, menu taps, no

@@ -67,15 +67,18 @@ or errors, open DevTools (F12) → Console; Pixi API mistakes show up there.
       (`roundedPath`/`roundRect`). Radius in `config.CORNERS.radius`. Also fixed the
       beaded "pixely" perimeter (round caps → butt) and the doubled-up darker danger
       corners (overlapping strips → concentric non-overlapping frames).
-- [~] **Specular gloss — INTERIM** — the sweep is currently soft diagonal light-bars
-      (segmented strokes, along-length brightness bell) masked to the glass. **Mark's
-      verdict: still not the desired look** — reads as bands, not glass.
-- [ ] **GORGEOUS GLASS (next, agreed direction)** — replace the stroke sweep with a
-      **`TilingSprite` + additive blend, clipped by the Graphics `glassMask`**. Bake a
-      seamless diagonal streak/noise texture, scroll `tilePosition` for organic drifting
-      reflections, `blendMode: 'add'` so the starfield shows through (no flat white band).
-      Likely also round the glass **fill** to the smoothed outline so the body curves
-      with the rim. (Watch: additive blend *inside* the bloom-filtered container.)
+- [x] **GORGEOUS GLASS — done.** TilingSprite shimmer (two additive parallax layers,
+      seamless baked streak texture, clipped by `glassMask`) + nebula **refraction**
+      (extra-displaced nebula copy masked to the glass). Verified in-browser during
+      the art super-upgrade pass. Knobs in `config.GLASS`.
+- [x] **Art super-upgrade pass (2026-07-02)** — cyan-hero palette flattening (zone
+      identity → `THEMES[].accent`), swept-dart ship + ribbon tail + thruster embers
+      (renderer-local **ambient particle system**, `config.AMBIENT`), energy enemies
+      (halo cores, wakes, sparx sparks, kill dust), player-death impact FX, holo-grid
+      void + motes + baked vignette, **Orbitron HUD** (eased claim bar, ship-glyph
+      lives), boss multi-stage escalation keyed to claim %. All steps verified
+      headless (Playwright + Chrome, console clean + screenshots); see TODO.md
+      "Verify by eye" for the taste-level checks left for Mark.
 - [ ] **Bigger corner radius** option — Chaikin/Catmull-Rom curve smoothing (no per-edge
       cap) + rounded fill, if we want rounder than the ~½-cell arcTo limit.
 - [ ] **Sprite-based stars/particles** (ParticleContainer) for cheaper, denser FX.
