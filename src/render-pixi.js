@@ -15,7 +15,7 @@
 
 import { Application, Container, Graphics, Sprite, TilingSprite, Texture, Text, Rectangle, DisplacementFilter } from "pixi.js";
 import { AdvancedBloomFilter } from "pixi-filters";
-import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, QIX, BLOB_POLY, SPARX, MARKER, BLOOM, CORNERS, GLASS, NEBULA, STARFIELD, SHIP_TRAIL, AMBIENT, ENERGY, IMPACT, GRID_BG, MOTES, VIGNETTE } from "./config.js";
+import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, QIX, BLOB_POLY, SPARX, MARKER, BLOOM, CORNERS, GLASS, NEBULA, STARFIELD, SHIP_TRAIL, AMBIENT, ENERGY, IMPACT, GRID_BG, MOTES, VIGNETTE, HUD } from "./config.js";
 import * as powerups from "./powerups.js";
 import { grid, slowFill, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
 import { marker, mode, dir, trail, slowActive, zoomDash } from "./marker.js";
@@ -28,7 +28,7 @@ import * as fx from "./fx.js";
 const CX = field.x + field.w / 2;
 const CY = field.y + field.h / 2;
 const MAXR = Math.hypot(field.w / 2, field.h / 2);
-const FONT = "system-ui, sans-serif";
+const FONT = HUD.font; // Orbitron with a system-ui fallback (loaded in index.html)
 const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
 
 function theme() { return THEMES[game.currentLevel().zone - 1] || THEMES[0]; }
@@ -161,10 +161,24 @@ function drawRibbon() {
 
 // Text pool — reuse Text objects across frames (creating them per frame is slow).
 let uiLayer = null;
+let uiGfx = null;    // HUD chrome Graphics (cleared each frame, under the text pool)
 const textPool = [];
 let textIdx = 0;
+let dispPct = 0;     // displayed claim % — eases toward the real percent (HUD.ease)
+let pctFlashT = 99;  // seconds since the last claim jump (drives the bar's white flash)
+let lastPct = 0;
 
 export async function init(canvas) {
+  // Wait (briefly) for the sci-fi HUD face so Text metrics are measured with the real
+  // font. Offline / slow network falls through to system-ui after 1.5s — never blocks.
+  if (typeof document !== "undefined" && document.fonts?.load) {
+    try {
+      await Promise.race([
+        document.fonts.load("16px Orbitron"),
+        new Promise((res) => setTimeout(res, 1500)),
+      ]);
+    } catch { /* fall back silently */ }
+  }
   app = new Application();
   await app.init({
     canvas,
@@ -284,6 +298,8 @@ export async function init(canvas) {
   app.stage.addChild(G.vignette, G.overlay);
   uiLayer = new Container();
   app.stage.addChild(uiLayer);
+  uiGfx = new Graphics();       // HUD chrome (brackets, claim bar, ship glyphs) —
+  uiLayer.addChild(uiGfx);      // added FIRST so all pooled Text sits above it
 
   initStars();
   seedMotes();
@@ -1279,21 +1295,61 @@ const nx = (col) => field.x + col * CELL;
 const ny = (row) => field.y + row * CELL;
 
 // --- HUD + overlays --------------------------------------------------------
+// Sci-fi data-viz top bar (NEXUS board §HUD): bracket-framed zone chip, an eased
+// claim bar with the level-target tick, mini ship-glyph lives, score underline.
+// All chrome goes into uiGfx (under the pooled text, outside the bloom).
+function miniShip(gg, x, y, r, color, alpha = 1) {
+  gg.poly([x + r * 2, y, x - r * 1.1, y - r * 0.9, x - r * 0.5, y, x - r * 1.1, y + r * 0.9])
+    .fill({ color, alpha });
+}
 function drawHUD(scorePulseT) {
   const L = game.currentLevel();
-  drawText(`ZONE ${L.label}`, 12, 10, { size: 18, color: theme().accent || theme().frontier });
-  drawText(`${percent.toFixed(0)}/${L.target}%`, 110, 10, { size: 18 });
-  drawText("♥".repeat(game.lives), 220, 10, { size: 18, color: COLORS.marker });
-  if (game.levelMult > 1) drawText(`×${game.levelMult}`, 330, 10, { size: 18, color: COLORS.hudAccent });
+  const accent = theme().accent || theme().frontier;
+
+  // Zone chip framed by corner brackets.
+  drawText(`ZONE ${L.label}`, 16, 10, { size: 15, color: accent, weight: "700" });
+  const bx0 = 10, bx1 = 120, by0 = 7, by1 = 31, bl = 6;
+  uiGfx.moveTo(bx0 + bl, by0).lineTo(bx0, by0).lineTo(bx0, by0 + bl)
+    .moveTo(bx1 - bl, by1).lineTo(bx1, by1).lineTo(bx1, by1 - bl)
+    .stroke({ width: 1.5, color: accent, alpha: 0.7 });
+
+  // Claim-progress bar: eased fill, white flash on a claim jump, target tick.
+  if (percent !== lastPct) { if (percent > lastPct + 0.5) pctFlashT = 0; lastPct = percent; }
+  dispPct += (percent - dispPct) * HUD.ease;
+  pctFlashT += ambDt;
+  const { barX, barY, barW, barH } = HUD;
+  const flash = Math.max(0, 1 - pctFlashT / 0.35);
+  uiGfx.roundRect(barX, barY, barW, barH, barH / 2).fill({ color: HUD.trackColor, alpha: 0.8 })
+    .roundRect(barX, barY, barW, barH, barH / 2).stroke({ width: 1, color: HUD.fillColor, alpha: 0.35 });
+  const fw = Math.max(barH, barW * Math.min(1, dispPct / 100));
+  if (dispPct > 0.5) {
+    uiGfx.roundRect(barX, barY, fw, barH, barH / 2)
+      .fill({ color: flash > 0 ? "#ffffff" : HUD.fillColor, alpha: 0.85 + 0.15 * flash });
+  }
+  const tickX = barX + barW * (L.target / 100);
+  uiGfx.moveTo(tickX, barY - 3).lineTo(tickX, barY + barH + 3)
+    .stroke({ width: 1.5, color: HUD.tickColor, alpha: 0.8 });
+  drawText(`${percent.toFixed(0)}/${L.target}%`, barX + barW + 10, 10, { size: 13, weight: "600" });
+
+  // Lives as mini ship glyphs (the Step-2 dart, nose right).
+  for (let i = 0; i < game.lives; i++) miniShip(uiGfx, 420 + i * 24, 20, 5, COLORS.marker, 0.95);
+  if (game.levelMult > 1) drawText(`×${game.levelMult}`, 420 + game.lives * 24 + 12, 10, { size: 15, color: COLORS.hudAccent, weight: "700" });
+
+  // Score with pulse + an underline that flares on the pulse.
   const p = scorePulseT < TIMING.scorePulse ? 1 - scorePulseT / TIMING.scorePulse : 0;
-  drawText(`SCORE ${fmt(game.score)}`, WIDTH - 12, 10, { size: 18 + 6 * p, color: p > 0 ? theme().frontier : COLORS.hud, weight: "700", align: "right" });
+  const st = drawText(`SCORE ${fmt(game.score)}`, WIDTH - 16, 10, { size: 15 + 5 * p, color: p > 0 ? theme().frontier : COLORS.hud, weight: "700", align: "right" });
+  uiGfx.moveTo(WIDTH - 16 - st.width, 30).lineTo(WIDTH - 16, 30)
+    .stroke({ width: 1.5, color: theme().frontier, alpha: 0.25 + 0.6 * p });
+
+  // Hairline separator under the whole top bar.
+  uiGfx.moveTo(10, 38).lineTo(WIDTH - 10, 38).stroke({ width: 1, color: COLORS.hud, alpha: HUD.lineAlpha });
 
   const active = powerups.getActiveEffects();
   const rows = [["freeze", POWERUPS.FREEZE], ["boost", POWERUPS.BOOST], ["shield", POWERUPS.SHIELD], ["solarwind", POWERUPS.SOLARWIND]].filter(([k]) => active[k] > 0);
-  let ex = 12;
+  let ex = 16;
   for (const [key, cfg] of rows) {
     const label = `${cfg.label} ${active[key].toFixed(1)}s`;
-    const t = drawText(label, ex, 30, { size: 13, color: cfg.color });
+    const t = drawText(label, ex, 44, { size: 12, color: cfg.color });
     ex += t.width + 16;
   }
 }
@@ -1422,6 +1478,7 @@ export function render(view = {}) {
   // (and reset any shake offset) — otherwise the previous state's scene lingers
   // behind, e.g. the play field showing through the title screen.
   for (const key in G) { G[key].clear(); G[key].x = 0; G[key].y = 0; }
+  if (uiGfx) uiGfx.clear();
   if (sweepGroup) sweepGroup.visible = false; // re-enabled by drawGlassSweep when glass exists
   if (refractSprite) refractSprite.visible = false; // ditto (glass refraction)
   beginText();

@@ -209,6 +209,19 @@ export const VIGNETTE = {
   inner: 0.55,         // radius (0..1 of half-diagonal) where the fall-off begins
 };
 
+// Art pass — HUD (Pixi-only). Sci-fi data-viz top bar: Orbitron face (falls back to
+// system-ui offline), bracket-framed zone label, an eased claim-progress bar with a
+// target tick, mini ship-glyph lives, score underline. All sizes/colours here.
+export const HUD = {
+  font: '"Orbitron", system-ui, sans-serif',
+  barX: 150, barY: 16, barW: 180, barH: 8, // claim-progress bar (rounded track)
+  trackColor: "#123340",
+  fillColor: "#19e6ff",
+  tickColor: "#ffffff",
+  lineAlpha: 0.15,      // 1px separator under the whole top bar
+  ease: 0.12,           // per-frame easing of the displayed % toward the real %
+};
+
 // Art pass — player-death IMPACT (Pixi-only). The hit point erupts: one-shot spark
 // burst, an expanding shock ring, radial magenta arcs (magenta = danger, earned here)
 // and a brief white flash. All drawn during the first `window` seconds of the death.
