@@ -15,7 +15,7 @@
 
 import { Application, Container, Graphics, Sprite, TilingSprite, Texture, Text, Rectangle, DisplacementFilter } from "pixi.js";
 import { AdvancedBloomFilter } from "pixi-filters";
-import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, QIX, BLOB_POLY, SPARX, MARKER, BLOOM, CORNERS, GLASS, NEBULA, STARFIELD, SHIP_TRAIL, AMBIENT, ENERGY, IMPACT } from "./config.js";
+import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, QIX, BLOB_POLY, SPARX, MARKER, BLOOM, CORNERS, GLASS, NEBULA, STARFIELD, SHIP_TRAIL, AMBIENT, ENERGY, IMPACT, GRID_BG, MOTES, VIGNETTE } from "./config.js";
 import * as powerups from "./powerups.js";
 import { grid, slowFill, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
 import { marker, mode, dir, trail, slowActive, zoomDash } from "./marker.js";
@@ -75,9 +75,13 @@ function updateAmbient() {
   for (let i = ambient.length - 1; i >= 0; i--) {
     const p = ambient[i];
     p.x += p.vx * dt; p.y += p.vy * dt;
+    if (p.mote) {                 // motes are persistent — no drag; wrap the field instead of dying
+      if (p.x < field.x) p.x += field.w; else if (p.x > field.x + field.w) p.x -= field.w;
+      if (p.y < field.y) p.y += field.h; else if (p.y > field.y + field.h) p.y -= field.h;
+      continue;
+    }
     if (p.grav) p.vy += 260 * dt;
     p.vx *= Math.exp(-dt * 2.2); p.vy *= Math.exp(-dt * 2.2);
-    if (p.mote) continue;         // motes are persistent (wrap/twinkle handled at draw)
     p.life -= dt;
     if (p.life <= 0) ambient.splice(i, 1);
   }
@@ -85,6 +89,21 @@ function updateAmbient() {
 }
 function clearAmbient() { // drop transient particles (menus, level loads); keep motes
   for (let i = ambient.length - 1; i >= 0; i--) if (!ambient[i].mote) ambient.splice(i, 1);
+}
+
+// Persistent dust motes: slow drift, twinkle, wrap the field rect. Seeded once at init.
+function seedMotes() {
+  for (let i = 0; i < MOTES.count; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = MOTES.speedMin + Math.random() * (MOTES.speedMax - MOTES.speedMin);
+    ambient.push({
+      x: field.x + Math.random() * field.w, y: field.y + Math.random() * field.h,
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+      life: 1, max: 1, size: 1 + Math.random(),
+      color: "#bfe9ff", mote: true,
+      phase: Math.random() * Math.PI * 2, tw: 0.6 + Math.random() * 1.2, // twinkle phase/speed
+    });
+  }
 }
 
 // --- Ship ribbon trail (Phase 9 art pass step 3) -----------------------------
@@ -161,7 +180,7 @@ export async function init(canvas) {
   // Create all named Graphics layers up front; we parent them into the right
   // container below. (`render()` clears every one of these each frame.)
   const allLayers = [
-    "stars", "glass", "seams", "arena", "perimeter", "trail",
+    "stars", "grid", "glass", "seams", "arena", "perimeter", "trail",
     "solar", "enemy", "sparx", "powerup", "ribbon", "marker", "particles", "vignette", "overlay",
   ];
   for (const name of allLayers) G[name] = new Graphics();
@@ -211,6 +230,7 @@ export async function init(canvas) {
   }
   bgRoot.addChild(G.stars);
 
+  worldRoot.addChild(G.grid);  // faint holo-lattice over the unclaimed void (under everything)
   worldRoot.addChild(G.glass); // claimed-glass fill + emissive rim
 
   // GLASS shimmer: two additive, diagonally-scrolling TilingSprites of a baked
@@ -256,12 +276,52 @@ export async function init(canvas) {
   }
   app.stage.addChild(bloomGroup);
 
+  // Corner-darkening vignette: baked once, zero per-frame cost, sits above the bloomed
+  // scene but below the danger-edge frame (G.vignette, which stays its own thing).
+  if (VIGNETTE.alpha > 0) app.stage.addChild(new Sprite(bakeVignetteTexture()));
+
   // Non-bloomed overlays on top, in paint order.
   app.stage.addChild(G.vignette, G.overlay);
   uiLayer = new Container();
   app.stage.addChild(uiLayer);
 
   initStars();
+  seedMotes();
+}
+
+// Faint holographic lattice over the UNCLAIMED void — run-based segments so the grid
+// only exists where cells are EMPTY, and visibly gives way to glass as you claim.
+// Alpha stays below the bloom threshold: it's depth, not glow.
+function drawHoloGrid() {
+  const g = G.grid;
+  const a = GRID_BG.alpha * (0.8 + 0.2 * Math.sin(now() / 1400)); // gentle breathing
+  const N = GRID_BG.spacing;
+  for (let r = N; r < ROWS; r += N) {          // horizontal lines along lattice row r
+    const y = field.y + r * CELL;
+    let run = -1;
+    for (let c = 0; c <= COLS; c++) {
+      const open = c < COLS && grid[r][c] === EMPTY && grid[r - 1][c] === EMPTY;
+      if (open && run < 0) run = c;
+      else if (!open && run >= 0) {
+        g.moveTo(field.x + run * CELL, y).lineTo(field.x + c * CELL, y)
+          .stroke({ width: 1, color: GRID_BG.color, alpha: a });
+        run = -1;
+      }
+    }
+  }
+  for (let c = N; c < COLS; c += N) {          // vertical lines along lattice col c
+    const x = field.x + c * CELL;
+    let run = -1;
+    for (let r = 0; r <= ROWS; r++) {
+      const open = r < ROWS && grid[r][c] === EMPTY && grid[r][c - 1] === EMPTY;
+      if (open && run < 0) run = r;
+      else if (!open && run >= 0) {
+        g.moveTo(x, field.y + run * CELL).lineTo(x, field.y + r * CELL)
+          .stroke({ width: 1, color: GRID_BG.color, alpha: a });
+        run = -1;
+      }
+    }
+  }
 }
 
 // --- Text pool helpers -----------------------------------------------------
@@ -417,6 +477,22 @@ function bakeNoiseTexture() {
   }
   ctx2.putImageData(img, 0, 0);
   return wrapTexture(Texture.from(cv));
+}
+
+// Corner-darkening vignette: a radial gradient baked once to a full-screen texture.
+// Transparent centre → deep void colour at the corners; drawn as a plain Sprite so
+// there's zero per-frame cost and no extra filter on the GPU budget.
+function bakeVignetteTexture() {
+  const cv = document.createElement("canvas");
+  cv.width = WIDTH; cv.height = HEIGHT;
+  const ctx2 = cv.getContext("2d");
+  const R = Math.hypot(WIDTH, HEIGHT) / 2;
+  const grad = ctx2.createRadialGradient(WIDTH / 2, HEIGHT / 2, R * VIGNETTE.inner, WIDTH / 2, HEIGHT / 2, R);
+  grad.addColorStop(0, "rgba(2, 2, 12, 0)");
+  grad.addColorStop(1, `rgba(2, 2, 12, ${VIGNETTE.alpha})`);
+  ctx2.fillStyle = grad;
+  ctx2.fillRect(0, 0, WIDTH, HEIGHT);
+  return Texture.from(cv);
 }
 
 // --- Rounded territory edges (our signature look) --------------------------
@@ -1144,8 +1220,14 @@ function beginTextNote() { /* no-op marker for readability */ }
 
 function drawParticles() {
   const g = G.particles; g.clear();
+  const tNow = now() / 1000;
   const one = (p) => {
-    const k = p.mote ? 1 : Math.max(0, p.life / p.max);
+    if (p.mote) { // twinkling dust — a bare dim dot, no halo (depth cue, not a spark)
+      const a = MOTES.alphaMin + (MOTES.alphaMax - MOTES.alphaMin) * (0.5 + 0.5 * Math.sin(tNow * p.tw + p.phase));
+      g.circle(p.x, p.y, p.size).fill({ color: p.color, alpha: a });
+      return;
+    }
+    const k = Math.max(0, p.life / p.max);
     const r = (p.size || 2) * (p.shrink ? 0.4 + 0.6 * k : 1);
     if (p.glow) {
       g.circle(p.x, p.y, r * 2.6).fill({ color: p.color, alpha: 0.16 * k });   // soft halo
@@ -1373,6 +1455,7 @@ export function render(view = {}) {
     return;
   }
 
+  drawHoloGrid();
   drawClaimed();
   drawGlassSweep();
   drawSeams();

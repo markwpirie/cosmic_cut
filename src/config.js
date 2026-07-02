@@ -187,6 +187,28 @@ export const FX = {
   dustSpeedMin: 20, dustSpeedMax: 70,
 };
 
+// Art pass — atmospheric depth (Pixi-only, NEXUS board "faint grid in the void").
+// A barely-there holographic lattice over UNCLAIMED cells only — claiming visibly
+// replaces tech-void with glass. Alpha sits below BLOOM.threshold: pure depth, no glow.
+export const GRID_BG = {
+  spacing: 4,          // lattice line every N cells (4 × 8px = 32px squares)
+  alpha: 0.05,         // peak line alpha (breathes gently around this)
+  color: "#7df9ff",
+};
+
+// Drifting dust motes — persistent, twinkling, wrapping the field. Cheap depth cue.
+export const MOTES = {
+  count: 40,
+  speedMin: 4, speedMax: 10,     // px/sec drift
+  alphaMin: 0.08, alphaMax: 0.2, // twinkle range
+};
+
+// Corner fall-off vignette — baked once to a texture (zero per-frame cost, no filter).
+export const VIGNETTE = {
+  alpha: 0.5,          // darkness at the extreme corners
+  inner: 0.55,         // radius (0..1 of half-diagonal) where the fall-off begins
+};
+
 // Art pass — player-death IMPACT (Pixi-only). The hit point erupts: one-shot spark
 // burst, an expanding shock ring, radial magenta arcs (magenta = danger, earned here)
 // and a brief white flash. All drawn during the first `window` seconds of the death.
