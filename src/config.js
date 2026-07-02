@@ -187,6 +187,16 @@ export const FX = {
   dustSpeedMin: 20, dustSpeedMax: 70,
 };
 
+// Art pass — player-death IMPACT (Pixi-only). The hit point erupts: one-shot spark
+// burst, an expanding shock ring, radial magenta arcs (magenta = danger, earned here)
+// and a brief white flash. All drawn during the first `window` seconds of the death.
+export const IMPACT = {
+  sparks: 30,          // one-shot sparks at the hit point
+  ringSpeed: 260,      // px/sec the shock ring expands
+  bolts: 3,            // radial arcs per flash frame
+  window: 0.5,         // seconds of shock ring / bolts / flash
+};
+
 // Scoring (Phase 5, §9). Point values are deliberately gathered here so they're
 // easy to balance once the game is played. A cut scores base points per % it
 // claims, multiplied by any bonuses it triggers (BLOCK OUT / MEGA-CUT by size,

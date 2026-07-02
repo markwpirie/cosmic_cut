@@ -15,7 +15,7 @@
 
 import { Application, Container, Graphics, Sprite, TilingSprite, Texture, Text, Rectangle, DisplacementFilter } from "pixi.js";
 import { AdvancedBloomFilter } from "pixi-filters";
-import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, QIX, BLOB_POLY, SPARX, MARKER, BLOOM, CORNERS, GLASS, NEBULA, STARFIELD, SHIP_TRAIL, AMBIENT, ENERGY } from "./config.js";
+import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, QIX, BLOB_POLY, SPARX, MARKER, BLOOM, CORNERS, GLASS, NEBULA, STARFIELD, SHIP_TRAIL, AMBIENT, ENERGY, IMPACT } from "./config.js";
 import * as powerups from "./powerups.js";
 import { grid, slowFill, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
 import { marker, mode, dir, trail, slowActive, zoomDash } from "./marker.js";
@@ -1265,9 +1265,35 @@ function drawIntro() {
   centerText("hold SPACE while cutting for a SLOW DRAW — double points, dark glass", CY + 104, 14, COLORS.locked, 1, "500");
 }
 
+let deathSpawned = false; // one-shot latch: spark eruption fires on the first dead frame
 function drawDeathFlash(p, transT) {
   centerText("CAUGHT!", field.y + 64, 40, COLORS.marker);
   if (p) {
+    // One-shot spark eruption (white + magenta, arcing down) at the hit point.
+    if (!deathSpawned) {
+      deathSpawned = true;
+      for (let i = 0; i < IMPACT.sparks; i++) {
+        const a = Math.random() * Math.PI * 2, sp = 60 + Math.random() * 220;
+        spawnAmbient({
+          x: p.x, y: p.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 40,
+          life: 0.5 + Math.random() * 0.6, max: 1.1,
+          size: 1.5 + Math.random() * 2, color: Math.random() < 0.5 ? "#ffffff" : COLORS.hudAccent,
+          glow: true, shrink: true, grav: true,
+        });
+      }
+    }
+    // Shock ring + radial danger arcs + white flash for the first impact window.
+    if (transT < IMPACT.window) {
+      const k = transT / IMPACT.window;                        // 0 → 1 across the window
+      G.overlay.circle(p.x, p.y, 6 + transT * IMPACT.ringSpeed)
+        .stroke({ width: 3 * (1 - k), color: "#ffffff", alpha: 0.8 * (1 - k) });
+      G.overlay.circle(p.x, p.y, 26 * (1 - k)).fill({ color: "#ffffff", alpha: 0.5 * (1 - k) });
+      for (let i = 0; i < IMPACT.bolts; i++) {
+        const a = Math.random() * Math.PI * 2, len = 30 + Math.random() * 50;
+        drawBolt(G.overlay, p.x, p.y, p.x + Math.cos(a) * len, p.y + Math.sin(a) * len,
+          COLORS.hudAccent, { jitter: 10, segs: 5, w: 1.6, a: 0.7 * (1 - k) });
+      }
+    }
     const blink = 0.5 + 0.5 * Math.sin(transT * 12);
     G.overlay.circle(p.x, p.y, 12 + 6 * blink).fill({ color: COLORS.marker, alpha: 0.45 + 0.55 * blink });
   }
@@ -1320,6 +1346,7 @@ export function render(view = {}) {
 
   drawBackground(beat);
   const dtA = updateAmbient(); // ambient particles tick in every state (so leftovers decay)
+  if (game.state !== "dead") deathSpawned = false; // re-arm the death eruption latch
 
   if (game.state === "title" || game.state === "menu") {
     ribbon.length = 0; clearAmbient();
