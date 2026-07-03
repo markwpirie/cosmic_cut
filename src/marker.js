@@ -9,6 +9,7 @@ import { boostMult } from "./powerups.js";
 import { classifyEdge, rideTypeOf, rideRank, canCut, nodeIsSafe, applyClaim } from "./grid.js";
 import { peekPending, clearPending, currentDesired, slowHeld } from "./control.js";
 import { cells as blobCells, removeBlobs } from "./enemy.js";
+import { cells as sparxCells, removeSparx, spawnOpposite } from "./sparx.js";
 
 export const marker = {
   col: MARKER.startCol,
@@ -200,12 +201,22 @@ function decideCutting() {
 }
 
 function finishCut() {
-  // Keep the survivors' region open, claim the rest; blobs trapped on a claimed
-  // (smaller) side die — the SPLIT.
+  // Keep the survivors' region open, claim the rest; anything trapped on a claimed
+  // (smaller) side dies — the SPLIT. Sparx are enclosable the same way Blobs are:
+  // both cell lists go into ONE applyClaim call (so a single claim can trap both
+  // kinds at once), then the returned indices are split back by array position.
   lastCutLength = trail.length;
   lastCutSlow = slowArmed && !slowBroken; // armed early AND held continuously to the end
-  const killed = applyClaim(trail, blobCells(), lastCutSlow);
-  if (killed.length) removeBlobs(killed);
+  const bCells = blobCells(), sCells = sparxCells();
+  const killed = applyClaim(trail, [...bCells, ...sCells], lastCutSlow);
+  const killedBlobs = killed.filter(i => i < bCells.length);
+  const killedSparx = killed.filter(i => i >= bCells.length).map(i => i - bCells.length);
+  if (killedBlobs.length) removeBlobs(killedBlobs);
+  if (killedSparx.length) {
+    // Respawn each killed Sparx opposite the player, same kind (fast/normal) —
+    // keeps the level's difficulty/mix intact rather than just thinning it out.
+    for (const { fast } of removeSparx(killedSparx)) spawnOpposite(fast, marker.col, marker.row);
+  }
   trail = [];
   trailSet.clear();
   mode = "riding";

@@ -23,30 +23,46 @@ const CORNERS = [
 
 // --- Lifecycle ---
 
+function makeSparx(col, row, fast) {
+  return {
+    col, row,
+    x: nodeX(col), y: nodeY(row),
+    speed: fast ? SPARX.fastSpeed : SPARX.speed,
+    fast,
+    color: fast ? SPARX.fastColor : SPARX.normalColor,
+    dir: null,          // current movement direction {dx,dy}
+    nextCol: col, nextRow: row,
+    t: 0,               // time for animation
+    // Fast-Sparx trail latch
+    latched: false,
+    latchIdx: 0,
+    // Recent positions for the visual tail
+    tail: [],
+  };
+}
+
 export function reset(normalCount = 0, fastCount = 0) {
   sparxList.length = 0;
+  totalKilled = 0;
   let ci = 0;
   const add = (fast) => {
     const { col, row } = CORNERS[ci % CORNERS.length];
     ci++;
-    sparxList.push({
-      col, row,
-      x: nodeX(col), y: nodeY(row),
-      speed: fast ? SPARX.fastSpeed : SPARX.speed,
-      fast,
-      color: fast ? SPARX.fastColor : SPARX.normalColor,
-      dir: null,          // current movement direction {dx,dy}
-      nextCol: col, nextRow: row,
-      t: 0,               // time for animation
-      // Fast-Sparx trail latch
-      latched: false,
-      latchIdx: 0,
-      // Recent positions for the visual tail
-      tail: [],
-    });
+    sparxList.push(makeSparx(col, row, fast));
   };
   for (let i = 0; i < normalCount; i++) add(false);
   for (let i = 0; i < fastCount; i++) add(true);
+}
+
+// Spawn a replacement Sparx at the arena corner FARTHEST from the player's
+// current lattice position — "opposite side of the grid" (§ enclose-kill).
+export function spawnOpposite(fast, markerCol, markerRow) {
+  let best = CORNERS[0], bestD2 = -1;
+  for (const c of CORNERS) {
+    const d2 = (c.col - markerCol) ** 2 + (c.row - markerRow) ** 2;
+    if (d2 > bestD2) { bestD2 = d2; best = c; }
+  }
+  sparxList.push(makeSparx(best.col, best.row, fast));
 }
 
 // --- BFS shortest path on the auto-network ---
@@ -291,11 +307,34 @@ export function collides(marker) {
   return null;
 }
 
-// Expose Sparx positions so the claim system can note them (Sparx are never
-// killed by claims, but their cells help avoid a bad flood-fill edge case).
+// Expose Sparx positions so the claim system can note them: a Sparx enclosed by
+// a claim (its cell ends up in a region that isn't kept) dies, same rule as Blobs.
 export function cells() {
   return sparxList.map(s => ({
     col: Math.max(0, Math.min(COLS - 1, s.col)),
     row: Math.max(0, Math.min(ROWS - 1, s.row)),
   }));
+}
+
+// --- Kill tracking (enclosure) ---
+// Mirrors enemy.js's removeBlobs/lastKilled — marker.js's finishCut() calls this
+// with indices (into the array `cells()` returned) that a claim just enclosed.
+export let lastKilled = [];
+// A kill respawns immediately (spawnOpposite), so sparxList.length alone can't
+// signal "N died this frame" — a running total main.js diffs instead.
+export let totalKilled = 0;
+
+export function removeSparx(indices) {
+  const kill = new Set(indices);
+  lastKilled = [];
+  const killed = [];
+  for (let i = sparxList.length - 1; i >= 0; i--) {
+    if (!kill.has(i)) continue;
+    const s = sparxList[i];
+    lastKilled.push({ x: s.x, y: s.y, radius: SPARX.radius, color: s.color });
+    killed.push({ fast: s.fast });
+    sparxList.splice(i, 1);
+  }
+  totalKilled += killed.length;
+  return killed; // so the caller knows fast/normal, to respawn the same kind
 }

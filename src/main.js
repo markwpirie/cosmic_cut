@@ -356,6 +356,9 @@ function loop(now) {
 
   if (game.state === "playing") {
     const prevCount = enemy.blobs.length;
+    const prevSparxKillTotal = sparx.totalKilled; // a kill respawns immediately (same
+                                                   // count), so track a running total
+                                                   // instead of sparxList.length delta
     const aiming = powerups.isAiming();      // frozen while picking a ZOOM dash direction
     const dashing = zoomDash;                // a ZOOM dash is driving the cut this frame
     const px0 = marker.x, py0 = marker.y;    // pre-move position, for the dash kill-sweep
@@ -397,7 +400,12 @@ function loop(now) {
     enemy.update(dt, marker.x, marker.y);
     sparx.update(dt, marker, trail);
     const gained = grid.percent - prevPercent;
-    const kills = prevCount - enemy.blobs.length - dashKilled.length; // claim SPLIT kills only
+    const blobKills = prevCount - enemy.blobs.length - dashKilled.length; // claim SPLIT kills only
+    // sparx.totalKilled diff, NOT a sparxList.length delta — an enclosed Sparx
+    // respawns immediately (same kind, opposite side), which would mask a plain
+    // count comparison.
+    const sparxKillsNow = sparx.totalKilled - prevSparxKillTotal;
+    const kills = blobKills + sparxKillsNow; // total SPLITs, for scoring/multiplier
 
     // A claim just landed → score it, pop-up, sound + particles + shake.
     if (gained >= POPUP_MIN_PCT) {
@@ -417,11 +425,23 @@ function loop(now) {
     if (kills > 0) {
       audio.kill();
       director.kill(); // bright musical stinger layered over the music
-      // Each trapped blob detonates where it was caught, in its own colour.
-      for (const k of enemy.lastKilled) {
-        fx.explode(k.x, k.y, k.color, 1.4);
-        fx.ring(k.x, k.y, k.color, 22, 340, 0.7);
-        fx.ring(k.x, k.y, "#ffffff", 16, 220, 0.45);
+      // Each trapped blob/Sparx detonates where it was caught, in its own colour.
+      // Gated on each kind's OWN fresh count (not just `kills > 0`) — lastKilled
+      // only gets repopulated on an actual kill of that kind, so this avoids
+      // re-exploding stale positions from an earlier frame's kill of the other kind.
+      if (blobKills > 0) {
+        for (const k of enemy.lastKilled) {
+          fx.explode(k.x, k.y, k.color, 1.4);
+          fx.ring(k.x, k.y, k.color, 22, 340, 0.7);
+          fx.ring(k.x, k.y, "#ffffff", 16, 220, 0.45);
+        }
+      }
+      if (sparxKillsNow > 0) {
+        for (const k of sparx.lastKilled) {
+          fx.explode(k.x, k.y, k.color, 1.4);
+          fx.ring(k.x, k.y, k.color, 22, 340, 0.7);
+          fx.ring(k.x, k.y, "#ffffff", 16, 220, 0.45);
+        }
       }
       fx.addShake(16);
     }
