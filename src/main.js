@@ -181,6 +181,14 @@ window.addEventListener("keydown", (e) => {
       powerups.endAiming();
       audio.powerupPickup();
       popups.push({ text: "ZOOM!", x: marker.x, y: marker.y - 20, t: 0 });
+    } else if (d) {
+      // A real direction key that startZoomDash rejected (e.g. picked up ZOOM while
+      // RIDING: only the one heading that leads into open field can ever dash from
+      // there — the other 3 are always invalid). Without feedback this reads as a
+      // total softlock ("arrows show, nothing happens"); a quick reject cue makes it
+      // clear the input landed and another direction is needed.
+      audio.ui();
+      fx.addShake(3);
     }
     return; // swallow all keys (including non-directional) during aiming
   }

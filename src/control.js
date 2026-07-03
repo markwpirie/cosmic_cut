@@ -9,6 +9,8 @@
 // DOM listeners are guarded by a window check so this module imports cleanly in
 // Node for headless tests, which drive input via press()/release() directly.
 
+import { isAiming } from "./powerups.js";
+
 const KEY_VEC = {
   ArrowRight: { dx: 1, dy: 0 }, d: { dx: 1, dy: 0 }, D: { dx: 1, dy: 0 },
   ArrowLeft: { dx: -1, dy: 0 }, a: { dx: -1, dy: 0 }, A: { dx: -1, dy: 0 },
@@ -56,6 +58,12 @@ if (typeof window !== "undefined") {
     if (e.key === " ") { e.preventDefault(); slow = true; return; } // slow-draw key
     if (!KEY_VEC[e.key]) return;
     e.preventDefault(); // stop arrows scrolling the page
+    // While the player is aiming a ZOOM dash, arrow keys are a direction CHOICE
+    // (handled entirely in main.js), not a movement intent — recording them here
+    // too would pollute heldKeys/pending with input that has nothing to do with
+    // normal steering, for no purpose (this listener runs before main.js's, since
+    // control.js is imported first, so it can't just rely on main.js to filter it).
+    if (isAiming()) return;
     press(e.key);
   });
   window.addEventListener("keyup", (e) => {
