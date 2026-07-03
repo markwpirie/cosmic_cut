@@ -23,30 +23,46 @@ const CORNERS = [
 
 // --- Lifecycle ---
 
+function makeSparx(col, row, fast) {
+  return {
+    col, row,
+    x: nodeX(col), y: nodeY(row),
+    speed: fast ? SPARX.fastSpeed : SPARX.speed,
+    fast,
+    color: fast ? SPARX.fastColor : SPARX.normalColor,
+    dir: null,          // current movement direction {dx,dy}
+    nextCol: col, nextRow: row,
+    t: 0,               // time for animation
+    // Fast-Sparx trail latch
+    latched: false,
+    latchIdx: 0,
+    // Recent positions for the visual tail
+    tail: [],
+  };
+}
+
 export function reset(normalCount = 0, fastCount = 0) {
   sparxList.length = 0;
+  totalKilled = 0;
   let ci = 0;
   const add = (fast) => {
     const { col, row } = CORNERS[ci % CORNERS.length];
     ci++;
-    sparxList.push({
-      col, row,
-      x: nodeX(col), y: nodeY(row),
-      speed: fast ? SPARX.fastSpeed : SPARX.speed,
-      fast,
-      color: fast ? SPARX.fastColor : SPARX.normalColor,
-      dir: null,          // current movement direction {dx,dy}
-      nextCol: col, nextRow: row,
-      t: 0,               // time for animation
-      // Fast-Sparx trail latch
-      latched: false,
-      latchIdx: 0,
-      // Recent positions for the visual tail
-      tail: [],
-    });
+    sparxList.push(makeSparx(col, row, fast));
   };
   for (let i = 0; i < normalCount; i++) add(false);
   for (let i = 0; i < fastCount; i++) add(true);
+}
+
+// Spawn a replacement Sparx at the arena corner FARTHEST from the player's
+// current lattice position — "opposite side of the grid" (§ enclose-kill).
+export function spawnOpposite(fast, markerCol, markerRow) {
+  let best = CORNERS[0], bestD2 = -1;
+  for (const c of CORNERS) {
+    const d2 = (c.col - markerCol) ** 2 + (c.row - markerRow) ** 2;
+    if (d2 > bestD2) { bestD2 = d2; best = c; }
+  }
+  sparxList.push(makeSparx(best.col, best.row, fast));
 }
 
 // --- BFS shortest path on the auto-network ---
@@ -86,6 +102,22 @@ function bfsNextDir(startCol, startRow, goalCol, goalRow, trail, canLatch) {
     }
   }
   return null;
+}
+
+// Fallback movement when BFS can't reach the player (e.g. the player is off the
+// perimeter mid-cut). Keep gliding along the perimeter: continue STRAIGHT if we can,
+// else take a perpendicular turn (random choice at a junction), and only reverse at a
+// dead end. Perimeter edges only (no trail-latching here).
+function patrolDir(s, trail) {
+  const valid = (d) => edgeValid(s.col, s.row, d.dx, d.dy, trail, false);
+  if (!s.dir) { for (const d of ALL_DIRS) if (valid(d)) return d; return null; }
+  const back = { dx: -s.dir.dx, dy: -s.dir.dy };
+  if (valid(s.dir)) return s.dir;                       // carry straight on
+  const turns = ALL_DIRS.filter(d =>                    // perpendicular options
+    !(d.dx === s.dir.dx && d.dy === s.dir.dy) &&
+    !(d.dx === back.dx && d.dy === back.dy) && valid(d));
+  if (turns.length) return turns[(Math.random() * turns.length) | 0];
+  return valid(back) ? back : null;                     // dead end → turn around
 }
 
 // Is the edge from (col,row) in direction (dx,dy) traversable by a Sparx?
@@ -152,15 +184,35 @@ function updatePerimeter(s, dt, marker, trail) {
         if (s.latched) break;
       }
 
-      // BFS to choose the next node.
-      const nextDir = bfsNextDir(s.col, s.row, marker.col, marker.row, trail, s.fast);
+      // BFS to choose the next node. While the player is cutting, the marker leaves
+      // the perimeter network, so no path exists toward it — rather than freeze, the
+      // Sparx keeps PATROLLING (carry on in its current heading) so it stays a moving
+      // threat until the player rejoins the perimeter.
+      const nextDir = bfsNextDir(s.col, s.row, marker.col, marker.row, trail, s.fast)
+                   || patrolDir(s, trail);
       if (nextDir) {
         s.dir = nextDir;
         s.nextCol = s.col + nextDir.dx;
         s.nextRow = s.row + nextDir.dy;
       } else {
-        // No path found — stay put (rare, e.g. completely enclosed corner).
-        s.nextCol = s.col; s.nextRow = s.row;
+        // Truly boxed in (no valid rank<=1 edge at all from this node) — this happens
+        // when a claim elsewhere buries the arrival node in one step (e.g. a frontier
+        // peninsula fully swallowed), turning all 4 of its edges to rank>1 at once.
+        // Left alone, every future frame re-runs the same BFS/patrol from the same
+        // dead node and gets null again forever — a permanent freeze. Recover with the
+        // same escape hatch already used when a latched Sparx ejects from a closed
+        // trail: teleport to the nearest node that still has a rideable edge, then
+        // retry immediately so it doesn't even visibly stall for a frame.
+        snapToNearestNode(s);
+        const retryDir = bfsNextDir(s.col, s.row, marker.col, marker.row, trail, s.fast)
+                       || patrolDir(s, trail);
+        if (retryDir) {
+          s.dir = retryDir;
+          s.nextCol = s.col + retryDir.dx;
+          s.nextRow = s.row + retryDir.dy;
+        } else {
+          s.nextCol = s.col; s.nextRow = s.row; // nowhere rideable within search radius
+        }
         remaining = 0;
       }
     } else {
@@ -255,11 +307,34 @@ export function collides(marker) {
   return null;
 }
 
-// Expose Sparx positions so the claim system can note them (Sparx are never
-// killed by claims, but their cells help avoid a bad flood-fill edge case).
+// Expose Sparx positions so the claim system can note them: a Sparx enclosed by
+// a claim (its cell ends up in a region that isn't kept) dies, same rule as Blobs.
 export function cells() {
   return sparxList.map(s => ({
     col: Math.max(0, Math.min(COLS - 1, s.col)),
     row: Math.max(0, Math.min(ROWS - 1, s.row)),
   }));
+}
+
+// --- Kill tracking (enclosure) ---
+// Mirrors enemy.js's removeBlobs/lastKilled — marker.js's finishCut() calls this
+// with indices (into the array `cells()` returned) that a claim just enclosed.
+export let lastKilled = [];
+// A kill respawns immediately (spawnOpposite), so sparxList.length alone can't
+// signal "N died this frame" — a running total main.js diffs instead.
+export let totalKilled = 0;
+
+export function removeSparx(indices) {
+  const kill = new Set(indices);
+  lastKilled = [];
+  const killed = [];
+  for (let i = sparxList.length - 1; i >= 0; i--) {
+    if (!kill.has(i)) continue;
+    const s = sparxList[i];
+    lastKilled.push({ x: s.x, y: s.y, radius: SPARX.radius, color: s.color });
+    killed.push({ fast: s.fast });
+    sparxList.splice(i, 1);
+  }
+  totalKilled += killed.length;
+  return killed; // so the caller knows fast/normal, to respawn the same kind
 }

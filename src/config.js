@@ -2,17 +2,29 @@
 // Tunable constants: the "numbers" of the game. No state, no DOM. Tweak feel
 // here (grid resolution, speed, palette) without touching the logic.
 
-export const WIDTH = 800;
-export const HEIGHT = 680; // reclaimed the page's title/tagline strip for play area
+// Device branch — decided ONCE at game start (per design: no runtime switching).
+// A coarse-pointer device with a phone-sized screen gets the PORTRAIT layout:
+// portrait canvas + play-field, roomier HUD strip up top, and a bottom control
+// strip for the touch UI (SLOW button). Desktop/iPad keep the classic landscape
+// arena. Everything downstream (grid, marker, enemies, renderers) derives from
+// these numbers, so the branch lives here and nowhere else. Guarded so headless
+// imports (tests, tools) fall back to desktop.
+export const MOBILE =
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(pointer: coarse)").matches &&
+  Math.min(window.screen?.width ?? 9999, window.screen?.height ?? 9999) <= 500;
+
+export const WIDTH = MOBILE ? 440 : 800;
+export const HEIGHT = MOBILE ? 876 : 680;
 export const MARGIN = 40;
 
-// The play field rectangle, inset within the canvas.
-export const field = {
-  x: MARGIN,
-  y: MARGIN,
-  w: WIDTH - MARGIN * 2,  // 720
-  h: HEIGHT - MARGIN * 2, // 600
-};
+// The play field rectangle, inset within the canvas. Mobile: 64px top strip for
+// the HUD, 100px bottom strip for touch controls; field is 400×712 → 50×89 cells.
+// Desktop: the classic 40px ring; field is 720×600 → 90×75 cells.
+export const field = MOBILE
+  ? { x: 20, y: 64, w: 400, h: 712 }
+  : { x: MARGIN, y: MARGIN, w: WIDTH - MARGIN * 2, h: HEIGHT - MARGIN * 2 };
 
 // Grid of cells over the field. CELL must divide field.w and field.h evenly.
 export const CELL = 8;
@@ -40,12 +52,14 @@ export const MARKER = {
 // under MARKER.speed (200) so the player can always outrun them. The pulse is a
 // cheap nod to the design's "expanding/contracting" Blob (full shape in Phase 9).
 export const BLOB = { pulse: 2 };
+// Art pass: enemies OWN the warm/pink end of the palette (cyan is the world's hero
+// colour, magenta/pink/violet = danger) — a heat spectrum from slow violet to fast red.
 export const BLOB_TYPES = [
-  { name: "blue",  color: "#3c6cff", radius: 13, speed: 85 },
-  { name: "cyan",  color: "#3cf0ff", radius: 11, speed: 105 },
-  { name: "green", color: "#57ff8f", radius: 10, speed: 130 },
-  { name: "amber", color: "#ffb83c", radius: 8,  speed: 155 },
-  { name: "red",   color: "#ff4d3c", radius: 7,  speed: 182 },
+  { name: "violet",  color: "#a06bff", radius: 13, speed: 85 },
+  { name: "magenta", color: "#ff3df0", radius: 11, speed: 105 },
+  { name: "pink",    color: "#ff5ca8", radius: 10, speed: 130 },
+  { name: "orange",  color: "#ff8a3c", radius: 8,  speed: 155 },
+  { name: "red",     color: "#ff4d3c", radius: 7,  speed: 182 },
 ];
 
 // Neon palette (§10). Glass blocks / slow-cut shading arrive in Phase 9.
@@ -53,9 +67,9 @@ export const BLOB_TYPES = [
 // the play-field palette is themed per zone (THEMES below).
 export const COLORS = {
   bg: "#05030f",
-  marker: "#ff3df0",
+  marker: "#eaffff",      // hot white-cyan — pink/magenta is reserved for danger now
   hud: "#ffffff",
-  hudAccent: "#ff3df0",
+  hudAccent: "#ff3df0",   // magenta = danger/bonus accents only
   locked: "#3a3550",      // dimmed zone chip on the start screen
   // defaults (zone-1 cyan) used by menu/fallback
   frontier: "#7df9ff",
@@ -66,15 +80,222 @@ export const COLORS = {
   trail: "#5ad6ff",
 };
 
-// Per-zone field palette — each zone re-themes the frontier/claim/trail/seam/
-// arena so the world's mood shifts as you climb (zone 1 cyan → 2 orange → …).
+// Per-zone field palette — ART PASS (cyan-hero discipline, per the NEXUS reference
+// board): every zone's playfield stays in the cyan/teal family (identity = subtle
+// temperature shifts only), while the zone's OLD hue lives on as a restrained
+// `accent` (seam tint, arena border, ZONE labels). Pink/magenta now MEANS danger.
 export const THEMES = [
-  { frontier: "#7df9ff", claimedFill: "rgba(25, 230, 255, 0.16)", claimedFillSlow: "rgba(4, 30, 44, 0.62)",  trail: "#5ad6ff", seam: "rgba(125, 249, 255, 0.4)", arena: "#1f8fa3" }, // 1 cyan
-  { frontier: "#ffb24d", claimedFill: "rgba(255, 150, 40, 0.16)", claimedFillSlow: "rgba(44, 22, 4, 0.62)",  trail: "#ffc266", seam: "rgba(255, 185, 110, 0.4)", arena: "#a3631f" }, // 2 orange
-  { frontier: "#79ff9e", claimedFill: "rgba(60, 255, 140, 0.15)", claimedFillSlow: "rgba(6, 38, 20, 0.62)",  trail: "#7affb0", seam: "rgba(130, 255, 180, 0.4)", arena: "#1fa35a" }, // 3 green
-  { frontier: "#bb8cff", claimedFill: "rgba(165, 120, 255, 0.16)", claimedFillSlow: "rgba(24, 14, 46, 0.64)", trail: "#c9a6ff", seam: "rgba(190, 160, 255, 0.4)", arena: "#5a2fa3" }, // 4 violet
-  { frontier: "#ffd24d", claimedFill: "rgba(255, 205, 60, 0.15)", claimedFillSlow: "rgba(44, 32, 4, 0.62)",  trail: "#ffdf80", seam: "rgba(255, 220, 120, 0.4)", arena: "#a3851f" }, // 5 gold
+  { frontier: "#7df9ff", claimedFill: "rgba(25, 230, 255, 0.16)",  claimedFillSlow: "rgba(4, 30, 44, 0.62)",  trail: "#5ad6ff", seam: "rgba(125, 249, 255, 0.35)", arena: "#1f8fa3", accent: "#19e6ff" }, // 1 pure teal-cyan (the hero look)
+  { frontier: "#8fc9ff", claimedFill: "rgba(90, 180, 255, 0.16)",  claimedFillSlow: "rgba(6, 22, 44, 0.62)",  trail: "#6fb4ff", seam: "rgba(255, 185, 110, 0.28)", arena: "#a3631f", accent: "#ffb24d" }, // 2 ice-blue, ember accents
+  { frontier: "#7dffd4", claimedFill: "rgba(40, 255, 200, 0.15)",  claimedFillSlow: "rgba(5, 36, 30, 0.62)",  trail: "#5affc9", seam: "rgba(130, 255, 180, 0.28)", arena: "#1fa35a", accent: "#79ff9e" }, // 3 sea-green cyan
+  { frontier: "#a8c4ff", claimedFill: "rgba(140, 170, 255, 0.15)", claimedFillSlow: "rgba(16, 18, 46, 0.64)", trail: "#8fb0ff", seam: "rgba(190, 160, 255, 0.28)", arena: "#5a2fa3", accent: "#bb8cff" }, // 4 steel-blue, violet whisper
+  { frontier: "#eaffff", claimedFill: "rgba(200, 245, 255, 0.14)", claimedFillSlow: "rgba(20, 34, 44, 0.62)", trail: "#c8f6ff", seam: "rgba(255, 220, 120, 0.28)", arena: "#a3851f", accent: "#ffd24d" }, // 5 white-hot electric cyan, gold accents
 ];
+
+// Phase 9 art-direction §1: BLOOM (Pixi-only, AdvancedBloomFilter from pixi-filters).
+// The single biggest upgrade toward the reference look — only bright neon things
+// (perimeter, trail, enemies, stars, marker) glow; the dark void/glass stays dark
+// thanks to the brightness `threshold`. Applied to the world layers only, so HUD
+// text stays crisp. Mark tunes these by eye — all live knobs in one place.
+// Mobile perf: bloom is the single biggest GPU cost (a full-screen blur pass,
+// `quality` times, at `resolution`× the device pixel ratio) and the two
+// DisplacementFilters (NEBULA.warp, GLASS.refraction below) each add a further
+// full-screen sample pass. Phones burn battery on all three every frame with no
+// visible benefit over a lighter setting on a small screen — so mobile gets bloom
+// kept (it's the game's signature look) but cheaper: fewer blur passes, capped
+// resolution instead of full DPR, and the two displacement filters OFF entirely
+// (their DisplacementFilter objects are simply never constructed — see render-pixi.js).
+export const BLOOM = {
+  enabled: true,
+  threshold: 0.55,   // 0..1 — only pixels brighter than this bloom (raise = less glow)
+  bloomScale: 1.5,     // intensity of the added glow
+  brightness: 2.0,   // overall brightness multiplier of the result
+  // --- smoothness / anti-pixelation (the "glossy not blocky" knobs) ---
+  blur: 8,          // glow SPREAD radius. Low values keep the hard 8px cell edges →
+                     //   blocky halos; raise it to melt them into a soft glossy haze.
+  quality: MOBILE ? 3 : 5,  // # of blur passes. Too few = visible stepping/banding. Higher = smoother (costlier).
+  pixelSize: 0.5,      // Kawase-blur sample spacing. 1 = smooth; >1 = deliberately retro/blocky; <1 = supersampled (smoothest, costliest).
+  resolution: MOBILE ? 1 : 0, // bloom render resolution. 0 = match device pixel ratio (crisp on retina,
+                     //   but 2-3x the pixels on a Retina phone — expensive); mobile pins it to 1.
+};
+
+// Phase 9 — GLASS shimmer (Pixi-only). The claimed-glass reflection is two additive,
+// diagonally-scrolling TilingSprites of a baked streak/noise texture, clipped to the
+// glass shape — organic drifting light that lets the starfield show through (instead of
+// a flat white band). `opacity` scales both layers; layer B is the slower, larger
+// parallax. `speed` is px/sec of tile drift; `tint` colours the reflection.
+export const GLASS = {
+  opacity: 0.4,        // overall reflection strength (0 = off). Additive + bloom, so keep low.
+  tint: "#7fd4ff",     // cyan-leaning glass tint (less "bold white")
+  speed: 14,           // diagonal scroll speed (px/sec) of the near layer
+  scaleA: 1.0,         // near layer tile scale
+  scaleB: 1.7,         // far/parallax layer tile scale (bigger, slower → depth)
+  // px the nebula BEHIND the glass is displaced (0 = off, and skips building the
+  // DisplacementFilter entirely) — the "looking through glass" bend. Higher =
+  // thicker/wavier glass. Off on mobile: a whole extra full-screen filter pass.
+  refraction: MOBILE ? 0 : 34,
+};
+
+// Phase 9 — NEBULA smoke-warp (Pixi-only). A DisplacementFilter driven by a slowly
+// scrolling noise map churns the baked nebula so it curls like volumetric smoke
+// (local turbulence, not just a sliding image). `warp` = displacement strength in px
+// (0 = off, static drift only, and skips building the DisplacementFilter/noise bake
+// entirely — mobile's other big filter-pass saving); `evolve` scales how fast it churns.
+export const NEBULA = {
+  warp: MOBILE ? 0 : 40,
+  evolve: 1,
+  // Slow whole-nebula motion so the gas clouds aren't pinned to fixed screen spots:
+  // an oversized sprite (scale) drifts in a lissajous (drift px) and gently rocks
+  // (rotate rad). Kept within the oversize margin so a screen edge never shows.
+  scale: 1.32,   // base oversize (room to wander/rotate without exposing an edge)
+  drift: 46,     // px amplitude of the slow positional wander
+  rotate: 0.06,  // radians amplitude of the slow rotation rock
+};
+
+// Phase 9 — STARFIELD drift (Pixi-only). The parallax stars used to always fall
+// straight down (N→S); now they scroll along a heading that slowly rotates, so the
+// field's direction keeps changing. `windTurn` = rad/sec the heading rotates;
+// `baseAngle` = starting heading (π/2 = downward, the classic look).
+export const STARFIELD = {
+  windTurn: 0.05,
+  baseAngle: Math.PI / 2,
+};
+
+// Phase 9 — our signature look: ROUNDED territory edges. The perimeter frontier, the
+// claimed-glass rim, and the live cut line are traced as continuous loops/polylines and
+// stroked with rounded corners (Pixi-only). `radius` is the corner radius in px, clamped
+// per-corner to half the shortest adjacent edge — so on the 8px grid, ~4 fully rounds the
+// staircases into smooth scallops, while lower values just soften the corners "slightly".
+export const CORNERS = { radius: 4 };
+
+// Art pass — SHIP TRAIL (Pixi-only). The rocket leaves a glowing ribbon that fades
+// behind it (per-segment tapered strokes; bloom supplies the glow) plus a stream of
+// thruster embers from the renderer-local ambient particle system. Emission rates
+// are particles/second — they scale with the state (riding / cutting / ZOOM dash).
+export const SHIP_TRAIL = {
+  life: 0.45,          // seconds a ribbon point lives
+  minDist: 2.5,        // px moved before a new ribbon point is recorded
+  width: 5,            // ribbon stroke width at the ship (tapers to 0)
+  alpha: 0.55,         // ribbon alpha at the ship (fades quadratically)
+  colorCut: "#ffd24d", // ribbon while cutting (hot); riding uses theme().trail
+  colorSlow: "#9fd8ff",// ribbon during a SLOW DRAW (glass blue)
+  colorDash: "#ff5ca8",// ribbon during a ZOOM dash (danger pink — earned exception)
+  emitRide: 100,       // thruster embers/sec while riding the perimeter
+  emitCut: 280,        // …while cutting (engine runs hot)
+  emitDash: 520,       // …during a ZOOM dash (rocketing)
+};
+
+// Art pass — SHIP VISIBILITY (Pixi-only). The white-cyan hull can vanish against the
+// bright cyan perimeter (both bloom to white), worst right after a level (re)start
+// when the ship sits still on the border. Three fixes, all tunable:
+//   backplate — a soft dark disc under the hull silhouettes it against bright lines
+//   beacon    — expanding "you are here" rings for a moment on level start / respawn
+//   locator   — a faint periodic pulse ring while riding (cutting needs no help —
+//               the hot trail already points at you)
+export const SHIP_VIS = {
+  backplateAlpha: 0.55,  // darkness of the silhouette disc (0 = off)
+  backplateR: 2.6,       // disc radius, ×MARKER.radius
+  beaconTime: 1.4,       // seconds the spawn beacon plays
+  beaconR: 80,           // px the beacon rings expand to
+  locatorPeriod: 1.6,    // seconds between riding locator pulses (0 = off)
+  locatorR: 26,          // px the locator ring expands to
+  locatorAlpha: 0.35,    // peak alpha of the locator ring
+};
+
+// Art pass — renderer-local AMBIENT particles (Pixi-only). Continuous, presentation-
+// only emission (thruster embers, enemy wakes, sparx sparks, dust motes) lives in
+// render-pixi.js, NOT fx.js — fx stays the gameplay-event system main.js talks to.
+// `max` is a hard cap; when full the oldest die first (perf fallback knob #1). Each
+// "glow" particle draws 3 stacked circles (halo/body/highlight), so 500 of them is
+// up to 1500 fill ops/frame — halved on mobile where GPU headroom is much tighter.
+export const AMBIENT = { max: MOBILE ? 250 : 500 };
+
+// Art pass — ENERGY enemies (Pixi-only). Enemies read as beings of light: pulsing
+// halo cores, drifting particle wakes, spark dribbles. Rates are per second.
+export const ENERGY = {
+  corePulse: 3,        // rad/sec of the core halo breathing
+  coreHalo: 0.16,      // peak alpha of the outer halo (bloom amplifies it)
+  wakeRate: 60,        // wake motes/sec shed by each blob body
+  endpointSparkRate: 9,// sparks/sec shed by each live Qix stick endpoint
+  sparxRate: 25,       // sparks/sec dribbled by a sparx on the perimeter
+  sparxLatchRate: 200, // sparks/sec while a Fast Sparx is latched to your cut (danger shower)
+};
+
+// Art pass — FX enrichment knobs read by fx.js (pure data, keeps fx browser-API-free).
+// The kill explosion now leaves a hanging cloud of slow neon dust after the fast spray.
+export const FX = {
+  dustCount: 18,       // dust motes per 1.0 power
+  dustLifeMin: 1.2, dustLifeMax: 1.8,
+  dustSpeedMin: 20, dustSpeedMax: 70,
+};
+
+// Art pass — atmospheric depth (Pixi-only, NEXUS board "faint grid in the void").
+// A barely-there holographic lattice over UNCLAIMED cells only — claiming visibly
+// replaces tech-void with glass. Alpha sits below BLOOM.threshold: pure depth, no glow.
+export const GRID_BG = {
+  spacing: 4,          // lattice line every N cells (4 × 8px = 32px squares)
+  alpha: 0.05,         // peak line alpha (breathes gently around this)
+  color: "#7df9ff",
+};
+
+// Drifting dust motes — persistent, twinkling, wrapping the field. Cheap depth cue.
+export const MOTES = {
+  count: 40,
+  speedMin: 4, speedMax: 10,     // px/sec drift
+  alphaMin: 0.08, alphaMax: 0.2, // twinkle range
+};
+
+// Corner fall-off vignette — baked once to a texture (zero per-frame cost, no filter).
+export const VIGNETTE = {
+  alpha: 0.5,          // darkness at the extreme corners
+  inner: 0.55,         // radius (0..1 of half-diagonal) where the fall-off begins
+};
+
+// Art pass — HUD (Pixi-only). Sci-fi data-viz top bar: Orbitron face (falls back to
+// system-ui offline), bracket-framed zone label, an eased claim-progress bar with a
+// target tick, mini ship-glyph lives, score underline. All sizes/colours here.
+// Device-branched: mobile gets a TWO-ROW layout with a big readable score
+// (row 1: ZONE · SCORE, row 2: claim bar · % · lives) inside the 64px top strip.
+export const HUD = {
+  font: '"Orbitron", system-ui, sans-serif',
+  trackColor: "#123340",
+  fillColor: "#19e6ff",
+  tickColor: "#ffffff",
+  lineAlpha: 0.15,      // 1px separator under the whole top bar
+  ease: 0.12,           // per-frame easing of the displayed % toward the real %
+  ...(MOBILE
+    ? {
+        textSize: 16, scoreSize: 22, smallSize: 13,
+        barX: 16, barY: 42, barW: 190, barH: 10,   // row 2, left
+        sepY: 58,                                  // hairline separator
+        fxY: 66,                                   // power-up timers (top of field edge)
+      }
+    : {
+        textSize: 15, scoreSize: 15, smallSize: 12,
+        barX: 150, barY: 16, barW: 180, barH: 8,
+        sepY: 38,
+        fxY: 44,
+      }),
+};
+
+// Touch UI (mobile only). The SLOW button sits in the bottom control strip —
+// hold it for a SLOW DRAW (same as a second finger / SPACE). `hitR` is the
+// generous touch radius; `r` is the drawn radius. Left side: most players are
+// right-handed and steer (swipe) with their right thumb, so the modifier button
+// sits under the LEFT thumb instead of competing with the steering hand.
+export const TOUCH = {
+  slowBtn: { x: 64, y: HEIGHT - 52, r: 34, hitR: 54 },
+};
+
+// Art pass — player-death IMPACT (Pixi-only). The hit point erupts: one-shot spark
+// burst, an expanding shock ring, radial magenta arcs (magenta = danger, earned here)
+// and a brief white flash. All drawn during the first `window` seconds of the death.
+export const IMPACT = {
+  sparks: 30,          // one-shot sparks at the hit point
+  ringSpeed: 260,      // px/sec the shock ring expands
+  bolts: 3,            // radial arcs per flash frame
+  window: 0.5,         // seconds of shock ring / bolts / flash
+};
 
 // Scoring (Phase 5, §9). Point values are deliberately gathered here so they're
 // easy to balance once the game is played. A cut scores base points per % it
@@ -87,7 +308,7 @@ export const POINTS = {
   // LONG tiers by cut length, measured in field-heights (×ROWS). LONG starts at 2×.
   longHeights: 2, superLongHeights: 3, megaLongHeights: 4,
   longMult: 1.5, superLongMult: 2, megaLongMult: 3,
-  slowCutMult: 2,      // a SLOW DRAW (SPACE held) doubles the cut's area points (§"Stix")
+  slowCutMult: 10,      // a SLOW DRAW (SPACE held) 10x the cut's area points (§"Stix")
   splitMult: 2,        // each SPLIT grants ×2 to the level multiplier (§14)
   perKill: 500,        // points per Blob destroyed (juicy, §"nice points on kill")
   nearMiss: 150,       // points when a blob grazes your trail without hitting
@@ -155,7 +376,11 @@ export const QIX = {
   endpointSpeed:     95,  // base px/sec the endpoints sweep within the box
   surgeSpeedMult:   2.4,  // endpoint speed multiplier at full surge
   spanBase:          26,  // typical half-length (compact, twisty)
-  spanMax:          150,  // half-length at full surge (≈ stick spanning 50% screen)
+  // Half-length at full surge (≈ stick spanning ~50% of the field's short side).
+  // Derived, not literal: on the portrait mobile field (400 wide) the old 250
+  // would exceed the wall-bounce margin and pin/jitter the Qix (see TODO note).
+  // Desktop: min(720,600)·0.42 ≈ 252 — same feel as the old 250.
+  spanMax: Math.round(Math.min(field.w, field.h) * 0.42),
   surgeIntervalMin:   3,  // min seconds between surges
   surgeIntervalMax:   7,  // max seconds between surges
   surgeHold:        0.6,  // seconds a surge stays expanded before settling
@@ -168,11 +393,39 @@ export const QIX = {
   glowAlpha:   [0.10, 0.30, 0.95],  // alphas matching each pass
 };
 
+// BOSS Qix (the star of every X-5 level): a huge, faster, longer-ribboned sheaf that
+// surges more often and lasts longer — rendered rainbow with constant lightning arcs +
+// a pulsing core (render-pixi). Multipliers over the base QIX values. Marked on the
+// FIRST qix of a boss level (levels.js sets `boss: sub === 5`).
+export const BOSS = {
+  sizeMult:          1.7,  // body radius
+  spanBaseMult:      1.9,  // larger COMPACT span — it always looms bigger as it roams
+  spanMaxMult:       1.0,  // keep the surge at the normal (already ~50%-screen) size: a
+                           //   bigger surge would exceed half the field and the wall-bounce
+                           //   margin (= span) would pin/jitter the boss. Big-when-compact
+                           //   + size/lines/effects carry the "boss" feel instead.
+  linesMult:         1.8,  // longer twisting ribbon
+  endpointSpeedMult: 1.3,  // sweeps faster
+  surgeIntervalMult: 0.55, // surges roughly twice as often
+  surgeHoldMult:     1.7,  // and holds the surge longer
+  // Art pass — multi-stage visual escalation (Pixi-only, presentation on top of the
+  // unchanged boss logic). Crossing each claim-% threshold visibly angers the boss:
+  // bigger hotter core + rotating ring, more/likelier arcs, faster rainbow spin;
+  // at the final stage it strobes double bolts, sheds rainbow motes and pumps out
+  // slow flare rings every `flarePeriod` seconds.
+  stages: [25, 50, 75], // claim-% thresholds; stage = how many are crossed (0–3)
+  stageCore: 0.35,      // core pulse radius grows ×(1 + stage·this)
+  stageArcs: 1,         // extra lash arcs per stage
+  flarePeriod: 2,       // seconds between stage-3 flare rings
+};
+
 // Polygon Blob visual tuning — the alternative enemy shape: a ring of orbiting
 // vertices with internal diagonals, oscillating radius and slow rotation. Used
 // for regular Blobs and Hunter Blobs. Collision uses a bounding radius.
 export const BLOB_POLY = {
   segments:       8,    // vertices in the body polygon
+  sizeScale:     1.6,   // extra size multiplier for POLY blobs only (on top of QIX.sizeScale)
+                        //   — bigger Blobs so their orbiting-vertex intricacy reads clearly
   hitScale:      0.95,  // collision radius = blob radius × this (tighter than the visual
                         //   bounding radius, which uses the full oscillation extent)
   oscillateAmp:  0.5,   // vertex radius swings ± this fraction of blob radius
@@ -207,10 +460,17 @@ export const POWERUPS = {
   iconScale:      3,     // visual + touch size multiplier for pickups
   FREEZE:    { duration: 5, color: "#00d4ff", label: "FREEZE"                        },
   // SOLAR WIND blows every enemy hard against one wall and pins them there for
-  // `duration` seconds, leaving the rest of the board clear to carve.
-  SOLARWIND: { duration: 3.5, color: "#ffaa00", label: "SOLAR WIND", gustMult: 1.6   },
+  // `duration` seconds, leaving the rest of the board clear to carve. Duration
+  // sits between FREEZE (5s) and BOOST (8s) — was 3.5s, felt over before it
+  // registered. streakAlpha/streakWidth/chevronCount are the render-pixi.js
+  // drawSolarWind() visual knobs (was very subtle — thin, low-alpha streaks only).
+  SOLARWIND: { duration: 6.5, color: "#ffaa00", label: "SOLAR WIND", gustMult: 1.6,
+               streakAlpha: 0.34, streakWidth: 3, chevronCount: 5 },
   BOOST:     { duration: 8, color: "#39ff14", label: "BOOST",     speedMult:    1.5  },
   SHIELD:    { duration: 6, color: "#ff80ff", label: "SHIELD"                        },
+  // ZOOM is a DASH: pick a direction, then rocket across the field DRAWING A CUT at
+  // dashSpeedMult× speed — invulnerable, killing any enemy the ship flies through
+  // (within dashKillReach px of its body). The cut claims normally when it lands.
   ZOOM:      { duration: 0, color: "#ff4400", label: "ZOOM",      killPoints:   80,
-                                                                   distPoints:    1   },
+               dashSpeedMult: 2, dashKillReach: 9 },
 };

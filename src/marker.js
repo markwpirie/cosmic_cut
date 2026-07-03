@@ -4,11 +4,12 @@
 // No DOM — depends only on config, grid (the world), and control (intents), so
 // it's drivable headlessly in tests.
 
-import { MARKER, nodeX, nodeY } from "./config.js";
+import { MARKER, POWERUPS, nodeX, nodeY } from "./config.js";
 import { boostMult } from "./powerups.js";
 import { classifyEdge, rideTypeOf, rideRank, canCut, nodeIsSafe, applyClaim } from "./grid.js";
 import { peekPending, clearPending, currentDesired, slowHeld } from "./control.js";
 import { cells as blobCells, removeBlobs } from "./enemy.js";
+import { cells as sparxCells, removeSparx, spawnOpposite } from "./sparx.js";
 
 export const marker = {
   col: MARKER.startCol,
@@ -25,9 +26,14 @@ export let trail = [];       // nodes of the in-progress cut
 export let lastCutLength = 0; // node count of the just-finished cut (for LONG scoring)
 export let slowActive = false; // a valid slow draw is in force right now (drives the visual)
 export let lastCutSlow = false; // was the just-finished cut a SLOW DRAW? (for scoring)
+export let zoomDash = false;  // a ZOOM dash is driving this cut (2× speed, invulnerable, kills on contact)
+export let selfHit = false;   // the cut just crossed its own trail this frame → death (main.js reads it)
 let cutClock = 0;             // seconds since this cut began
 let slowArmed = false;       // committed to a slow draw (SPACE held early enough)
 let slowBroken = false;      // SPACE released after arming → can't be a slow draw any more
+let zoomDir = null;          // locked heading of the active ZOOM dash
+let trailSet = new Set();    // "col,row" keys of every trail node, for O(1) self-cross checks
+const key = (c, r) => c + "," + r;
 
 // Place the marker at a lattice node and clear its motion/cut state.
 export function home(col, row) {
@@ -40,6 +46,18 @@ export function home(col, row) {
   mode = "riding";
   rideType = "auto";
   trail = [];
+  trailSet.clear();
+  zoomDash = false;
+  zoomDir = null;
+  selfHit = false;
+}
+
+// Snap to the current lattice node WITHOUT resetting cut state — used when a ZOOM
+// is collected so a dash can begin cleanly from a node (home() would forfeit the
+// in-progress cut, which we want to keep and finish via the dash).
+export function snapToNode() {
+  marker.x = nodeX(marker.col);
+  marker.y = nodeY(marker.row);
 }
 
 // Reset to the start position (level start / restart): bottom-centre.
@@ -61,11 +79,33 @@ function setDir(dx, dy) {
 function startCut(dx, dy) {
   mode = "cutting";
   trail = [{ col: marker.col, row: marker.row }];
+  trailSet = new Set([key(marker.col, marker.row)]);
   cutClock = 0;
   slowArmed = slowHeld(); // holding SPACE as you leave the boundary arms it immediately
   slowBroken = false;
   slowActive = slowArmed;
   setDir(dx, dy);
+}
+
+// Begin (or convert into) a ZOOM dash heading (dx,dy): a forced straight cut at
+// 2× speed that the player can't steer, is invulnerable during, and kills any
+// enemy it flies through (handled in main.js). Returns false if the heading can't
+// start/continue a cut from here (e.g. pressing along the wall while riding), so
+// the caller can keep aiming. Snap to a node first (snapToNode) before calling.
+export function startZoomDash(dx, dy) {
+  if (mode === "riding") {
+    if (classifyEdge(marker.col, marker.row, dx, dy) !== "OPEN") return false; // must enter open space
+    startCut(dx, dy);
+  } else { // already cutting: keep the trail, just commit to the dash heading
+    if (dir && dx === -dir.dx && dy === -dir.dy) return false; // no dashing back into our own line
+    if (!canCut(marker.col, marker.row, dx, dy)) return false;
+    setDir(dx, dy);
+  }
+  // A dash is never a slow draw, whatever SPACE is doing.
+  slowArmed = false; slowBroken = true; slowActive = false;
+  zoomDash = true;
+  zoomDir = { dx, dy };
+  return true;
 }
 
 function decideRiding() {
@@ -135,6 +175,13 @@ function decideRiding() {
 
 function decideCutting() {
   const rev = { dx: -dir.dx, dy: -dir.dy };
+  // ZOOM dash: ignore player steering and bore straight ahead while we can. When
+  // the dash heading is finally blocked (a wall / claimed interior) we fall through
+  // to the normal logic so the cut can still turn and close cleanly.
+  if (zoomDash && canCut(marker.col, marker.row, zoomDir.dx, zoomDir.dy)) {
+    setDir(zoomDir.dx, zoomDir.dy);
+    return;
+  }
   // A perpendicular/forward press steers the cut; reversing into our own trail
   // is disallowed.
   const p = peekPending();
@@ -154,20 +201,39 @@ function decideCutting() {
 }
 
 function finishCut() {
-  // Keep the survivors' region open, claim the rest; blobs trapped on a claimed
-  // (smaller) side die — the SPLIT.
+  // Keep the survivors' region open, claim the rest; anything trapped on a claimed
+  // (smaller) side dies — the SPLIT. Sparx are enclosable the same way Blobs are:
+  // both cell lists go into ONE applyClaim call (so a single claim can trap both
+  // kinds at once), then the returned indices are split back by array position.
   lastCutLength = trail.length;
   lastCutSlow = slowArmed && !slowBroken; // armed early AND held continuously to the end
-  const killed = applyClaim(trail, blobCells(), lastCutSlow);
-  if (killed.length) removeBlobs(killed);
+  const bCells = blobCells(), sCells = sparxCells();
+  const killed = applyClaim(trail, [...bCells, ...sCells], lastCutSlow);
+  const killedBlobs = killed.filter(i => i < bCells.length);
+  const killedSparx = killed.filter(i => i >= bCells.length).map(i => i - bCells.length);
+  if (killedBlobs.length) removeBlobs(killedBlobs);
+  if (killedSparx.length) {
+    // Respawn each killed Sparx opposite the player, same kind (fast/normal) —
+    // keeps the level's difficulty/mix intact rather than just thinning it out.
+    for (const { fast } of removeSparx(killedSparx)) spawnOpposite(fast, marker.col, marker.row);
+  }
   trail = [];
+  trailSet.clear();
   mode = "riding";
+  zoomDash = false; // the dash ends when its cut closes
+  zoomDir = null;
 }
 
 // Called the instant the marker lands on a grid intersection.
 function onArrive() {
   if (mode === "cutting") {
+    // Self-cross: we stepped onto a node already in our own trail. On the 4-connected
+    // lattice the line can only ever touch itself at a shared node, so this is the
+    // exact test for "rode over your own cut" — fatal (and it's what used to let you
+    // wall off un-claimable islands). main.js reads selfHit and kills the player.
+    if (trailSet.has(key(marker.col, marker.row))) { selfHit = true; return; }
     trail.push({ col: marker.col, row: marker.row });
+    trailSet.add(key(marker.col, marker.row));
     if (nodeIsSafe(marker.col, marker.row)) {
       finishCut();      // claim, back to riding
       decideRiding();   // choose how to carry on
@@ -201,7 +267,8 @@ export function update(dt) {
   } else {
     slowActive = false;
   }
-  const speedMult = boostMult() * (slowActive ? MARKER.slowCutMult : 1);
+  const speedMult = boostMult()
+    * (zoomDash ? POWERUPS.ZOOM.dashSpeedMult : (slowActive ? MARKER.slowCutMult : 1));
   let remaining = MARKER.speed * speedMult * dt;
   while (remaining > 0 && dir) {
     const tx = nodeX(marker.col + dir.dx);
@@ -214,6 +281,7 @@ export function update(dt) {
       marker.row += dir.dy;
       remaining -= distToNode;
       onArrive();
+      if (selfHit) return; // crossed our own line — stop here, main.js handles death
     } else {
       marker.x += dir.dx * remaining;
       marker.y += dir.dy * remaining;

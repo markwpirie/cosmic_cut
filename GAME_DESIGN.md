@@ -42,7 +42,7 @@ These keep the project achievable without killing the ambition:
 
 Note the deliberate tension between two scoring philosophies: **tower play** (patient setup, big area) vs **LONG cuts** (§4 — long risky strokes through open space). Both are rewarded by different mechanics so the game supports two distinct high-skill styles.
 
-*(**Built:** slow-cut-by-button-press is now in — **hold SPACE while cutting** to crawl at `MARKER.slowCutMult` speed. The enclosed claim becomes **darker glass** and scores a **SLOW DRAW ×2** bonus. More exposed, double the reward — the tower-builder's tool.)*
+*(**Built:** slow-cut-by-button-press is now in — **hold SPACE while cutting** to crawl at `MARKER.slowCutMult` speed. It's a deliberate commitment: you arm it by holding SPACE as you leave the boundary or within `MARKER.slowArmWindow` (1s) of the cut starting; after that SPACE is inert, and releasing mid-cut cancels it (must hold the whole line). The enclosed claim becomes **darker glass** and scores a **SLOW DRAW ×2** bonus. More exposed, double the reward — the tower-builder's tool.)*
 
 ---
 
@@ -73,7 +73,7 @@ The cut line changes colour as it gets longer, measured against **`l` = the vert
 The LONG multiplier **stacks** with area bonuses (BLOCK OUT/MEGA-CUT) and with SLOW — a single long, slow, big-area split is the dream play.
 
 ### SPLIT detail
-The showpiece move. Boxing an enemy and cutting so opponents end up separated either side of your line is the high-skill play. It grants a level-wide ×2 multiplier; all enemies trapped on the smaller side are destroyed. SPLIT + MEGA-CUT + SLOW + LONG in one stroke is the ceiling (a MULTI STACK).
+The showpiece move. Boxing an enemy and cutting so opponents end up separated either side of your line is the high-skill play. It grants a level-wide ×2 multiplier; all enemies trapped on the smaller side are destroyed. SPLIT + MEGA-CUT + SLOW + LONG in one stroke is the ceiling (a MULTI STACK). **Blobs only:** enclosing a Sparx (see §6) scores its own flat kill points but does **not** grant the SPLIT label or the level multiplier — that permanent, run-defining bonus stays reserved for trapping a primary enemy, not a perimeter tracer wandering into a cut.
 
 *(All thresholds are starting guesses — tuned once playable.)*
 
@@ -98,7 +98,9 @@ The showpiece move. Boxing an enemy and cutting so opponents end up separated ei
 | **Hunter Blob** | A Blob that drifts toward the player's marker. | 2-3 | Pressure on big cuts. |
 | **Twin Blobs** | Two Blobs at once. | 3-1 | Crowded open area. |
 
-**As built (enemy overhaul):** all five exist in code. The **Qix** renders as the classic Kix **line-sheaf** — two endpoints sweep inside a body box that normally stays compact but periodically **surges** to ~50% of the screen, drawing a twisting ribbon of straight "sticks"; collision tests the **live stick line** (not a disc), so a long stick only kills where the line is. The **Blob** and **Hunter Blob** render as **polygon** shapes (orbiting vertices + internal diagonals); the Hunter adds a soft drift toward the marker and a pulsing tendril. **Sparx** and **Fast Sparx** live in `sparx.js`: they BFS-chase along the auto-network and **kill on the safe perimeter as well as while cutting**; Fast Sparx can **latch onto the exposed cut trail** and rocket along it to catch the player mid-cut. Per-level enemy mix is data-driven in `levels.js` (`qix` / `blobs` / `hunters` / `sparx` / `fastSparx`). Enemy size + behaviour knobs are in `config.QIX`, `config.BLOB_POLY`, `config.SPARX`. **Twin Blobs** is just "≥2 of the bouncers in one level". The **75% enemy floor/respawn** (below) is **not yet wired**.
+**As built (enemy overhaul):** all five exist in code. The **Qix** renders as the classic Kix **line-sheaf** — two endpoints sweep inside a body box that normally stays compact but periodically **surges** to ~50% of the screen, drawing a twisting ribbon of straight "sticks"; collision tests the **live stick line** (not a disc), so a long stick only kills where the line is. The **Blob** and **Hunter Blob** render as **polygon** shapes (orbiting vertices + internal diagonals); the Hunter adds a soft drift toward the marker and a pulsing tendril. **Sparx** and **Fast Sparx** live in `sparx.js`: they BFS-chase along the auto-network and **kill on the safe perimeter as well as while cutting**; Fast Sparx can **latch onto the exposed cut trail** and rocket along it to catch the player mid-cut. Per-level enemy mix is data-driven in `levels.js` (`qix` / `blobs` / `hunters` / `sparx` / `fastSparx`). Enemy size + behaviour knobs are in `config.QIX`, `config.BLOB_POLY`, `config.SPARX`. **Twin Blobs** is just "≥2 of the bouncers in one level". The **75% enemy floor/respawn** (below) is **not yet wired for Blobs**.
+
+**Sparx enclose-to-kill (2026-07-03):** Sparx can now also be killed the Qix way — enclose one in a claim (same flood-fill `grid.applyClaim()` call as Blobs, so a single cut can trap both kinds at once) and it dies. Unlike a Blob SPLIT this is **not** a level-multiplier event (see §9) — it scores its own flat kill points and respawns immediately at the arena corner **farthest from the player**, same speed (normal/Fast), so the perimeter threat never actually thins out — a self-contained rule, simpler than the Blob floor/respawn above.
 
 **Enemy ↔ Target % relationship:** big/fast/multiple enemies = lower % target. Enforced by the level table so we never demand a high % with a screen full of fast hunters.
 
@@ -204,9 +206,9 @@ Each phase is a working, runnable thing. One concept per phase.
 | **4** | Zones + level table + win condition + progression. | Data-driven design | ✅ Done (levels.js table; start screen + zone unlocks; level-complete wipe; blue→red Blob spectrum — see §14) |
 | **5** | Cut mechanics: BLOCK OUT, MEGA-CUT, SPLIT, LONG, MULTI STACK + scoring. | Geometry checks, reward logic | ✅ Done (score + multipliers in `config.POINTS`; perimeter-safe collision — see §14) |
 | **6** | First power-up (Freeze), then the rest, ZOOM last. | Timed effects/state | ✅ Done (all five in `powerups.js`; enemy roster overhaul — Qix line-sheaf, polygon Blobs, Hunter, Sparx/Fast Sparx — landed alongside; rocket-ship player. Special Blobs + 75% enemy floor still to do — see §6/§8) |
-| **7** | Touch controls for mobile. | Input abstraction (key step for iPhone) | ◻ Next |
-| **8** | Make it a PWA — installable on iPhone home screen. | Deployment/packaging |
-| **9** | Swap in Pixi.js, real sprites, glass blocks, neon, particles, juice. | Graphics layer, polish |
+| **7** | Touch controls for mobile. | Input abstraction (key step for iPhone) | ✅ Done (relative swipe joystick + on-screen SLOW button; touch listeners on `document` so swipes work anywhere; **mobile portrait mode** — auto-detected device branch reshapes the whole arena to 440×876 portrait, `config.MOBILE` — landed alongside) |
+| **8** | Make it a PWA — installable on iPhone home screen. | Deployment/packaging | ◻ Next |
+| **9** | Swap in Pixi.js, real sprites, glass blocks, neon, particles, juice. | Graphics layer, polish | ✅ Shipped to `main`, opt-in via `?pixi` (canvas stays the default renderer) — bloom, rounded glass, cyan-hero palette, energy enemies, Orbitron HUD, boss stages; full art-direction pass complete. See PHASE9.md. Sprite-based stars/particles + glass-block depth + boss picture-reveal still open. |
 | **10** | Boss/picture-reveal levels, SUPER mode, audio, scoring polish, final feel. | Special modes & reward |
 
 By Phase 3 you have something genuinely playable. Everything after is making it *good*.
@@ -250,7 +252,8 @@ Section 2's claim/fill algorithm — and the SPLIT detection in Phase 5 — are 
 - LONG/SUPER LONG/MEGA LONG by line length vs `l` (play-field height); stacks with all ✓
 - MULTI STACK: all bonus types on one cut stack into a combo ✓
 - All multipliers stack (incl. slow) ✓
-- Standard speed FAST, **slow on button press (SPACE) — built**: crawl while held mid-cut, darker glass, ×2 area (`MARKER.slowCutMult`, `POINTS.slowCutMult`) ✓
+- Standard speed FAST, **slow on button press (SPACE) — built**: crawl while held mid-cut, darker glass, ×2 area (`MARKER.slowCutMult`, `POINTS.slowCutMult`). It's a commitment — armed only at boundary-leave or within `MARKER.slowArmWindow` (1s), then must be held the whole line (release cancels; no mid-cut re-arm) ✓
+- **Phase 9 graphics started (branch `phase9-pixi`):** the presentation layer is being ported to **Pixi.js v8** (loaded as a CDN ES module via an importmap — *no build step*, keeping the serve-the-folder model and avoiding a Node/npm dependency). It's **opt-in via `?pixi`** while it matures; the canvas renderer (`render.js`) stays the default so the branch is always playable. `render-pixi.js` mirrors `render.js`'s `render(view)` contract and reuses every logic module untouched (design principle §1.2). Glow is currently a multi-pass-stroke fake; real glow filters, masked glass gloss, sprite particles and the boss picture-reveal are the roadmap (PHASE9.md). Phase 9 is being done **before** Phase 7 (touch) per the build order ✓
 - ZOOM power-up (rocket to edge, destroy enemies, subject to enemy floor) ✓
 - Claimed = shiny glass colour blocks (slow = darker); boss levels (X-5) reveal hidden picture ✓
 - Levels: zones X-1 … X-5, campaign ends 5-5 (hard boss) ✓
@@ -281,7 +284,7 @@ Section 2's claim/fill algorithm — and the SPLIT detection in Phase 5 — are 
 - **Game-Feel pass (procedural, no assets):** all in `audio.js` (Web-Audio) + `fx.js` (pure-maths particles/shake), wired from `main`:
   - **Audio:** every voice runs through an envelope + filter and a shared **convolver reverb** so it sounds produced, not beepy. Retro SFX (claim/kill/death/UI/level-clear/game-over/high-score), punchy **"doof doof doof"** bonus kicks timed to the read-out, a **soft danger-tied "cut" pulse** (a quiet bass hum + tremolo that swells and beats faster as a blob nears your line — replaced the old pitch-rising squeal), and a **layered generative synthwave loop** (sub-bass + detuned supersaw pad + delayed arp over an **Am–F–C–G** progression; filter opens with danger). **Optional `assets/music.mp3`** drops in as the track (looped, through the same mute/volume + **N** toggle); absent → the procedural loop. **M** mutes; both persist; context resumes on first keypress.
   - **Juice:** screen shake + particle bursts on claims, kills, death; scaled to the event.
-  - **Danger telegraph:** marker flashes hot **while cutting** (you're vulnerable), the trail reddens/thickens toward the LONG threshold, and a red **edge vignette** rises as a blob nears your trail. A **NEAR MISS** grazes the trail without hitting → small bonus (`POINTS.nearMiss`).
+  - **Danger telegraph:** marker flashes hot **while cutting** (you're vulnerable), the trail reddens/thickens toward the LONG threshold, and a red **edge vignette** rises as a blob nears your trail. A **NEAR MISS** grazes the trail without hitting → small bonus (`POINTS.nearMiss`). Fires on the **exit** from the danger band (the blob has actually pulled back to safe distance), not on entry — firing on entry meant the player could see "NEAR MISS" a frame before getting caught by that same still-closing blob, which read as broken rather than a genuine miss.
   - **Atmosphere & meta:** drifting **starfield** + faint nebula; persistent **high score** shown on the menu and end screens with **★ NEW HIGH SCORE ★**.
   - These deliberately pull cheap wins forward from the Phase 9 "juice" / Phase 10 "audio" buckets; richer sprites, the slow-cut visuals and full music production stay there ✓
 - **SUPER mode: deferred** — wired conceptually (clear 5-5 → 2× enemies) but not built in Phase 4; for now 5-5 ends at the campaign-complete screen ✓
@@ -320,7 +323,7 @@ How the marker actually moves and what it can ride, as realised while building t
 - **Opposite reverses.** Pressing the direction opposite to current travel turns the marker around.
 - **Hold a turn in anticipation.** Approaching a junction, hold the direction you want; the marker takes that line the instant it becomes available, so turns don't need frame-perfect taps.
 - **Cutting vs riding.** A **fresh** press that points into open space starts a **cut**. A **held** key only ever rides existing lines — it never surprise-cuts you into the open.
-- Keyboard: arrow keys or WASD. Touch controls are Phase 7.
+- Keyboard: arrow keys or WASD. **Touch (Phase 7, done):** a relative swipe joystick — the displacement direction from where a finger first touched is the held heading, same "hold to turn" and "fresh press starts a cut" rules as keyboard. A second finger (or an on-screen SLOW button, bottom-left of the touch strip) holds the slow draw. Listeners live on `document`, not the canvas, so a swipe works from anywhere on screen. **Aiming a ZOOM dash also works by swipe** — same direction choice as an arrow key, sharing one `attemptZoomDash()` path so touch and keyboard behave identically.
 
 ### The perimeter model (two kinds of rideable line)
 The arena is a grid; the boundary the marker rides is made of grid edges. Edges fall into:

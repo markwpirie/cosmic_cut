@@ -2,9 +2,27 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>COSMIC CUT</title>
   <link rel="stylesheet" href="styles.css" />
+  <!-- Art pass: Orbitron — the thin/wide sci-fi HUD face (NEXUS reference board).
+       Loaded from Google Fonts (same trade-off as the Pixi CDN: network on first
+       load, cached after). Offline falls back to system-ui — render-pixi waits
+       ~1.5s max for it, then draws with whatever is available. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400..900&display=swap" />
+  <!-- Phase 9: Pixi.js v8 as an ES module straight from the CDN — keeps the
+       "no build step" promise. Only loaded when the game runs in ?pixi mode
+       (main.js dynamically imports the Pixi renderer). -->
+  <script type="importmap">
+  {
+    "imports": {
+      "pixi.js": "https://cdn.jsdelivr.net/npm/pixi.js@8/dist/pixi.min.mjs",
+      "pixi-filters": "https://cdn.jsdelivr.net/npm/pixi-filters@6/dist/pixi-filters.mjs"
+    }
+  }
+  </script>
 </head>
 <body>
   <main>

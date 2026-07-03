@@ -14,6 +14,7 @@
 
 html, body {
   height: 100%;
+  overflow: hidden;       /* the game is the page — nothing to scroll, ever */
 }
 
 body {
@@ -23,7 +24,17 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 100vh;
+  /* iOS Safari: position:fixed is the reliable way to kill rubber-band/pan —
+     a swipe must move the SHIP, never the page. */
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  overscroll-behavior: none;
+  touch-action: none;
+  /* Full screen while avoiding notches: keep the canvas out of the unsafe areas
+     (viewport-fit=cover is set in the meta, so these envs are live on iPhone). */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+           env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 main {
@@ -31,7 +42,7 @@ main {
   flex-direction: column;
   align-items: center;
   gap: 1rem;
-  padding: 1rem;
+  padding: 0;
 }
 
 canvas {
@@ -42,4 +53,13 @@ canvas {
   background: #000;
   border-radius: 6px;
   box-shadow: 0 0 30px rgba(25, 230, 255, 0.25);
+  /* Mobile: the canvas owns all touch gestures (no page pan/zoom), no tap flash. */
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
 }
+
+/* Display sizing note: the contain-fit rule lives in main.js as an INLINE style
+   (it must beat Pixi autoDensity's own inline style, and the aspect ratio is now
+   device-branched — portrait canvas on mobile — so CSS can't hardcode it). */
