@@ -153,9 +153,18 @@ Open decisions (Mark to decide):
 - [ ] Re-enable the on-screen beat readout only if needed (`config.AUDIO.debugBeat`).
 
 ## Roadmap (later phases — see §11)
-- [x] **Phase 7** — **touch controls done.** Relative virtual joystick on the canvas
-      (swipe = heading, two fingers = slow draw); taps advance menus; a swipe begins the
-      level. In `main.js`, built on `control.press/release/setSlow`. Verify on a real iPhone.
+- [x] **Phase 7** — **touch controls done.** Relative virtual joystick (swipe = heading,
+      two fingers = slow draw); taps advance menus; a swipe begins the level. In `main.js`,
+      built on `control.press/release/setSlow`. Verify on a real iPhone.
+- [x] **Mobile portrait mode (2026-07-03).** Auto-detected at load (`config.MOBILE`:
+      coarse pointer + phone screen): **portrait canvas 440×876, field 400×712 (50×89
+      cells)**, desktop untouched. Two-row HUD (big SCORE), visible **SLOW ×2 hold
+      button** (`config.TOUCH.slowBtn`) in a 100px bottom control strip, touch
+      listeners on the *document* (swipes work anywhere — dead-space swallowing fixed),
+      menu swipe-select + tap-start, safe-area insets for the notch, VFX radii +
+      overlay text scale to the canvas. `QIX.spanMax` now derives from the field short
+      side. Verified on emulated iPhone 13 + desktop regression; **real-device feel
+      pass still wanted.**
 - [ ] **Phase 8** — PWA, installable on iPhone home screen.
 - [x] **Phase 9** — Pixi.js graphics layer: bloom, rounded edges, gorgeous glass
       (TilingSprite shimmer + refraction), churning nebula (DisplacementFilter), glowy
