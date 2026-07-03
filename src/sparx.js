@@ -179,8 +179,24 @@ function updatePerimeter(s, dt, marker, trail) {
         s.nextCol = s.col + nextDir.dx;
         s.nextRow = s.row + nextDir.dy;
       } else {
-        // Truly boxed in (no valid perimeter edge at all) — stay put.
-        s.nextCol = s.col; s.nextRow = s.row;
+        // Truly boxed in (no valid rank<=1 edge at all from this node) — this happens
+        // when a claim elsewhere buries the arrival node in one step (e.g. a frontier
+        // peninsula fully swallowed), turning all 4 of its edges to rank>1 at once.
+        // Left alone, every future frame re-runs the same BFS/patrol from the same
+        // dead node and gets null again forever — a permanent freeze. Recover with the
+        // same escape hatch already used when a latched Sparx ejects from a closed
+        // trail: teleport to the nearest node that still has a rideable edge, then
+        // retry immediately so it doesn't even visibly stall for a frame.
+        snapToNearestNode(s);
+        const retryDir = bfsNextDir(s.col, s.row, marker.col, marker.row, trail, s.fast)
+                       || patrolDir(s, trail);
+        if (retryDir) {
+          s.dir = retryDir;
+          s.nextCol = s.col + retryDir.dx;
+          s.nextRow = s.row + retryDir.dy;
+        } else {
+          s.nextCol = s.col; s.nextRow = s.row; // nowhere rideable within search radius
+        }
         remaining = 0;
       }
     } else {
