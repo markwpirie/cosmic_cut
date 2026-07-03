@@ -4,6 +4,43 @@ Running task list. Roadmap phases live in [GAME_DESIGN.md](GAME_DESIGN.md) §11;
 as-built decisions in §14/§16. Tick items off as they land.
 
 ## Done recently
+- [x] **Post-mobile-playtest bug-fix pass (2026-07-03).** Six issues from the first
+      mobile playtest, all verified headless (Playwright + system Chrome — screenshots,
+      live module-state probes, and isolated logic tests, not just static reading):
+      - **Battery drain** — `config.MOBILE` now gates the expensive Pixi filters:
+        both `DisplacementFilter`s off (`NEBULA.warp`/`GLASS.refraction` → 0), lower
+        `BLOOM.quality`/`resolution`, `AMBIENT.max` halved. Bloom itself stays on
+        (the signature look); desktop values untouched.
+      - **Level-select clipped at the edges** — a real off-by-construction bug in the
+        chip layout from the mobile pass: `half` was derived FROM `gap` with no bound,
+        so on 440px-wide screens the outer chips spilled ~7.5px past both edges. Fixed
+        by deriving `gap` from the space left over after reserving `half` + padding.
+      - **Sparx freezing on internal lines** — NOT stale seams (seams only ever
+        accumulate, and `sparx.edgeValid()` already excludes them from sparx pathing
+        entirely). Real cause: a claim can bury a sparx's just-arrived-at node so all
+        4 edges go non-rideable in one step; the old code just parked it there forever
+        (every frame re-ran the same dead BFS). Now reuses the existing
+        `snapToNearestNode()` escape hatch (previously only used for trail-latch
+        ejection) to relocate and retry immediately.
+      - **ZOOM softlock** ("arrows show, nothing happens") — reproduced live via the
+        dev **Z** key: picking up ZOOM while **riding** (not cutting) means only the
+        ONE direction leading into open field can ever dash — the other 3 are
+        correctly rejected by design, but silently. Fixed with a reject cue
+        (`audio.ui()` + a small shake) so input is acknowledged instead of feeling
+        broken. Also fixed a separate real bug found while tracing this: `control.js`'s
+        keydown listener had no aiming guard, so arrow presses during aim mode still
+        polluted `heldKeys`/`pending`.
+      - **Solar Wind** — `duration` 3.5s → 6.5s; visual strengthened (wider/brighter
+        streaks) plus a new row of directional chevrons scrolling with the gust so
+        the wind's heading reads at a glance.
+      - **Sparx enclose-to-kill + opposite respawn** (new feature) — sparx are now
+        killable by enclosure exactly like Blobs: `marker.finishCut()` feeds
+        `sparx.cells()` into the SAME `grid.applyClaim()` call as blob cells (one
+        flood-fill, "keep the largest enemy-holding region"), then splits the
+        returned killed indices back by array position. Killed sparx respawn
+        immediately at the arena corner farthest from the player (`spawnOpposite()`),
+        same fast/normal kind, via a `sparx.totalKilled` running counter (a plain
+        `sparxList.length` delta would be masked by the immediate respawn).
 - [x] **Phase 6 — power-ups.** Freeze, Solar Wind, Boost, Shield, **ZOOM** all built
       (`powerups.js`). **ZOOM is a DASH** (redesigned): touch the floating pickup → aim
       with a direction key → the ship **rockets across the field DRAWING A REAL CUT** at
@@ -125,7 +162,9 @@ Open decisions (Mark to decide):
 ## Next up
 - [ ] **Special Blobs** (the other half of §8) — extra-life Blob + slow-down Blob.
 - [ ] **Enemy floor / respawn rule (§6)** — keep ≥75% of starting enemy count;
-      respawn at the edge when SPLIT/ZOOM drop below it. Not yet wired.
+      respawn at the edge when SPLIT/ZOOM drop below it. Not yet wired for **Blobs**.
+      *(Sparx now always respawn 1-for-1 on enclosure-kill, opposite the player —
+      see "Sparx enclose-to-kill" above — a simpler rule than the Blob floor.)*
 - [ ] **Tune the new enemies by feel** — Qix surge (`QIX.spanMax`,
       `surgeIntervalMin/Max`, `endpointSpeed`); Sparx speeds + latch; Hunter drift;
       per-level counts in `levels.js`.
