@@ -14,7 +14,7 @@ import { render } from "./render.js";
 import * as audio from "./audio.js";
 import * as director from "./audio-director.js";
 import * as fx from "./fx.js";
-import { TIMING, POINTS, THEMES, POWERUPS, field } from "./config.js";
+import { TIMING, POINTS, THEMES, POWERUPS, field, WIDTH, HEIGHT, MOBILE, TOUCH } from "./config.js";
 import * as powerups from "./powerups.js";
 import * as sparx from "./sparx.js";
 
@@ -23,6 +23,10 @@ import * as sparx from "./sparx.js";
 // Pixi). Both honour the same render(view) contract via the draw() helper below.
 const USE_PIXI = typeof location !== "undefined" && new URLSearchParams(location.search).has("pixi");
 const canvas = document.getElementById("game");
+// The canvas takes its size from config (device-branched: portrait on mobile),
+// overriding the static HTML attributes — set BEFORE either renderer initialises.
+canvas.width = WIDTH;
+canvas.height = HEIGHT;
 let ctx = null;
 let pixiRenderer = null;
 if (USE_PIXI) {
@@ -31,6 +35,14 @@ if (USE_PIXI) {
 } else {
   ctx = canvas.getContext("2d");
 }
+// Contain-fit display sizing, applied AFTER init because Pixi's autoDensity writes
+// its own inline style. Biggest undistorted fit: viewport width, or the width the
+// viewport height allows, capped at native size so desktop stays pixel-crisp.
+// (dvh tracks the iOS URL bar; the ratio is device-branched so CSS can't hardcode it.)
+const RATIO = (WIDTH / HEIGHT).toFixed(4);
+canvas.style.width = `min(100vw, calc(100dvh * ${RATIO}), ${WIDTH}px)`;
+canvas.style.height = "auto";
+canvas.style.aspectRatio = `${WIDTH} / ${HEIGHT}`;
 function draw(view) {
   if (pixiRenderer) pixiRenderer.render(view);
   else render(ctx, view);
@@ -201,12 +213,41 @@ window.addEventListener("keydown", (e) => {
 // works alongside. Built on control.press/release/setSlow so it reuses the intent model.
 const SYNTH = { up: "ArrowUp", down: "ArrowDown", left: "ArrowLeft", right: "ArrowRight" };
 let touchId = null, touchAnchor = null, touchDir = null;
+let touchMoved = false;      // did the steering touch leave the dead-zone? (tap vs swipe)
+let anchorState = null;      // game.state when the steering touch landed
+let slowTouchId = null; // the finger holding the on-screen SLOW button (mobile)
+
+// Map a touch's client coords into canvas (game) coordinates — the canvas is
+// contain-fit scaled, so client px ≠ game px.
+function canvasPos(t) {
+  const r = canvas.getBoundingClientRect();
+  return { x: (t.clientX - r.left) * (WIDTH / r.width), y: (t.clientY - r.top) * (HEIGHT / r.height) };
+}
+function hitSlowBtn(t) {
+  if (!MOBILE) return false;
+  const p = canvasPos(t), b = TOUCH.slowBtn;
+  return Math.hypot(p.x - b.x, p.y - b.y) <= b.hitR;
+}
+// SLOW is held while the button finger is down OR two+ steering fingers are down
+// (the original two-finger gesture still works).
+function refreshSlow(e) {
+  let steerCount = 0;
+  for (const t of e.touches) if (t.identifier !== slowTouchId) steerCount++;
+  control.setSlow(slowTouchId !== null || steerCount >= 2);
+}
 
 function touchDominant(dx, dy) {
   if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? "right" : "left";
   return dy > 0 ? "down" : "up";
 }
 function setTouchDir(name) {
+  // On the zone-select menu a swipe moves the selection (mirrors ← → keys);
+  // it never feeds movement intents there.
+  if (game.state === "menu") {
+    if (name === "left") { menuSel = Math.max(1, menuSel - 1); audio.ui(); }
+    else if (name === "right") { menuSel = Math.min(game.unlockedZone, menuSel + 1); audio.ui(); }
+    return;
+  }
   if (touchDir === name) return;
   if (touchDir) control.release(SYNTH[touchDir]);
   touchDir = name;
@@ -222,7 +263,7 @@ function touchGesture() {
   if (!audioStarted) { audio.startMusic(); audioStarted = true; return true; }
   if (paused) return true;
   if (game.state === "title") { game.toMenu(); audio.ui(); }
-  else if (game.state === "menu") { game.startRun(menuSel); audio.ui(); }
+  // menu: handled on touchEND (tap = start, swipe = change selection) — see endTouch
   else if (game.state === "dead") { if (transT >= TIMING.deathHold) { respawn(); game.beginPlay(); } }
   else if (game.state === "gameover" || game.state === "campaigncomplete") {
     game.toMenu(); menuSel = Math.min(menuSel, game.unlockedZone);
@@ -230,38 +271,66 @@ function touchGesture() {
   return false;
 }
 if (canvas && typeof window !== "undefined" && "ontouchstart" in window) {
-  // Belt-and-braces for iOS Safari: even with touch-action:none + a fixed body,
-  // some versions still pan/bounce the page on vertical swipes. The game owns the
-  // whole page, so no touch should ever scroll it — swipes move the SHIP.
-  document.addEventListener("touchmove", (e) => e.preventDefault(), { passive: false });
-  canvas.addEventListener("touchstart", (e) => {
+  // Listeners live on the DOCUMENT, not the canvas: the joystick is relative
+  // (anchor + delta), so a swipe may start ANYWHERE — including the letterbox
+  // dead space around the canvas, which used to swallow touches and get players
+  // killed. preventDefault everywhere also keeps iOS from panning the page.
+  document.addEventListener("touchstart", (e) => {
     e.preventDefault();
-    if (e.touches.length >= 2) control.setSlow(true);
-    touchGesture();
-    if (touchId === null) {
-      const t = e.changedTouches[0];
-      touchId = t.identifier;
-      touchAnchor = { x: t.clientX, y: t.clientY };
+    for (const t of e.changedTouches) {
+      if (t.identifier === slowTouchId) continue; // already the SLOW finger
+      // A finger landing on the SLOW button holds slow — it never steers.
+      if (slowTouchId === null && hitSlowBtn(t)) {
+        slowTouchId = t.identifier;
+        audio.resume(); // still counts as a gesture for the audio context
+        continue;
+      }
+      // Capture the state BEFORE the gesture may advance it (title→menu):
+      // a tap's meaning belongs to the screen it landed on, not the next one.
+      const stateAtStart = game.state;
+      touchGesture();
+      if (touchId === null) {
+        touchId = t.identifier;
+        touchAnchor = { x: t.clientX, y: t.clientY };
+        touchMoved = false;
+        anchorState = stateAtStart;
+      }
     }
+    refreshSlow(e);
   }, { passive: false });
-  canvas.addEventListener("touchmove", (e) => {
+  document.addEventListener("touchmove", (e) => {
     e.preventDefault();
     if (touchId === null || !touchAnchor) return;
     let t = null;
     for (const ct of e.touches) if (ct.identifier === touchId) { t = ct; break; }
     if (!t) return;
     const dx = t.clientX - touchAnchor.x, dy = t.clientY - touchAnchor.y;
-    if (Math.hypot(dx, dy) > 16) setTouchDir(touchDominant(dx, dy)); // 16px dead-zone
+    if (Math.hypot(dx, dy) > 16) {
+      touchMoved = true;
+      setTouchDir(touchDominant(dx, dy)); // 16px dead-zone
+      // Menu: re-anchor after each step so one long drag can step several zones.
+      if (game.state === "menu") touchAnchor = { x: t.clientX, y: t.clientY };
+    }
   }, { passive: false });
   const endTouch = (e) => {
     e.preventDefault();
-    if (e.touches.length < 2) control.setSlow(false);
-    let still = false;
-    for (const ct of e.touches) if (ct.identifier === touchId) { still = true; break; }
-    if (!still) { setTouchDir(null); touchId = null; touchAnchor = null; }
+    let slowStill = false, steerStill = false;
+    for (const ct of e.touches) {
+      if (ct.identifier === slowTouchId) slowStill = true;
+      if (ct.identifier === touchId) steerStill = true;
+    }
+    if (!slowStill) slowTouchId = null;
+    if (!steerStill) {
+      // A tap (no movement) that both began AND ended on the menu starts the run.
+      if (anchorState === "menu" && game.state === "menu" && !touchMoved && touchId !== null) {
+        game.startRun(menuSel); audio.ui();
+      }
+      setTouchDir(null); touchId = null; touchAnchor = null; anchorState = null;
+    }
+    refreshSlow(e);
   };
-  canvas.addEventListener("touchend", endTouch, { passive: false });
-  canvas.addEventListener("touchcancel", endTouch, { passive: false });
+  document.addEventListener("touchend", endTouch, { passive: false });
+  document.addEventListener("touchcancel", endTouch, { passive: false });
 }
 
 let lastTime = performance.now();
@@ -272,7 +341,7 @@ function loop(now) {
   lastTime = now;
 
   if (paused) { // frozen: draw the overlay over the held frame, advance nothing
-    draw({ transT, menuSel, popups, reward, deathPoint, deathBlob, scorePulseT, danger, beat: 0, paused: true });
+    draw({ transT, menuSel, popups, reward, deathPoint, deathBlob, scorePulseT, danger, beat: 0, paused: true, slowBtn: slowTouchId !== null });
     requestAnimationFrame(loop);
     return;
   }
@@ -459,7 +528,7 @@ function loop(now) {
   fx.update(dt);
 
   const beat = audio.musicPulse(); // 0..1 bass-driven pulse for a beat-synced screen glow
-  draw({ transT, menuSel, popups, reward, deathPoint, deathBlob, scorePulseT, danger, beat });
+  draw({ transT, menuSel, popups, reward, deathPoint, deathBlob, scorePulseT, danger, beat, slowBtn: slowTouchId !== null });
   requestAnimationFrame(loop);
 }
 

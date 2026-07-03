@@ -15,7 +15,7 @@
 
 import { Application, Container, Graphics, Sprite, TilingSprite, Texture, Text, Rectangle, DisplacementFilter } from "pixi.js";
 import { AdvancedBloomFilter } from "pixi-filters";
-import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, QIX, BOSS, BLOB_POLY, SPARX, MARKER, BLOOM, CORNERS, GLASS, NEBULA,STARFIELD, SHIP_TRAIL, SHIP_VIS, AMBIENT, ENERGY, IMPACT, GRID_BG, MOTES, VIGNETTE, HUD } from "./config.js";
+import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, QIX, BOSS, BLOB_POLY, SPARX, MARKER, BLOOM, CORNERS, GLASS, NEBULA,STARFIELD, SHIP_TRAIL, SHIP_VIS, AMBIENT, ENERGY, IMPACT, GRID_BG, MOTES, VIGNETTE, HUD, MOBILE, TOUCH } from "./config.js";
 import * as powerups from "./powerups.js";
 import { grid, slowFill, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
 import { marker, mode, dir, trail, slowActive, zoomDash } from "./marker.js";
@@ -28,6 +28,9 @@ import * as fx from "./fx.js";
 const CX = field.x + field.w / 2;
 const CY = field.y + field.h / 2;
 const MAXR = Math.hypot(field.w / 2, field.h / 2);
+// Background/VFX scale: px radii in the bakes/effects were tuned on the 680-min
+// desktop canvas; scale them by the current short side so mobile keeps proportions.
+const BGS = Math.min(WIDTH, HEIGHT) / 680;
 const FONT = HUD.font; // Orbitron with a system-ui fallback (loaded in index.html)
 const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
 
@@ -382,8 +385,12 @@ function drawText(str, x, y, opts = {}) {
   return t;
 }
 function endText() { for (let i = textIdx; i < textPool.length; i++) textPool[i].visible = false; }
+// Overlay text scale: the big Orbitron sizes were tuned on the 800-wide desktop
+// canvas; on the 440-wide portrait canvas they'd overflow. HUD text is untouched
+// (drawText direct, explicitly sized per device via config.HUD).
+const TXT_SCALE = MOBILE ? WIDTH / 640 : 1;
 function centerText(str, y, size, color, alpha = 1, weight = "700") {
-  return drawText(str, WIDTH / 2, y, { size, color, weight, align: "center", alpha });
+  return drawText(str, WIDTH / 2, y, { size: size * TXT_SCALE, color, weight, align: "center", alpha });
 }
 
 // --- Glow stroke helper: draw a path several times, widening + fading --------
@@ -736,12 +743,14 @@ function bakeDeepSpaceTexture() {
   // purple/magenta mix toward deep teal-blue and muted indigo, and dropped a touch
   // in alpha for a deeper near-black void — magenta is now reserved for boss energy
   // (see TODO §1 art-direction). Zone-independent, so safe regardless of THEMES.
+  // Radii scale with the canvas short side (tuned on the 680-min desktop) so the
+  // portrait mobile bake keeps the same cloud-to-canvas proportions.
   const clouds = [
-    { x: WIDTH * 0.22, y: HEIGHT * 0.28, r: 320, c: "rgba(40,95,155,0.13)" },
-    { x: WIDTH * 0.80, y: HEIGHT * 0.66, r: 360, c: "rgba(20,110,170,0.13)" },
-    { x: WIDTH * 0.62, y: HEIGHT * 0.18, r: 240, c: "rgba(30,120,150,0.08)" },
-    { x: WIDTH * 0.12, y: HEIGHT * 0.78, r: 280, c: "rgba(50,55,140,0.09)" },
-    { x: WIDTH * 0.50, y: HEIGHT * 0.50, r: 420, c: "rgba(30,22,72,0.08)" },
+    { x: WIDTH * 0.22, y: HEIGHT * 0.28, r: 320 * BGS, c: "rgba(40,95,155,0.13)" },
+    { x: WIDTH * 0.80, y: HEIGHT * 0.66, r: 360 * BGS, c: "rgba(20,110,170,0.13)" },
+    { x: WIDTH * 0.62, y: HEIGHT * 0.18, r: 240 * BGS, c: "rgba(30,120,150,0.08)" },
+    { x: WIDTH * 0.12, y: HEIGHT * 0.78, r: 280 * BGS, c: "rgba(50,55,140,0.09)" },
+    { x: WIDTH * 0.50, y: HEIGHT * 0.50, r: 420 * BGS, c: "rgba(30,22,72,0.08)" },
   ];
   for (const n of clouds) {
     const rg = g.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r);
@@ -752,8 +761,8 @@ function bakeDeepSpaceTexture() {
   // with filaments + dust, not white discs. Low per-daub alpha keeps the void dark.
   // Art pass: cooled palettes — the pink/warm daubs are gone so the void reads
   // cyan/teal/blue and magenta stays reserved for enemy & boss energy.
-  bakeNebula(g, WIDTH * 0.74, HEIGHT * 0.28, 205, [[90, 150, 255], [110, 190, 235], [120, 225, 255], [190, 225, 245]], 0.85);
-  bakeNebula(g, WIDTH * 0.20, HEIGHT * 0.72, 165, [[60, 220, 205], [120, 255, 200], [80, 140, 220], [110, 150, 255]], 0.80);
+  bakeNebula(g, WIDTH * 0.74, HEIGHT * 0.28, 205 * BGS, [[90, 150, 255], [110, 190, 235], [120, 225, 255], [190, 225, 245]], 0.85);
+  bakeNebula(g, WIDTH * 0.20, HEIGHT * 0.72, 165 * BGS, [[60, 220, 205], [120, 255, 200], [80, 140, 220], [110, 150, 255]], 0.80);
   for (let i = 0; i < 260; i++) {
     g.globalAlpha = 0.1 + Math.random() * 0.4;
     g.fillStyle = STAR_TINTS[(Math.random() * STAR_TINTS.length) | 0];
@@ -833,7 +842,7 @@ function drawBackground(beat) {
   if (stormTimer <= 0) {
     stormTimer = 5 + Math.random() * 8;
     const x0 = Math.random() * WIDTH;
-    storm = { x0, y0: 0, x1: x0 + (Math.random() - 0.5) * 320, y1: HEIGHT * (0.35 + Math.random() * 0.5), life: 0.22, max: 0.22 };
+    storm = { x0, y0: 0, x1: x0 + (Math.random() - 0.5) * WIDTH * 0.4, y1: HEIGHT * (0.35 + Math.random() * 0.5), life: 0.22, max: 0.22 };
     stormFlash = 0.6;
   }
   if (storm) {
@@ -845,7 +854,7 @@ function drawBackground(beat) {
       // a fork
       const fx2 = storm.x0 + (storm.x1 - storm.x0) * 0.55;
       const fy2 = storm.y1 * 0.55;
-      drawBolt(g, fx2, fy2, fx2 + (Math.random() - 0.5) * 160, fy2 + 60 + Math.random() * 120, 0xaad4ff, { jitter: 22, segs: 7, w: 1.4, a: a * 0.4 });
+      drawBolt(g, fx2, fy2, fx2 + (Math.random() - 0.5) * WIDTH * 0.2, fy2 + 60 + Math.random() * 120, 0xaad4ff, { jitter: 22, segs: 7, w: 1.4, a: a * 0.4 });
     }
   }
   if (stormFlash > 0) {
@@ -1341,7 +1350,7 @@ function drawDangerEdge(danger) {
   // of each other → darker corners. Instead build the vignette from concentric frames,
   // each made of NON-overlapping strips (corners belong to one strip only), with alpha
   // fading inward for a soft glow creeping in from the edges.
-  const bands = 6, depth = 100, step = depth / bands;
+  const bands = 6, depth = Math.min(WIDTH, HEIGHT) * 0.15, step = depth / bands; // ≈102 on desktop (unchanged), 66 on mobile
   const frame = (inset, thick, alpha) => {
     const w = WIDTH - 2 * inset, h = HEIGHT - 2 * inset;
     g.rect(inset, inset, w, thick)                              // top (full width)
@@ -1379,15 +1388,17 @@ function miniShip(gg, x, y, r, color, alpha = 1) {
 function drawHUD(scorePulseT) {
   const L = game.currentLevel();
   const accent = theme().accent || theme().frontier;
+  const ts = HUD.textSize, ss = HUD.scoreSize;
 
-  // Zone chip framed by corner brackets.
-  drawText(`ZONE ${L.label}`, 16, 10, { size: 15, color: accent, weight: "700" });
-  const bx0 = 10, bx1 = 120, by0 = 7, by1 = 31, bl = 6;
+  // Zone chip framed by corner brackets (row 1, left).
+  const zt = drawText(`ZONE ${L.label}`, 16, 10, { size: ts, color: accent, weight: "700" });
+  const bx0 = 10, bx1 = 16 + zt.width + 8, by0 = 7, by1 = 10 + ts + 8, bl = 6;
   uiGfx.moveTo(bx0 + bl, by0).lineTo(bx0, by0).lineTo(bx0, by0 + bl)
     .moveTo(bx1 - bl, by1).lineTo(bx1, by1).lineTo(bx1, by1 - bl)
     .stroke({ width: 1.5, color: accent, alpha: 0.7 });
 
   // Claim-progress bar: eased fill, white flash on a claim jump, target tick.
+  // Mobile: row 2, left. Desktop: row 1, centre-left (positions from config.HUD).
   if (percent !== lastPct) { if (percent > lastPct + 0.5) pctFlashT = 0; lastPct = percent; }
   dispPct += (percent - dispPct) * HUD.ease;
   pctFlashT += ambDt;
@@ -1403,29 +1414,47 @@ function drawHUD(scorePulseT) {
   const tickX = barX + barW * (L.target / 100);
   uiGfx.moveTo(tickX, barY - 3).lineTo(tickX, barY + barH + 3)
     .stroke({ width: 1.5, color: HUD.tickColor, alpha: 0.8 });
-  drawText(`${percent.toFixed(0)}/${L.target}%`, barX + barW + 10, 10, { size: 13, weight: "600" });
+  const pctY = MOBILE ? barY + barH / 2 - HUD.smallSize / 2 - 1 : 10;
+  drawText(`${percent.toFixed(0)}/${L.target}%`, barX + barW + 10, pctY, { size: HUD.smallSize, weight: "600" });
 
-  // Lives as mini ship glyphs (the Step-2 dart, nose right).
-  for (let i = 0; i < game.lives; i++) miniShip(uiGfx, 420 + i * 24, 20, 5, COLORS.marker, 0.95);
-  if (game.levelMult > 1) drawText(`×${game.levelMult}`, 420 + game.lives * 24 + 12, 10, { size: 15, color: COLORS.hudAccent, weight: "700" });
+  // Lives as mini ship glyphs — right-aligned so they fit any canvas width.
+  // Mobile: row 2, right. Desktop: row 1, centre-right (matches the old spot).
+  const livesY = MOBILE ? barY + barH / 2 : 20;
+  const livesRight = MOBILE ? WIDTH - 16 : WIDTH * 0.525 + game.lives * 24;
+  for (let i = 0; i < game.lives; i++) miniShip(uiGfx, livesRight - (game.lives - i) * 24 + 12, livesY, MOBILE ? 6 : 5, COLORS.marker, 0.95);
+  if (game.levelMult > 1) drawText(`×${game.levelMult}`, livesRight + 12, livesY - ts / 2 - 1, { size: ts, color: COLORS.hudAccent, weight: "700" });
 
-  // Score with pulse + an underline that flares on the pulse.
+  // Score with pulse + an underline that flares on the pulse (row 1, right).
   const p = scorePulseT < TIMING.scorePulse ? 1 - scorePulseT / TIMING.scorePulse : 0;
-  const st = drawText(`SCORE ${fmt(game.score)}`, WIDTH - 16, 10, { size: 15 + 5 * p, color: p > 0 ? theme().frontier : COLORS.hud, weight: "700", align: "right" });
-  uiGfx.moveTo(WIDTH - 16 - st.width, 30).lineTo(WIDTH - 16, 30)
+  const st = drawText(`SCORE ${fmt(game.score)}`, WIDTH - 16, 10, { size: ss + 5 * p, color: p > 0 ? theme().frontier : COLORS.hud, weight: "700", align: "right" });
+  const ulY = 10 + ss + 5;
+  uiGfx.moveTo(WIDTH - 16 - st.width, ulY).lineTo(WIDTH - 16, ulY)
     .stroke({ width: 1.5, color: theme().frontier, alpha: 0.25 + 0.6 * p });
 
   // Hairline separator under the whole top bar.
-  uiGfx.moveTo(10, 38).lineTo(WIDTH - 10, 38).stroke({ width: 1, color: COLORS.hud, alpha: HUD.lineAlpha });
+  uiGfx.moveTo(10, HUD.sepY).lineTo(WIDTH - 10, HUD.sepY).stroke({ width: 1, color: COLORS.hud, alpha: HUD.lineAlpha });
 
   const active = powerups.getActiveEffects();
   const rows = [["freeze", POWERUPS.FREEZE], ["boost", POWERUPS.BOOST], ["shield", POWERUPS.SHIELD], ["solarwind", POWERUPS.SOLARWIND]].filter(([k]) => active[k] > 0);
   let ex = 16;
   for (const [key, cfg] of rows) {
     const label = `${cfg.label} ${active[key].toFixed(1)}s`;
-    const t = drawText(label, ex, 44, { size: 12, color: cfg.color });
+    const t = drawText(label, ex, HUD.fxY, { size: HUD.smallSize, color: cfg.color });
     ex += t.width + 16;
   }
+}
+
+// The on-screen SLOW hold button (mobile only) — lives in the bottom control
+// strip, drawn outside the bloom so it reads as UI. Pressed = brighter + filled.
+function drawSlowButton(held) {
+  if (!MOBILE) return;
+  const b = TOUCH.slowBtn;
+  const col = SHIP_TRAIL.colorSlow;
+  uiGfx.circle(b.x, b.y, b.r).fill({ color: "#06121f", alpha: held ? 0.9 : 0.6 })
+    .circle(b.x, b.y, b.r).stroke({ width: held ? 3 : 2, color: col, alpha: held ? 1 : 0.6 });
+  if (held) uiGfx.circle(b.x, b.y, b.r * 0.75).fill({ color: col, alpha: 0.25 });
+  drawText("SLOW", b.x, b.y - 8, { size: 14, color: held ? "#ffffff" : col, weight: "700", align: "center" });
+  drawText("×2", b.x, b.y + 11, { size: 10, color: held ? "#ffffff" : col, weight: "600", align: "center", alpha: 0.8 });
 }
 
 function drawPopups(popups) {
@@ -1449,32 +1478,38 @@ function drawReward(r) {
 function drawTitle() {
   centerText("COSMIC CUT", CY - 40, 72, COLORS.frontier);
   centerText("carve the cosmos", CY + 18, 22, COLORS.hud, 1, "500");
-  centerText("press any key", CY + 86, 20, COLORS.hudAccent, 0.55 + 0.45 * Math.abs(Math.sin(now() / 600)), "600");
-  centerText("M  mute     ·     N  music", HEIGHT - 48, 15, COLORS.locked, 1, "500");
+  centerText(MOBILE ? "tap to start" : "press any key", CY + 86, 20, COLORS.hudAccent, 0.55 + 0.45 * Math.abs(Math.sin(now() / 600)), "600");
+  if (!MOBILE) centerText("M  mute     ·     N  music", HEIGHT - 48, 15, COLORS.locked, 1, "500");
 }
 
 function drawMenu(menuSel) {
-  centerText("COSMIC CUT", 140, 56, COLORS.frontier);
-  if (game.highScore > 0) centerText(`HI  ${fmt(game.highScore)}`, 192, 22, COLORS.hudAccent, 1, "700");
-  centerText("select a starting zone", 234, 20, COLORS.hud, 1, "500");
-  const n = zoneCount, gap = 110, startX = WIDTH / 2 - ((n - 1) * gap) / 2, y = HEIGHT / 2 + 20;
+  centerText("COSMIC CUT", HEIGHT * 0.2, 56, COLORS.frontier);
+  if (game.highScore > 0) centerText(`HI  ${fmt(game.highScore)}`, HEIGHT * 0.28, 22, COLORS.hudAccent, 1, "700");
+  centerText("select a starting zone", HEIGHT * 0.345, 20, COLORS.hud, 1, "500");
+  // Chip spacing scales to the canvas so all zones fit a 440-wide portrait screen.
+  const n = zoneCount;
+  const gap = Math.min(110, (WIDTH - 64) / Math.max(1, n - 1));
+  const half = Math.min(40, gap * 0.42), chipTxt = Math.min(30, gap * 0.36);
+  const startX = WIDTH / 2 - ((n - 1) * gap) / 2, y = HEIGHT / 2 + 20;
   for (let z = 1; z <= n; z++) {
     const x = startX + (z - 1) * gap;
     const locked = z > game.unlockedZone, selected = z === menuSel;
-    G.overlay.rect(x - 40, y - 40, 80, 80).stroke({ width: selected ? 3 : 1.5, color: locked ? COLORS.locked : selected ? COLORS.hudAccent : COLORS.arena });
-    drawText(String(z), x, y - 6, { size: 30, color: locked ? COLORS.locked : selected ? COLORS.hudAccent : COLORS.frontier, weight: "700", align: "center" });
-    drawText(locked ? "LOCKED" : `${z}-1`, x, y + 28, { size: 13, color: locked ? COLORS.locked : COLORS.hud, weight: "500", align: "center" });
+    G.overlay.rect(x - half, y - half, half * 2, half * 2).stroke({ width: selected ? 3 : 1.5, color: locked ? COLORS.locked : selected ? COLORS.hudAccent : COLORS.arena });
+    drawText(String(z), x, y - 6, { size: chipTxt, color: locked ? COLORS.locked : selected ? COLORS.hudAccent : COLORS.frontier, weight: "700", align: "center" });
+    drawText(locked ? "LOCKED" : `${z}-1`, x, y + half * 0.7, { size: Math.min(13, half * 0.34), color: locked ? COLORS.locked : COLORS.hud, weight: "500", align: "center" });
   }
-  centerText("← →  select        ENTER  start", HEIGHT - 78, 18, COLORS.hud, 1, "500");
-  centerText("M  mute     ·     N  music", HEIGHT - 48, 15, COLORS.locked, 1, "500");
+  centerText(MOBILE ? "swipe ← →  select      tap  start" : "← →  select        ENTER  start", HEIGHT - 78, 18, COLORS.hud, 1, "500");
+  if (!MOBILE) centerText("M  mute     ·     N  music", HEIGHT - 48, 15, COLORS.locked, 1, "500");
 }
 
 function drawIntro() {
   const L = game.currentLevel();
   centerText(`ZONE ${L.label}`, CY - 30, 52, theme().accent || theme().frontier);
   centerText(L.boss ? `BOSS — CLAIM ${L.target}%` : `CLAIM ${L.target}%`, CY + 24, 26, COLORS.hudAccent, 1, "600");
-  centerText("press a direction to begin", CY + 72, 17, COLORS.hud, 1, "500");
-  centerText("hold SPACE while cutting for a SLOW DRAW — double points, dark glass", CY + 104, 14, COLORS.locked, 1, "500");
+  centerText(MOBILE ? "swipe to begin" : "press a direction to begin", CY + 72, 17, COLORS.hud, 1, "500");
+  centerText(MOBILE ? "hold SLOW (or a second finger) while cutting — double points"
+                    : "hold SPACE while cutting for a SLOW DRAW — double points, dark glass",
+    CY + 104, 14, COLORS.locked, 1, "500");
 }
 
 let deathSpawned = false; // one-shot latch: spark eruption fires on the first dead frame
@@ -1546,7 +1581,7 @@ function drawPaused() {
 // --- The frame -------------------------------------------------------------
 export function render(view = {}) {
   if (!app) return;
-  const { transT = 0, menuSel = 1, popups = [], reward = null, deathPoint = null, scorePulseT = 99, danger = 0, beat = 0, paused = false } = view;
+  const { transT = 0, menuSel = 1, popups = [], reward = null, deathPoint = null, scorePulseT = 99, danger = 0, beat = 0, paused = false, slowBtn = false } = view;
 
   // Pixi display objects persist between frames, so wipe every layer up front
   // (and reset any shake offset) — otherwise the previous state's scene lingers
@@ -1609,6 +1644,7 @@ export function render(view = {}) {
   drawPopups(popups);
   drawReward(reward);
   drawHUD(scorePulseT);
+  drawSlowButton(slowBtn); // mobile-only touch UI in the bottom control strip
 
   if (game.state === "intro") drawIntro();
   else if (game.state === "dead") drawDeathFlash(deathPoint, transT);

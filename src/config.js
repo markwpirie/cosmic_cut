@@ -2,17 +2,29 @@
 // Tunable constants: the "numbers" of the game. No state, no DOM. Tweak feel
 // here (grid resolution, speed, palette) without touching the logic.
 
-export const WIDTH = 800;
-export const HEIGHT = 680; // reclaimed the page's title/tagline strip for play area
+// Device branch — decided ONCE at game start (per design: no runtime switching).
+// A coarse-pointer device with a phone-sized screen gets the PORTRAIT layout:
+// portrait canvas + play-field, roomier HUD strip up top, and a bottom control
+// strip for the touch UI (SLOW button). Desktop/iPad keep the classic landscape
+// arena. Everything downstream (grid, marker, enemies, renderers) derives from
+// these numbers, so the branch lives here and nowhere else. Guarded so headless
+// imports (tests, tools) fall back to desktop.
+export const MOBILE =
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(pointer: coarse)").matches &&
+  Math.min(window.screen?.width ?? 9999, window.screen?.height ?? 9999) <= 500;
+
+export const WIDTH = MOBILE ? 440 : 800;
+export const HEIGHT = MOBILE ? 876 : 680;
 export const MARGIN = 40;
 
-// The play field rectangle, inset within the canvas.
-export const field = {
-  x: MARGIN,
-  y: MARGIN,
-  w: WIDTH - MARGIN * 2,  // 720
-  h: HEIGHT - MARGIN * 2, // 600
-};
+// The play field rectangle, inset within the canvas. Mobile: 64px top strip for
+// the HUD, 100px bottom strip for touch controls; field is 400×712 → 50×89 cells.
+// Desktop: the classic 40px ring; field is 720×600 → 90×75 cells.
+export const field = MOBILE
+  ? { x: 20, y: 64, w: 400, h: 712 }
+  : { x: MARGIN, y: MARGIN, w: WIDTH - MARGIN * 2, h: HEIGHT - MARGIN * 2 };
 
 // Grid of cells over the field. CELL must divide field.w and field.h evenly.
 export const CELL = 8;
@@ -229,14 +241,35 @@ export const VIGNETTE = {
 // Art pass — HUD (Pixi-only). Sci-fi data-viz top bar: Orbitron face (falls back to
 // system-ui offline), bracket-framed zone label, an eased claim-progress bar with a
 // target tick, mini ship-glyph lives, score underline. All sizes/colours here.
+// Device-branched: mobile gets a TWO-ROW layout with a big readable score
+// (row 1: ZONE · SCORE, row 2: claim bar · % · lives) inside the 64px top strip.
 export const HUD = {
   font: '"Orbitron", system-ui, sans-serif',
-  barX: 150, barY: 16, barW: 180, barH: 8, // claim-progress bar (rounded track)
   trackColor: "#123340",
   fillColor: "#19e6ff",
   tickColor: "#ffffff",
   lineAlpha: 0.15,      // 1px separator under the whole top bar
   ease: 0.12,           // per-frame easing of the displayed % toward the real %
+  ...(MOBILE
+    ? {
+        textSize: 16, scoreSize: 22, smallSize: 13,
+        barX: 16, barY: 42, barW: 190, barH: 10,   // row 2, left
+        sepY: 58,                                  // hairline separator
+        fxY: 66,                                   // power-up timers (top of field edge)
+      }
+    : {
+        textSize: 15, scoreSize: 15, smallSize: 12,
+        barX: 150, barY: 16, barW: 180, barH: 8,
+        sepY: 38,
+        fxY: 44,
+      }),
+};
+
+// Touch UI (mobile only). The SLOW button sits in the bottom control strip —
+// hold it for a SLOW DRAW (same as a second finger / SPACE). `hitR` is the
+// generous touch radius; `r` is the drawn radius.
+export const TOUCH = {
+  slowBtn: { x: WIDTH - 64, y: HEIGHT - 52, r: 34, hitR: 54 },
 };
 
 // Art pass — player-death IMPACT (Pixi-only). The hit point erupts: one-shot spark
@@ -328,7 +361,11 @@ export const QIX = {
   endpointSpeed:     95,  // base px/sec the endpoints sweep within the box
   surgeSpeedMult:   2.4,  // endpoint speed multiplier at full surge
   spanBase:          26,  // typical half-length (compact, twisty)
-  spanMax:          250,  // half-length at full surge (≈ stick spanning 50% screen)
+  // Half-length at full surge (≈ stick spanning ~50% of the field's short side).
+  // Derived, not literal: on the portrait mobile field (400 wide) the old 250
+  // would exceed the wall-bounce margin and pin/jitter the Qix (see TODO note).
+  // Desktop: min(720,600)·0.42 ≈ 252 — same feel as the old 250.
+  spanMax: Math.round(Math.min(field.w, field.h) * 0.42),
   surgeIntervalMin:   3,  // min seconds between surges
   surgeIntervalMax:   7,  // max seconds between surges
   surgeHold:        0.6,  // seconds a surge stays expanded before settling

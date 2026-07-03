@@ -31,6 +31,10 @@ body {
   width: 100%;
   overscroll-behavior: none;
   touch-action: none;
+  /* Full screen while avoiding notches: keep the canvas out of the unsafe areas
+     (viewport-fit=cover is set in the meta, so these envs are live on iPhone). */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+           env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 main {
@@ -56,15 +60,6 @@ canvas {
   user-select: none;
 }
 
-/* Contain-fit scaling at EVERY screen size. Pixi's autoDensity writes INLINE
-   style.width/height (800×680px) on the canvas, which fought the responsive CSS
-   (portrait stretched tall; landscape iPhone showed 800×390 — badly squashed).
-   !important beats the inline style; the min() picks the biggest undistorted fit:
-   viewport width, or the width the viewport HEIGHT allows, capped at the native
-   800px so desktop stays pixel-crisp. dvh tracks the iOS URL bar (vh fallback). */
-canvas {
-  width: min(100vw, calc(100vh * (800 / 680)), 800px) !important;
-  width: min(100vw, calc(100dvh * (800 / 680)), 800px) !important;
-  height: auto !important;
-  aspect-ratio: 800 / 680;
-}
+/* Display sizing note: the contain-fit rule lives in main.js as an INLINE style
+   (it must beat Pixi autoDensity's own inline style, and the aspect ratio is now
+   device-branched — portrait canvas on mobile — so CSS can't hardcode it). */

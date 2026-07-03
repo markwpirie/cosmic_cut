@@ -774,12 +774,16 @@ function drawTitle(ctx) {
 }
 
 function drawMenu(ctx, menuSel) {
-  centerText(ctx, "COSMIC CUT", 140, "700 56px system-ui, sans-serif", COLORS.frontier);
-  if (game.highScore > 0) centerText(ctx, `HI  ${fmt(game.highScore)}`, 192, "700 22px system-ui, sans-serif", COLORS.hudAccent);
-  centerText(ctx, "select a starting zone", 234, "500 20px system-ui, sans-serif", COLORS.hud);
+  // Positions/gap derive from the canvas so the portrait mobile layout fits too
+  // (mirrors render-pixi.drawMenu — the Pixi renderer is the mobile target, this
+  // keeps the fallback playable).
+  centerText(ctx, "COSMIC CUT", HEIGHT * 0.2, "700 56px system-ui, sans-serif", COLORS.frontier);
+  if (game.highScore > 0) centerText(ctx, `HI  ${fmt(game.highScore)}`, HEIGHT * 0.28, "700 22px system-ui, sans-serif", COLORS.hudAccent);
+  centerText(ctx, "select a starting zone", HEIGHT * 0.345, "500 20px system-ui, sans-serif", COLORS.hud);
 
   const n = zoneCount;
-  const gap = 110;
+  const gap = Math.min(110, (WIDTH - 64) / Math.max(1, n - 1));
+  const half = Math.min(40, gap * 0.42);
   const startX = WIDTH / 2 - ((n - 1) * gap) / 2;
   const y = HEIGHT / 2 + 20;
   for (let z = 1; z <= n; z++) {
@@ -793,7 +797,7 @@ function drawMenu(ctx, menuSel) {
     ctx.lineWidth = selected ? 3 : 1.5;
     ctx.strokeStyle = locked ? COLORS.locked : selected ? COLORS.hudAccent : COLORS.arena;
     if (selected && !locked) { ctx.shadowColor = COLORS.hudAccent; ctx.shadowBlur = 16; }
-    ctx.strokeRect(x - 40, y - 40, 80, 80);
+    ctx.strokeRect(x - half, y - half, half * 2, half * 2);
     ctx.shadowBlur = 0;
     ctx.fillStyle = locked ? COLORS.locked : selected ? COLORS.hudAccent : COLORS.frontier;
     ctx.font = "700 30px system-ui, sans-serif";
