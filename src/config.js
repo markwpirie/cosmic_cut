@@ -97,6 +97,14 @@ export const THEMES = [
 // (perimeter, trail, enemies, stars, marker) glow; the dark void/glass stays dark
 // thanks to the brightness `threshold`. Applied to the world layers only, so HUD
 // text stays crisp. Mark tunes these by eye — all live knobs in one place.
+// Mobile perf: bloom is the single biggest GPU cost (a full-screen blur pass,
+// `quality` times, at `resolution`× the device pixel ratio) and the two
+// DisplacementFilters (NEBULA.warp, GLASS.refraction below) each add a further
+// full-screen sample pass. Phones burn battery on all three every frame with no
+// visible benefit over a lighter setting on a small screen — so mobile gets bloom
+// kept (it's the game's signature look) but cheaper: fewer blur passes, capped
+// resolution instead of full DPR, and the two displacement filters OFF entirely
+// (their DisplacementFilter objects are simply never constructed — see render-pixi.js).
 export const BLOOM = {
   enabled: true,
   threshold: 0.55,   // 0..1 — only pixels brighter than this bloom (raise = less glow)
@@ -105,10 +113,10 @@ export const BLOOM = {
   // --- smoothness / anti-pixelation (the "glossy not blocky" knobs) ---
   blur: 8,          // glow SPREAD radius. Low values keep the hard 8px cell edges →
                      //   blocky halos; raise it to melt them into a soft glossy haze.
-  quality: 5,       // # of blur passes. Too few = visible stepping/banding. Higher = smoother (costlier).
+  quality: MOBILE ? 3 : 5,  // # of blur passes. Too few = visible stepping/banding. Higher = smoother (costlier).
   pixelSize: 0.5,      // Kawase-blur sample spacing. 1 = smooth; >1 = deliberately retro/blocky; <1 = supersampled (smoothest, costliest).
-  resolution: 0,     // bloom render resolution. 0 = match device pixel ratio (crisp on retina);
-                     //   set 2+ to force a sharper-than-screen bloom buffer (less pixelated upscale).
+  resolution: MOBILE ? 1 : 0, // bloom render resolution. 0 = match device pixel ratio (crisp on retina,
+                     //   but 2-3x the pixels on a Retina phone — expensive); mobile pins it to 1.
 };
 
 // Phase 9 — GLASS shimmer (Pixi-only). The claimed-glass reflection is two additive,
@@ -122,16 +130,19 @@ export const GLASS = {
   speed: 14,           // diagonal scroll speed (px/sec) of the near layer
   scaleA: 1.0,         // near layer tile scale
   scaleB: 1.7,         // far/parallax layer tile scale (bigger, slower → depth)
-  refraction: 34,      // px the nebula BEHIND the glass is displaced (0 = off) — the
-                       //   "looking through glass" bend. Higher = thicker/wavier glass.
+  // px the nebula BEHIND the glass is displaced (0 = off, and skips building the
+  // DisplacementFilter entirely) — the "looking through glass" bend. Higher =
+  // thicker/wavier glass. Off on mobile: a whole extra full-screen filter pass.
+  refraction: MOBILE ? 0 : 34,
 };
 
 // Phase 9 — NEBULA smoke-warp (Pixi-only). A DisplacementFilter driven by a slowly
 // scrolling noise map churns the baked nebula so it curls like volumetric smoke
 // (local turbulence, not just a sliding image). `warp` = displacement strength in px
-// (0 = off, static drift only); `evolve` scales how fast it churns.
+// (0 = off, static drift only, and skips building the DisplacementFilter/noise bake
+// entirely — mobile's other big filter-pass saving); `evolve` scales how fast it churns.
 export const NEBULA = {
-  warp: 40,
+  warp: MOBILE ? 0 : 40,
   evolve: 1,
   // Slow whole-nebula motion so the gas clouds aren't pinned to fixed screen spots:
   // an oversized sprite (scale) drifts in a lissajous (drift px) and gently rocks
@@ -194,8 +205,10 @@ export const SHIP_VIS = {
 // Art pass — renderer-local AMBIENT particles (Pixi-only). Continuous, presentation-
 // only emission (thruster embers, enemy wakes, sparx sparks, dust motes) lives in
 // render-pixi.js, NOT fx.js — fx stays the gameplay-event system main.js talks to.
-// `max` is a hard cap; when full the oldest die first (perf fallback knob #1).
-export const AMBIENT = { max: 500 };
+// `max` is a hard cap; when full the oldest die first (perf fallback knob #1). Each
+// "glow" particle draws 3 stacked circles (halo/body/highlight), so 500 of them is
+// up to 1500 fill ops/frame — halved on mobile where GPU headroom is much tighter.
+export const AMBIENT = { max: MOBILE ? 250 : 500 };
 
 // Art pass — ENERGY enemies (Pixi-only). Enemies read as beings of light: pulsing
 // halo cores, drifting particle wakes, spark dribbles. Rates are per second.

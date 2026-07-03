@@ -4,7 +4,7 @@
 // start menu, a level intro banner, the play field, the level-complete wipe, and
 // the game-over / campaign-complete overlays.
 
-import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, AUDIO, POWERUPS, QIX, BLOB_POLY, SPARX, MARKER, nodeX, nodeY } from "./config.js";
+import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, AUDIO, POWERUPS, QIX, BLOB_POLY, SPARX, MARKER, MOBILE, nodeX, nodeY } from "./config.js";
 import * as powerups from "./powerups.js";
 import { grid, slowFill, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
 import { marker, mode, dir, trail, slowActive } from "./marker.js";
@@ -781,9 +781,12 @@ function drawMenu(ctx, menuSel) {
   if (game.highScore > 0) centerText(ctx, `HI  ${fmt(game.highScore)}`, HEIGHT * 0.28, "700 22px system-ui, sans-serif", COLORS.hudAccent);
   centerText(ctx, "select a starting zone", HEIGHT * 0.345, "500 20px system-ui, sans-serif", COLORS.hud);
 
+  // half fixed first, gap derived from the leftover span — see render-pixi.js's
+  // drawMenu for why (the old gap-derives-half formula clipped chips at the edges).
   const n = zoneCount;
-  const gap = Math.min(110, (WIDTH - 64) / Math.max(1, n - 1));
-  const half = Math.min(40, gap * 0.42);
+  const EDGE_PAD = 16;
+  const half = MOBILE ? 32 : 40;
+  const gap = Math.min(110, (WIDTH - 2 * EDGE_PAD - 2 * half) / Math.max(1, n - 1));
   const startX = WIDTH / 2 - ((n - 1) * gap) / 2;
   const y = HEIGHT / 2 + 20;
   for (let z = 1; z <= n; z++) {

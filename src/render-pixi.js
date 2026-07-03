@@ -1486,10 +1486,15 @@ function drawMenu(menuSel) {
   centerText("COSMIC CUT", HEIGHT * 0.2, 56, COLORS.frontier);
   if (game.highScore > 0) centerText(`HI  ${fmt(game.highScore)}`, HEIGHT * 0.28, 22, COLORS.hudAccent, 1, "700");
   centerText("select a starting zone", HEIGHT * 0.345, 20, COLORS.hud, 1, "500");
-  // Chip spacing scales to the canvas so all zones fit a 440-wide portrait screen.
+  // Chip spacing scales to the canvas so all zones fit on-screen. `half` is fixed
+  // FIRST (a sane touch-sized chip), then `gap` is derived from the span actually
+  // left over after reserving `half` + EDGE_PAD on both ends — so the outermost
+  // chips can never spill off the canvas edge (the old formula derived half FROM
+  // gap, which left no such guarantee and clipped ~7.5px off both edges on mobile).
   const n = zoneCount;
-  const gap = Math.min(110, (WIDTH - 64) / Math.max(1, n - 1));
-  const half = Math.min(40, gap * 0.42), chipTxt = Math.min(30, gap * 0.36);
+  const EDGE_PAD = 16;
+  const half = MOBILE ? 32 : 40, chipTxt = Math.min(30, half * 0.75);
+  const gap = Math.min(110, (WIDTH - 2 * EDGE_PAD - 2 * half) / Math.max(1, n - 1));
   const startX = WIDTH / 2 - ((n - 1) * gap) / 2, y = HEIGHT / 2 + 20;
   for (let z = 1; z <= n; z++) {
     const x = startX + (z - 1) * gap;
