@@ -127,6 +127,29 @@ function onEnter(s) {
   // "campaigncomplete" keeps whatever's already playing.
 }
 
+// Try to fire the ZOOM dash in direction (dx,dy) while aiming — shared by both
+// the keyboard handler below and touch swipes (setTouchDir), since aiming a
+// dash from a swipe is exactly the same choice as an arrow key: only the
+// keyboard path drove this before, so touch/swipe players could never fire a
+// dash at all (the arrows would show and nothing they did would work).
+function attemptZoomDash(dx, dy) {
+  if (startZoomDash(dx, dy)) {
+    // Dash committed on the marker — leave aim mode and let it rip. If the chosen
+    // heading can't start a cut (e.g. pressing along the wall), startZoomDash
+    // returns false and we stay aiming so the player can pick another direction.
+    powerups.endAiming();
+    audio.powerupPickup();
+    popups.push({ text: "ZOOM!", x: marker.x, y: marker.y - 20, t: 0 });
+  } else {
+    // Rejected (e.g. picked up ZOOM while RIDING: only the one heading that leads
+    // into open field can ever dash from there — the other 3 are always invalid).
+    // Without feedback this reads as a total softlock; a quick reject cue makes it
+    // clear the input landed and another direction is needed.
+    audio.ui();
+    fx.addShake(3);
+  }
+}
+
 // Menu/intro/restart input, layered over control.js's own key listener.
 window.addEventListener("keydown", (e) => {
   // The very first key wakes the audio context (browsers require a gesture) and
@@ -174,22 +197,7 @@ window.addEventListener("keydown", (e) => {
       ArrowRight: {dx:1,dy:0}, d: {dx:1,dy:0}, D: {dx:1,dy:0},
     };
     const d = zoomDirs[e.key];
-    if (d && startZoomDash(d.dx, d.dy)) {
-      // Dash committed on the marker — leave aim mode and let it rip. If the chosen
-      // heading can't start a cut (e.g. pressing along the wall), startZoomDash
-      // returns false and we stay aiming so the player can pick another direction.
-      powerups.endAiming();
-      audio.powerupPickup();
-      popups.push({ text: "ZOOM!", x: marker.x, y: marker.y - 20, t: 0 });
-    } else if (d) {
-      // A real direction key that startZoomDash rejected (e.g. picked up ZOOM while
-      // RIDING: only the one heading that leads into open field can ever dash from
-      // there — the other 3 are always invalid). Without feedback this reads as a
-      // total softlock ("arrows show, nothing happens"); a quick reject cue makes it
-      // clear the input landed and another direction is needed.
-      audio.ui();
-      fx.addShake(3);
-    }
+    if (d) attemptZoomDash(d.dx, d.dy);
     return; // swallow all keys (including non-directional) during aiming
   }
 
@@ -220,6 +228,7 @@ window.addEventListener("keydown", (e) => {
 // now). A SECOND finger = slow draw (SPACE). Taps drive the menus. Keyboard still
 // works alongside. Built on control.press/release/setSlow so it reuses the intent model.
 const SYNTH = { up: "ArrowUp", down: "ArrowDown", left: "ArrowLeft", right: "ArrowRight" };
+const DIR_VEC = { up: {dx:0,dy:-1}, down: {dx:0,dy:1}, left: {dx:-1,dy:0}, right: {dx:1,dy:0} };
 let touchId = null, touchAnchor = null, touchDir = null;
 let touchMoved = false;      // did the steering touch leave the dead-zone? (tap vs swipe)
 let anchorState = null;      // game.state when the steering touch landed
@@ -249,6 +258,15 @@ function touchDominant(dx, dy) {
   return dy > 0 ? "down" : "up";
 }
 function setTouchDir(name) {
+  // Aiming a ZOOM dash: a swipe is the SAME direction choice an arrow key makes
+  // (attemptZoomDash, shared with the keyboard handler) — never a movement intent.
+  // Without this, touch/swipe players could never fire a dash at all: the arrows
+  // would show and swiping did nothing (setTouchDir only ever called
+  // control.press(), which the aiming code path never looked at).
+  if (powerups.isAiming()) {
+    if (name) { const v = DIR_VEC[name]; attemptZoomDash(v.dx, v.dy); }
+    return;
+  }
   // On the zone-select menu a swipe moves the selection (mirrors ← → keys);
   // it never feeds movement intents there.
   if (game.state === "menu") {
@@ -400,20 +418,25 @@ function loop(now) {
     enemy.update(dt, marker.x, marker.y);
     sparx.update(dt, marker, trail);
     const gained = grid.percent - prevPercent;
-    const blobKills = prevCount - enemy.blobs.length - dashKilled.length; // claim SPLIT kills only
+    // Only BLOB kills are a "SPLIT" — the label + the permanent ×2 level multiplier
+    // (game.scoreCut's `kills` param) are meant for trapping a primary enemy in a
+    // real claim, not a Sparx wandering into a cut. Sparx kills still score points
+    // and explode, just via their own flat award below (mirrors how ZOOM kills are
+    // scored directly rather than through scoreCut).
+    const blobKills = prevCount - enemy.blobs.length - dashKilled.length;
     // sparx.totalKilled diff, NOT a sparxList.length delta — an enclosed Sparx
     // respawns immediately (same kind, opposite side), which would mask a plain
     // count comparison.
     const sparxKillsNow = sparx.totalKilled - prevSparxKillTotal;
-    const kills = blobKills + sparxKillsNow; // total SPLITs, for scoring/multiplier
+    const anyKilled = blobKills > 0 || sparxKillsNow > 0;
 
     // A claim just landed → score it, pop-up, sound + particles + shake.
     if (gained >= POPUP_MIN_PCT) {
       const a = Math.atan2(FCY - marker.y, FCX - marker.x);
       popups.push({ text: `+${Math.round(gained)}%`, x: marker.x + Math.cos(a) * 34, y: marker.y + Math.sin(a) * 34, t: 0 });
     }
-    if (gained >= 0.5 || kills > 0) {
-      const res = game.scoreCut(gained, lastCutLength, kills, lastCutSlow);
+    if (gained >= 0.5 || blobKills > 0) {
+      const res = game.scoreCut(gained, lastCutLength, blobKills, lastCutSlow);
       if (res.labels.length > 0 || res.total >= REWARD_MIN) reward = { ...res, t: 0 };
       scorePulseT = 0;
       audio.claim();
@@ -422,11 +445,17 @@ function loop(now) {
       fx.burst(marker.x, marker.y, zoneColor(), 12 + Math.round(gained), 150);
       fx.addShake(Math.min(28, 8 + gained * 0.55)); // the satisfying "thud" on a completed cut
     }
-    if (kills > 0) {
+    if (sparxKillsNow > 0) {
+      const sparxPts = Math.round(sparxKillsNow * POINTS.perKill * game.levelMult);
+      game.addScore(sparxPts);
+      popups.push({ text: `SPARX +${sparxPts}`, x: marker.x, y: marker.y - 20, t: 0 });
+      scorePulseT = 0;
+    }
+    if (anyKilled) {
       audio.kill();
       director.kill(); // bright musical stinger layered over the music
       // Each trapped blob/Sparx detonates where it was caught, in its own colour.
-      // Gated on each kind's OWN fresh count (not just `kills > 0`) — lastKilled
+      // Gated on each kind's OWN fresh count (not just `anyKilled`) — lastKilled
       // only gets repopulated on an actual kill of that kind, so this avoids
       // re-exploding stale positions from an earlier frame's kill of the other kind.
       if (blobKills > 0) {

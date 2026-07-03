@@ -384,13 +384,21 @@ export function threatGap(marker, mode, trail) {
   return min;
 }
 
+// Fires on the EXIT transition (gap recovers back out past the hysteresis band),
+// not on entry — a graze that's still closing in is a doomed approach, not a
+// "miss" yet. Firing only once the threat has genuinely passed means the player
+// never sees "NEAR MISS" moments before getting caught by the same blob.
 export function pollNearMiss(marker, mode, trail, band = 14) {
   if (mode !== "cutting") { for (const b of blobs) b.near = false; return 0; }
   let n = 0;
   for (const b of blobs) {
     const gap = blobGap(b, marker, trail);
-    if (gap < band && gap > 2) { if (!b.near) { n++; b.near = true; } }
-    else if (gap > band + 8) b.near = false;
+    if (gap < band && gap > 2) {
+      b.near = true; // entered the danger band — wait and see before crediting it
+    } else if (b.near && gap > band + 8) {
+      b.near = false; // recovered clear of the band without being caught — safe now
+      n++;
+    }
   }
   return n;
 }

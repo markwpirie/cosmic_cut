@@ -280,9 +280,11 @@ export const HUD = {
 
 // Touch UI (mobile only). The SLOW button sits in the bottom control strip —
 // hold it for a SLOW DRAW (same as a second finger / SPACE). `hitR` is the
-// generous touch radius; `r` is the drawn radius.
+// generous touch radius; `r` is the drawn radius. Left side: most players are
+// right-handed and steer (swipe) with their right thumb, so the modifier button
+// sits under the LEFT thumb instead of competing with the steering hand.
 export const TOUCH = {
-  slowBtn: { x: WIDTH - 64, y: HEIGHT - 52, r: 34, hitR: 54 },
+  slowBtn: { x: 64, y: HEIGHT - 52, r: 34, hitR: 54 },
 };
 
 // Art pass — player-death IMPACT (Pixi-only). The hit point erupts: one-shot spark
