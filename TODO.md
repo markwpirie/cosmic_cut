@@ -4,6 +4,27 @@ Running task list. Roadmap phases live in [GAME_DESIGN.md](GAME_DESIGN.md) §11;
 as-built decisions in §14/§16. Tick items off as they land.
 
 ## Done recently
+- [x] **Post-mobile-playtest follow-up (2026-07-03), confirmed fixed on Mark's phone:**
+      - **ZOOM really was stuck on touch** — the previous fix only covered keyboard.
+        `setTouchDir()` never called into the aiming logic at all, so a swipe while
+        aiming did *nothing*, on any direction, always. Extracted a shared
+        `attemptZoomDash(dx,dy)` used by both the keyboard handler and touch swipes
+        (which now check `isAiming()` first and route the swipe direction through it
+        instead of treating it as a movement intent).
+      - **Sparx kills no longer trigger a SPLIT.** `game.scoreCut()`'s `kills` param
+        drove both the "SPLIT" label and a **permanent ×2 level multiplier** — right
+        for trapping a Blob, too big a reward for a Sparx wandering into a claim.
+        `scoreCut` now only ever receives Blob kills; Sparx kills score their own flat
+        points (`POINTS.perKill × levelMult`, same rate as a Blob kill) via a direct
+        `game.addScore()` + "SPARX +N" popup, with no lasting multiplier change.
+      - **Near miss no longer fires right before a death.** It was edge-triggered on
+        *entering* the danger band — which just telegraphs a still-closing threat, so
+        the player would see "NEAR MISS" and get caught by the same blob a beat later.
+        Moved to the *exit* transition (`enemy.pollNearMiss`): fires only once the
+        blob has actually recovered back to a safe distance without a hit occurring.
+      - **SLOW button moved to the left** (`config.TOUCH.slowBtn.x`) — most players
+        steer (swipe) with their right thumb, so the modifier button now sits under
+        the left thumb instead of competing with the steering hand.
 - [x] **Post-mobile-playtest bug-fix pass (2026-07-03).** Six issues from the first
       mobile playtest, all verified headless (Playwright + system Chrome — screenshots,
       live module-state probes, and isolated logic tests, not just static reading):
@@ -227,16 +248,15 @@ Open decisions (Mark to decide):
       faked the thresholds; the real percent path needs a playthrough).
 
 ## Verify on the boss's return (written blind — needs real-device / in-browser eyes)
-- [ ] **Touch on a real iPhone** — swipe steering feel, two-finger slow, menu taps, no
-      pinch-zoom, canvas fills screen. Tune the 16px dead-zone if needed.
-      *Update (2026-07-02): verified on an EMULATED iPhone 13 (Playwright touch events):
-      taps drive title→menu→intro, swipes steer + cut, no JS errors. Fixed two real
-      bugs — (1) Pixi's `autoDensity` inline style distorted the arena (landscape was
-      800×390!); now a global contain-fit rule in `styles.css` (`min(100vw, 100dvh·ratio,
-      800px)` + `aspect-ratio`) gives the biggest undistorted arena at every size.
-      (2) Vertical swipes scrolled the page on iOS — page now fully locked
-      (`position:fixed` body + `overflow:hidden` + document-level non-passive
-      `touchmove` preventDefault in `main.js`). Real-device feel check still wanted.*
+- [x] **Touch on a real iPhone** — swipe steering, level-select fits, ZOOM aiming,
+      Solar Wind, Sparx kill/respawn, near-miss timing, SLOW button placement all
+      **confirmed working by Mark on his own phone (2026-07-03)**. Emulated-device
+      history: verified on an EMULATED iPhone 13 first (2026-07-02, Playwright touch
+      events), which caught two real bugs — Pixi's `autoDensity` inline style
+      distorting the arena (fixed via a contain-fit rule) and vertical swipes
+      scrolling the page on iOS (fixed via a full page lock). The real-device pass
+      then caught what emulation couldn't: touch never reaching ZOOM's aiming logic
+      at all, and the three scoring/UX issues above — all now fixed too.
 - [ ] **Boss at 1-5** (and every X-5) — looms bigger, rainbow + lightning + pulsing core;
       confirm it doesn't jitter (surge span capped for that reason). Tune `config.BOSS`.
 - [ ] **Lightning intensity** — ambient storm cadence (`stormTimer` 5–13s), cut crackle
