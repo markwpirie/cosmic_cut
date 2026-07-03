@@ -458,8 +458,12 @@ export const POWERUPS = {
   iconScale:      3,     // visual + touch size multiplier for pickups
   FREEZE:    { duration: 5, color: "#00d4ff", label: "FREEZE"                        },
   // SOLAR WIND blows every enemy hard against one wall and pins them there for
-  // `duration` seconds, leaving the rest of the board clear to carve.
-  SOLARWIND: { duration: 3.5, color: "#ffaa00", label: "SOLAR WIND", gustMult: 1.6   },
+  // `duration` seconds, leaving the rest of the board clear to carve. Duration
+  // sits between FREEZE (5s) and BOOST (8s) — was 3.5s, felt over before it
+  // registered. streakAlpha/streakWidth/chevronCount are the render-pixi.js
+  // drawSolarWind() visual knobs (was very subtle — thin, low-alpha streaks only).
+  SOLARWIND: { duration: 6.5, color: "#ffaa00", label: "SOLAR WIND", gustMult: 1.6,
+               streakAlpha: 0.34, streakWidth: 3, chevronCount: 5 },
   BOOST:     { duration: 8, color: "#39ff14", label: "BOOST",     speedMult:    1.5  },
   SHIELD:    { duration: 6, color: "#ff80ff", label: "SHIELD"                        },
   // ZOOM is a DASH: pick a direction, then rocket across the field DRAWING A CUT at

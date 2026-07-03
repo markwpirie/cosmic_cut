@@ -1009,9 +1009,12 @@ function drawSolarWind() {
   const g = G.solar; g.clear();
   const sw = powerups.getSolarWind();
   if (!sw) return;
+  const cfg = POWERUPS.SOLARWIND;
   const d = sw.dir, t = now() / 1000;
   const half = Math.hypot(field.w, field.h) / 2;
   const px = -d.y, py = d.x;
+  // Streaks: stronger + wider than the original (was 1.6px/0.14 peak alpha —
+  // barely visible). Same scrolling-band layout, just louder.
   for (let i = 0; i < 30; i++) {
     const b = (i / 30) * 2 - 1 + Math.sin(i * 12.9) * 0.03;
     const a = (((t * 0.55) + i * 0.137) % 1) * 2 - 1;
@@ -1019,7 +1022,21 @@ function drawSolarWind() {
     const y0 = CY + d.y * (a * half) + py * (b * half);
     const fade = 1 - Math.abs(a);
     g.moveTo(x0 - d.x * 26, y0 - d.y * 26).lineTo(x0, y0)
-      .stroke({ width: 1.6, color: POWERUPS.SOLARWIND.color, alpha: 0.14 * fade * (0.6 + 0.4 * Math.sin(t * 5 + i)) });
+      .stroke({ width: cfg.streakWidth, color: cfg.color, alpha: cfg.streakAlpha * fade * (0.6 + 0.4 * Math.sin(t * 5 + i)) });
+  }
+  // Directional chevrons: a row of ">"-shaped marks scrolling WITH the gust so the
+  // heading reads at a glance (the streaks alone don't clearly signal "which way").
+  const chevW = 14, chevH = 22;
+  for (let i = 0; i < cfg.chevronCount; i++) {
+    const b = ((i + 0.5) / cfg.chevronCount) * 2 - 1;
+    const a = (((t * 0.9) + i * 0.31) % 1) * 2 - 1;
+    const cx = CX + d.x * (a * half) + px * (b * half * 0.7);
+    const cy = CY + d.y * (a * half) + py * (b * half * 0.7);
+    const fade = 1 - Math.abs(a);
+    const tipX = cx + d.x * chevH, tipY = cy + d.y * chevH;
+    const backX = cx - d.x * chevH, backY = cy - d.y * chevH;
+    g.moveTo(backX + px * chevW, backY + py * chevW).lineTo(tipX, tipY).lineTo(backX - px * chevW, backY - py * chevW)
+      .stroke({ width: 2.5, color: "#ffffff", alpha: 0.5 * fade });
   }
 }
 
