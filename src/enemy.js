@@ -9,7 +9,7 @@
 // All bouncers reflect off the arena wall and claimed territory. Touching the
 // marker or in-progress cut while cutting is death (main.js owns the consequence).
 
-import { field, CELL, COLS, ROWS, QIX, BOSS, BLOB_POLY, BLOB_TYPES, MARKER, nodeX, nodeY } from "./config.js";
+import { field, CELL, COLS, ROWS, QIX, BOSS, BLOB_POLY, BLOB_TYPES, MARKER, RESPAWN, nodeX, nodeY } from "./config.js";
 import { cellSolid } from "./grid.js";
 import { isFrozen, isShielded } from "./powerups.js";
 
@@ -93,6 +93,8 @@ function makeEnemy(ti, r, c, shape, hunter, boss = false) {
     color: type.color,
     hunter,
     shape,
+    ti,
+    spawnT: 0, // >0 while freshly respawned: visible telegraph, harmless and still
   };
   if (shape === "sheaf") {
     b.boss = boss;
@@ -120,18 +122,28 @@ function makeEnemy(ti, r, c, shape, hunter, boss = false) {
   return b;
 }
 
+// Live poly Blob/Hunter starting count for this level (the sheaf/Qix keeps its own
+// separate "always ≥1 alive" rule, so the 50% floor below applies to poly only).
+export let startCount = 0;
+// Killed poly specs {ti, hunter}, oldest first — the floor-respawn manager
+// (main.js) pops from here via respawnOne() once the live poly count drops
+// below floor. Enemies stay dead otherwise (§6).
+export const deadPool = [];
+
 // Spawn/respawn all enemies for a level.
 //   qix     — BLOB_TYPES indices for sheaf Qix
 //   blobs   — BLOB_TYPES indices for polygon Blobs
 //   hunters — BLOB_TYPES indices for polygon Hunter Blobs (drift toward player)
 export function reset({ qix = [], blobs: polyIdx = [], hunters = [], boss = false } = {}) {
   blobs.length = 0;
+  deadPool.length = 0;
   const specs = [
     // On a boss level the FIRST Qix becomes the boss (big rainbow lightning sheaf).
     ...qix.map((ti, i) => ({ ti, shape: "sheaf", hunter: false, boss: boss && i === 0 })),
     ...polyIdx.map(ti => ({ ti, shape: "poly", hunter: false })),
     ...hunters.map(ti => ({ ti, shape: "poly", hunter: true })),
   ];
+  startCount = polyIdx.length + hunters.length;
   const cells = spawnCells(specs.length);
   specs.forEach((s, i) => {
     const [r, c] = cells[i];
@@ -142,10 +154,13 @@ reset();
 
 // Spawn a single extra sheaf Qix mid-level (used to repopulate the board when the
 // last one is killed via a ZOOM dash or a SPLIT — there should always be a star
-// enemy to carve around). Picks a fresh open cell away from the player.
+// enemy to carve around). Picks a fresh open cell away from the player and
+// telegraphs briefly so it doesn't appear on top of anything.
 export function addSheaf(ti = 0, boss = false) {
   const [r, c] = spawnCells(1)[0];
-  blobs.push(makeEnemy(ti, r, c, "sheaf", false, boss));
+  const b = makeEnemy(ti, r, c, "sheaf", false, boss);
+  b.spawnT = RESPAWN.telegraph;
+  blobs.push(b);
 }
 
 // How many sheaf (Qix) enemies are currently alive.
@@ -153,6 +168,45 @@ export function countSheafs() {
   let n = 0;
   for (const b of blobs) if (b.shape === "sheaf") n++;
   return n;
+}
+
+// How many poly (Blob/Hunter) enemies are currently alive — what the 50% floor
+// compares against startCount.
+export function countPoly() {
+  let n = 0;
+  for (const b of blobs) if (b.shape === "poly") n++;
+  return n;
+}
+
+// Pick a respawn cell near an arena edge, preferring one far from the player.
+function edgeCell(markerCol, markerRow, minDist) {
+  const open = openCells();
+  const band = RESPAWN.edgeBand;
+  const edgeCells = open.filter(([r, c]) => r < band || r >= ROWS - band || c < band || c >= COLS - band);
+  const pool = edgeCells.length ? edgeCells : open;
+  let best = null, bestD2 = -1;
+  for (const [r, c] of pool) {
+    const d2 = (r - markerRow) ** 2 + (c - markerCol) ** 2;
+    if (d2 >= minDist * minDist && d2 > bestD2) { bestD2 = d2; best = [r, c]; }
+  }
+  if (!best) {
+    for (const [r, c] of pool) {
+      const d2 = (r - markerRow) ** 2 + (c - markerCol) ** 2;
+      if (d2 > bestD2) { bestD2 = d2; best = [r, c]; }
+    }
+  }
+  return best || [Math.floor(ROWS / 2), Math.floor(COLS / 2)];
+}
+
+// Respawn ONE dead poly Blob/Hunter (oldest kill first) at an arena edge, away
+// from the player, with a brief telegraph. No-op if nothing is queued.
+export function respawnOne(markerCol, markerRow) {
+  if (!deadPool.length) return;
+  const spec = deadPool.shift();
+  const [r, c] = edgeCell(markerCol, markerRow, RESPAWN.minPlayerDist);
+  const b = makeEnemy(spec.ti, r, c, "poly", spec.hunter, false);
+  b.spawnT = RESPAWN.telegraph;
+  blobs.push(b);
 }
 
 // --- Sheaf body ---
@@ -250,6 +304,7 @@ function solidAt(px, py) {
 export function update(dt, markerX = 0, markerY = 0) {
   if (isFrozen()) return;
   for (const b of blobs) {
+    if (b.spawnT > 0) { b.spawnT = Math.max(0, b.spawnT - dt); b.t += dt; continue; } // telegraphing: visible, held still
     b.t += dt;
     if (b.shape === "sheaf") stepSheaf(b, dt);
     else b.bodyRot = (b.bodyRot + BLOB_POLY.rotateSpeed * dt) % (Math.PI * 2);
@@ -284,6 +339,7 @@ export function removeBlobs(indices) {
     if (!kill.has(i)) continue;
     const b = blobs[i];
     lastKilled.push({ x: b.x, y: b.y, radius: b.radius, color: b.color });
+    if (b.shape === "poly") deadPool.push({ ti: b.ti, hunter: b.hunter });
     blobs.splice(i, 1);
   }
 }
@@ -303,6 +359,7 @@ export function killNear(x0, y0, x1, y1, reach) {
   const killed = [];
   for (let i = blobs.length - 1; i >= 0; i--) {
     const b = blobs[i];
+    if (b.spawnT > 0) continue; // telegraphing enemies are untouchable
     let near;
     if (b.shape === "poly") {
       near = distToSeg(b.x, b.y, x0, y0, x1, y1) < hitRadius(b) + reach;
@@ -310,7 +367,11 @@ export function killNear(x0, y0, x1, y1, reach) {
       const s = liveSeg(b);
       near = segSegDist(s.ax, s.ay, s.bx, s.by, x0, y0, x1, y1) < QIX.lineHitPad + reach;
     }
-    if (near) { killed.push({ x: b.x, y: b.y, radius: b.radius, color: b.color }); blobs.splice(i, 1); }
+    if (near) {
+      killed.push({ x: b.x, y: b.y, radius: b.radius, color: b.color });
+      if (b.shape === "poly") deadPool.push({ ti: b.ti, hunter: b.hunter });
+      blobs.splice(i, 1);
+    }
   }
   return killed;
 }
@@ -380,7 +441,7 @@ function blobGap(b, marker, trail) {
 export function threatGap(marker, mode, trail) {
   if (mode !== "cutting") return Infinity;
   let min = Infinity;
-  for (const b of blobs) min = Math.min(min, blobGap(b, marker, trail));
+  for (const b of blobs) { if (b.spawnT > 0) continue; min = Math.min(min, blobGap(b, marker, trail)); }
   return min;
 }
 
@@ -392,6 +453,7 @@ export function pollNearMiss(marker, mode, trail, band = 14) {
   if (mode !== "cutting") { for (const b of blobs) b.near = false; return 0; }
   let n = 0;
   for (const b of blobs) {
+    if (b.spawnT > 0) continue;
     const gap = blobGap(b, marker, trail);
     if (gap < band && gap > 2) {
       b.near = true; // entered the danger band — wait and see before crediting it
@@ -409,6 +471,7 @@ export function collides(marker, mode, trail) {
   if (mode !== "cutting") return null;
   if (isShielded()) return null;
   for (const b of blobs) {
+    if (b.spawnT > 0) continue; // telegraphing: visible but harmless
     if (b.shape === "poly") {
       const br = hitRadius(b);
       if (Math.hypot(b.x - marker.x, b.y - marker.y) < br + MARKER.radius) return b;

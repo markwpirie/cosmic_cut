@@ -4,7 +4,7 @@
 // cutting. Fast Sparx are faster and can latch onto an exposed cut trail,
 // rocketing along it toward the player mid-cut.
 
-import { SPARX, MARKER, COLS, ROWS, nodeX, nodeY } from "./config.js";
+import { SPARX, MARKER, RESPAWN, COLS, ROWS, nodeX, nodeY } from "./config.js";
 import { rideRank } from "./grid.js";
 import { isFrozen, isShielded } from "./powerups.js";
 
@@ -38,12 +38,21 @@ function makeSparx(col, row, fast) {
     latchIdx: 0,
     // Recent positions for the visual tail
     tail: [],
+    spawnT: 0,           // >0 while freshly respawned: visible telegraph, harmless and still
   };
 }
 
+// Live starting count for this level — what the 50% floor (§6) compares against.
+export let startCount = 0;
+// Killed {fast} specs, oldest first — respawnOne() pops from here once the live
+// count drops below floor. Sparx stay dead otherwise (no more instant 1-for-1).
+export const deadPool = [];
+
 export function reset(normalCount = 0, fastCount = 0) {
   sparxList.length = 0;
+  deadPool.length = 0;
   totalKilled = 0;
+  startCount = normalCount + fastCount;
   let ci = 0;
   const add = (fast) => {
     const { col, row } = CORNERS[ci % CORNERS.length];
@@ -54,15 +63,26 @@ export function reset(normalCount = 0, fastCount = 0) {
   for (let i = 0; i < fastCount; i++) add(true);
 }
 
-// Spawn a replacement Sparx at the arena corner FARTHEST from the player's
-// current lattice position — "opposite side of the grid" (§ enclose-kill).
-export function spawnOpposite(fast, markerCol, markerRow) {
+// Spawn a Sparx at the arena corner FARTHEST from the player's current lattice
+// position — "opposite side of the grid". `telegraph` (seconds) makes it visible
+// but harmless briefly, used by the floor-respawn manager below.
+export function spawnOpposite(fast, markerCol, markerRow, telegraph = 0) {
   let best = CORNERS[0], bestD2 = -1;
   for (const c of CORNERS) {
     const d2 = (c.col - markerCol) ** 2 + (c.row - markerRow) ** 2;
     if (d2 > bestD2) { bestD2 = d2; best = c; }
   }
-  sparxList.push(makeSparx(best.col, best.row, fast));
+  const s = makeSparx(best.col, best.row, fast);
+  s.spawnT = telegraph;
+  sparxList.push(s);
+}
+
+// Respawn ONE dead Sparx (oldest kill first), same kind, opposite the player,
+// with a brief telegraph. No-op if nothing is queued.
+export function respawnOne(markerCol, markerRow) {
+  if (!deadPool.length) return;
+  const { fast } = deadPool.shift();
+  spawnOpposite(fast, markerCol, markerRow, RESPAWN.telegraph);
 }
 
 // --- BFS shortest path on the auto-network ---
@@ -142,6 +162,7 @@ function edgeValid(col, row, dx, dy, trail, canLatch) {
 export function update(dt, marker, trail) {
   if (isFrozen()) return;
   for (const s of sparxList) {
+    if (s.spawnT > 0) { s.spawnT = Math.max(0, s.spawnT - dt); s.t += dt; continue; } // telegraphing: visible, held still
     s.t += dt;
     if (s.latched) {
       updateLatched(s, dt, marker, trail);
@@ -302,6 +323,7 @@ function snapToNearestNode(s) {
 export function collides(marker) {
   if (isShielded()) return null;
   for (const s of sparxList) {
+    if (s.spawnT > 0) continue; // telegraphing: visible but harmless
     if (Math.hypot(s.x - marker.x, s.y - marker.y) < SPARX.radius + MARKER.radius) return s;
   }
   return null;
@@ -320,8 +342,10 @@ export function cells() {
 // Mirrors enemy.js's removeBlobs/lastKilled — marker.js's finishCut() calls this
 // with indices (into the array `cells()` returned) that a claim just enclosed.
 export let lastKilled = [];
-// A kill respawns immediately (spawnOpposite), so sparxList.length alone can't
-// signal "N died this frame" — a running total main.js diffs instead.
+// Killed Sparx now stay dead (§6) — no more instant 1-for-1 respawn. Kills feed
+// `deadPool` for the floor-respawn manager instead. `totalKilled` still tracks a
+// running total (main.js diffs it each frame) since sparxList.length alone can't
+// signal "N died this frame" once respawns are delayed rather than immediate.
 export let totalKilled = 0;
 
 export function removeSparx(indices) {
@@ -333,8 +357,9 @@ export function removeSparx(indices) {
     const s = sparxList[i];
     lastKilled.push({ x: s.x, y: s.y, radius: SPARX.radius, color: s.color });
     killed.push({ fast: s.fast });
+    deadPool.push({ fast: s.fast });
     sparxList.splice(i, 1);
   }
   totalKilled += killed.length;
-  return killed; // so the caller knows fast/normal, to respawn the same kind
+  return killed; // so the caller knows fast/normal, in case they want it directly
 }

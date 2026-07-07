@@ -450,6 +450,19 @@ export const SPARX = {
   trailLen:       12,   // number of recent positions kept for the visual trail
 };
 
+// Enemy floor & respawn rule (§6): killed enemies stay dead. Each family — poly
+// Blobs/Hunters, and Sparx — only tops back up once its LIVE count drops below
+// floorPct of that level's starting count for the family, one at a time, at a
+// delay, appearing with a harmless telegraph window before it's live. The sheaf
+// Qix has its own separate "always ≥1 alive" rule (main.js) — not floor-based.
+export const RESPAWN = {
+  floorPct:      0.5,  // live count floor, as a fraction of the level's starting count
+  delay:         1.5,  // seconds between a family dropping below its floor and a respawn
+  telegraph:     0.9,  // seconds a freshly respawned enemy is visible but harmless
+  edgeBand:        3,  // respawn cell must be within this many cells of an arena edge
+  minPlayerDist:  18,  // (cells) preferred minimum distance from the player on respawn
+};
+
 // Power-up tuning (Phase 6, §8). All durations in seconds; killPoints/distancePoints
 // are ZOOM scoring per enemy killed and per pixel travelled respectively.
 export const POWERUPS = {

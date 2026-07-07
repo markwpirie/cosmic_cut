@@ -4,7 +4,7 @@
 // start menu, a level intro banner, the play field, the level-complete wipe, and
 // the game-over / campaign-complete overlays.
 
-import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, AUDIO, POWERUPS, QIX, BLOB_POLY, SPARX, MARKER, MOBILE, nodeX, nodeY } from "./config.js";
+import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, AUDIO, POWERUPS, QIX, BLOB_POLY, SPARX, MARKER, MOBILE, RESPAWN, nodeX, nodeY } from "./config.js";
 import * as powerups from "./powerups.js";
 import { grid, slowFill, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
 import { marker, mode, dir, trail, slowActive } from "./marker.js";
@@ -430,8 +430,33 @@ function drawPoly(ctx, b) {
   ctx.restore();
 }
 
+// Respawn telegraph: a contracting ring + pulsing dot in the enemy's own colour,
+// standing in for the body while it's freshly respawned (harmless, still — §6).
+function drawSpawning(ctx, x, y, color, radius, spawnT) {
+  const f = 1 - Math.max(0, Math.min(1, spawnT / RESPAWN.telegraph)); // 0 → 1 as it arrives
+  ctx.save();
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 14;
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = 0.5 + 0.4 * Math.sin(f * Math.PI * 6);
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(x, y, radius * (1.8 - 0.8 * f), 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = "#ffffff";
+  ctx.shadowBlur = 10;
+  ctx.beginPath();
+  ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawQix(ctx) {
-  for (const b of blobs) (b.shape === "sheaf" ? drawSheaf : drawPoly)(ctx, b);
+  for (const b of blobs) {
+    if (b.spawnT > 0) { drawSpawning(ctx, b.x, b.y, b.color, boundRadius(b), b.spawnT); continue; }
+    (b.shape === "sheaf" ? drawSheaf : drawPoly)(ctx, b);
+  }
 }
 
 // SOLAR WIND: streaks of light blowing across the field in the gust direction.
@@ -474,6 +499,7 @@ function drawSolarWind(ctx) {
 
 function drawSparx(ctx) {
   for (const s of sparxList) {
+    if (s.spawnT > 0) { drawSpawning(ctx, s.x, s.y, s.color, SPARX.radius, s.spawnT); continue; }
     const col   = s.latched ? SPARX.latchColor : s.color;
     const glow  = s.latched ? 22 : 14;
     const pulse = 0.6 + 0.4 * Math.sin(s.t * 8 + (s.fast ? 1.5 : 0));

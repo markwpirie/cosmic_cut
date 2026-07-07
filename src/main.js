@@ -14,7 +14,7 @@ import { render } from "./render.js";
 import * as audio from "./audio.js";
 import * as director from "./audio-director.js";
 import * as fx from "./fx.js";
-import { TIMING, POINTS, THEMES, POWERUPS, field, WIDTH, HEIGHT, MOBILE, TOUCH } from "./config.js";
+import { TIMING, POINTS, THEMES, POWERUPS, RESPAWN, field, WIDTH, HEIGHT, MOBILE, TOUCH } from "./config.js";
 import * as powerups from "./powerups.js";
 import * as sparx from "./sparx.js";
 
@@ -70,8 +70,13 @@ let danger = 0;        // 0..1, how close a blob is to your exposed trail
 let prevCutting = false; // tracks the cut-tension tone on/off
 let audioStarted = false;
 let paused = false;      // P / ESC freeze during play
-const SHEAF_RESPAWN = 1.5; // seconds before a new Qix appears once the board has none
-let sheafRespawnT = SHEAF_RESPAWN;
+// Respawn timers (§6): the sheaf Qix keeps its own "always ≥1 alive" rule; poly
+// Blobs/Hunters and Sparx each respawn one at a time once below their 50% floor
+// (config.RESPAWN). All three count down independently and reset whenever their
+// family is back at/above its target.
+let sheafRespawnT = RESPAWN.delay;
+let blobRespawnT = RESPAWN.delay;
+let sparxRespawnT = RESPAWN.delay;
 
 function zoneColor() { return THEMES[game.currentLevel().zone - 1].frontier; }
 
@@ -92,6 +97,9 @@ function loadLevel() {
   deathPoint = null;
   deathBlob = null;
   danger = 0;
+  sheafRespawnT = RESPAWN.delay;
+  blobRespawnT = RESPAWN.delay;
+  sparxRespawnT = RESPAWN.delay;
 }
 
 // Lost a life but still alive: forfeit the cut, re-home marker + Blobs, keep the
@@ -108,6 +116,9 @@ function respawn() {
   deathPoint = null;
   deathBlob = null;
   popups = [];
+  sheafRespawnT = RESPAWN.delay;
+  blobRespawnT = RESPAWN.delay;
+  sparxRespawnT = RESPAWN.delay;
 }
 
 // React to entering a new state — the AudioDirector owns which music moment it
@@ -489,16 +500,42 @@ function loop(now) {
 
     // Repopulate the Qix if the board has none left (all killed via ZOOM dash / SPLIT)
     // — there should always be a star enemy to carve around. Short delay so it doesn't
-    // pop in the instant the last one dies.
+    // pop in the instant the last one dies. Separate from (and takes priority over)
+    // the poly floor below — a lone-Qix death must not also trigger a floor respawn.
     const curLv = game.currentLevel();
     if (curLv.qix && curLv.qix.length && enemy.countSheafs() === 0) {
       sheafRespawnT -= dt;
       if (sheafRespawnT <= 0) {
         enemy.addSheaf(curLv.qix[0], curLv.boss);
-        sheafRespawnT = SHEAF_RESPAWN;
+        sheafRespawnT = RESPAWN.delay;
       }
     } else {
-      sheafRespawnT = SHEAF_RESPAWN;
+      sheafRespawnT = RESPAWN.delay;
+    }
+
+    // Poly Blob/Hunter floor (§6): killed enemies stay dead; respawn one at a time,
+    // at a delay, only while the live count is below 50% of the level's start count.
+    const blobFloor = Math.ceil(enemy.startCount * RESPAWN.floorPct);
+    if (enemy.countPoly() < blobFloor) {
+      blobRespawnT -= dt;
+      if (blobRespawnT <= 0) {
+        enemy.respawnOne(marker.col, marker.row);
+        blobRespawnT = RESPAWN.delay;
+      }
+    } else {
+      blobRespawnT = RESPAWN.delay;
+    }
+
+    // Sparx floor (§6): same rule, replacing the old instant 1-for-1 respawn.
+    const sparxFloor = Math.ceil(sparx.startCount * RESPAWN.floorPct);
+    if (sparx.sparxList.length < sparxFloor) {
+      sparxRespawnT -= dt;
+      if (sparxRespawnT <= 0) {
+        sparx.respawnOne(marker.col, marker.row);
+        sparxRespawnT = RESPAWN.delay;
+      }
+    } else {
+      sparxRespawnT = RESPAWN.delay;
     }
 
     // Death checks. The player is invulnerable to enemies while AIMING a ZOOM (frozen)

@@ -9,7 +9,7 @@ import { boostMult } from "./powerups.js";
 import { classifyEdge, rideTypeOf, rideRank, canCut, nodeIsSafe, applyClaim } from "./grid.js";
 import { peekPending, clearPending, currentDesired, slowHeld } from "./control.js";
 import { cells as blobCells, removeBlobs } from "./enemy.js";
-import { cells as sparxCells, removeSparx, spawnOpposite } from "./sparx.js";
+import { cells as sparxCells, removeSparx } from "./sparx.js";
 
 export const marker = {
   col: MARKER.startCol,
@@ -212,11 +212,8 @@ function finishCut() {
   const killedBlobs = killed.filter(i => i < bCells.length);
   const killedSparx = killed.filter(i => i >= bCells.length).map(i => i - bCells.length);
   if (killedBlobs.length) removeBlobs(killedBlobs);
-  if (killedSparx.length) {
-    // Respawn each killed Sparx opposite the player, same kind (fast/normal) —
-    // keeps the level's difficulty/mix intact rather than just thinning it out.
-    for (const { fast } of removeSparx(killedSparx)) spawnOpposite(fast, marker.col, marker.row);
-  }
+  // Killed Sparx stay dead (§6 floor rule, main.js) — no immediate respawn here.
+  if (killedSparx.length) removeSparx(killedSparx);
   trail = [];
   trailSet.clear();
   mode = "riding";

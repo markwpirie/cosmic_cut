@@ -15,7 +15,7 @@
 
 import { Application, Container, Graphics, Sprite, TilingSprite, Texture, Text, Rectangle, DisplacementFilter } from "pixi.js";
 import { AdvancedBloomFilter } from "pixi-filters";
-import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, QIX, BOSS, BLOB_POLY, SPARX, MARKER, BLOOM, CORNERS, GLASS, NEBULA,STARFIELD, SHIP_TRAIL, SHIP_VIS, AMBIENT, ENERGY, IMPACT, GRID_BG, MOTES, VIGNETTE, HUD, MOBILE, TOUCH } from "./config.js";
+import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, QIX, BOSS, BLOB_POLY, SPARX, MARKER, RESPAWN, BLOOM, CORNERS, GLASS, NEBULA,STARFIELD, SHIP_TRAIL, SHIP_VIS, AMBIENT, ENERGY, IMPACT, GRID_BG, MOTES, VIGNETTE, HUD, MOBILE, TOUCH } from "./config.js";
 import * as powerups from "./powerups.js";
 import { grid, slowFill, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
 import { marker, mode, dir, trail, slowActive, zoomDash } from "./marker.js";
@@ -1040,9 +1040,22 @@ function drawSolarWind() {
   }
 }
 
+// Respawn telegraph: a contracting ring + pulsing white dot in the enemy's own
+// colour, standing in for the body while it's freshly respawned (harmless, still,
+// no wake/sparks — §6). Shared by drawEnemies and drawSparx.
+function drawSpawning(g, x, y, color, radius, spawnT) {
+  const f = 1 - Math.max(0, Math.min(1, spawnT / RESPAWN.telegraph)); // 0 → 1 as it arrives
+  const alpha = 0.5 + 0.4 * Math.sin(f * Math.PI * 6);
+  g.circle(x, y, radius * (1.8 - 0.8 * f)).stroke({ width: 2, color, alpha });
+  g.circle(x, y, 2.5).fill({ color: 0xffffff, alpha: 0.85 });
+}
+
 function drawEnemies() {
   const g = G.enemy; g.clear();
-  for (const b of blobs) (b.shape === "sheaf" ? drawSheaf : drawPoly)(g, b);
+  for (const b of blobs) {
+    if (b.spawnT > 0) { drawSpawning(g, b.x, b.y, b.color, boundRadius(b), b.spawnT); continue; }
+    (b.shape === "sheaf" ? drawSheaf : drawPoly)(g, b);
+  }
 }
 
 // Energy-being treatment: a breathing double halo around a body core (bloom turns it
@@ -1190,6 +1203,7 @@ function drawPoly(g, b) {
 function drawSparx() {
   const g = G.sparx; g.clear();
   for (const s of sparxList) {
+    if (s.spawnT > 0) { drawSpawning(g, s.x, s.y, s.color, SPARX.radius, s.spawnT); continue; }
     const col = s.latched ? SPARX.latchColor : s.color;
     const pulse = 0.6 + 0.4 * Math.sin(s.t * 8 + (s.fast ? 1.5 : 0));
     for (let i = 0; i < s.tail.length; i++) {
