@@ -5,11 +5,12 @@
 // the module still imports in headless tests). No DOM beyond that guarded use.
 
 import { LEVELS, levelCount, zoneCount, zoneStart } from "./levels.js";
-import { POINTS, ROWS } from "./config.js";
+import { POINTS, ROWS, SUPER } from "./config.js";
 
 const START_LIVES = 3;
 const UNLOCK_KEY = "cosmiccut.unlockedZone";
 const HIGH_KEY = "cosmiccut.highScore";
+const SUPER_KEY = "cosmiccut.superUnlocked";
 
 // state: "title" | "menu" | "intro" | "playing" | "dead" | "levelcomplete" | "gameover" | "campaigncomplete"
 // "title" is the opening splash; "menu" is the stage-select screen.
@@ -21,9 +22,36 @@ export let levelMult = 1; // per-level score multiplier; each SPLIT doubles it
 export let unlockedZone = loadUnlock(); // highest zone whose X-1 has been reached
 export let highScore = loadHigh();
 export let newHigh = false; // did this run just beat the high score?
+// SUPER mode (§5): clearing 5-5 unlocks S1-1+ — the same 25 levels, replayed with
+// 2× enemy counts and lower (recalculated) targets. `superMode` is this run's flag;
+// `superUnlocked` persists once earned; `justUnlockedSuper` flags the ONE
+// campaign-complete screen that should announce the unlock (not later replays).
+export let superMode = false;
+export let superUnlocked = loadSuperUnlock();
+export let justUnlockedSuper = false;
 
 export function currentLevel() {
   return LEVELS[levelIndex];
+}
+
+// The current level's spec, doubled for SUPER mode (enemy counts × SUPER.enemyMult,
+// target recalculated but never below SUPER.targetMin). Everything that spawns
+// enemies or checks the win condition should read through this, not currentLevel().
+export function currentSpec() {
+  const lv = currentLevel();
+  if (!superMode) return lv;
+  const dup = (arr) => Array(SUPER.enemyMult).fill(arr).flat();
+  return {
+    ...lv,
+    qix: dup(lv.qix), blobs: dup(lv.blobs), hunters: dup(lv.hunters),
+    sparx: lv.sparx * SUPER.enemyMult, fastSparx: lv.fastSparx * SUPER.enemyMult,
+    target: Math.max(SUPER.targetMin, lv.target + SUPER.targetDelta),
+  };
+}
+
+// Display label for the HUD/menus — "S1-1" etc. in SUPER mode.
+export function levelLabel() {
+  return (superMode ? "S" : "") + currentLevel().label;
 }
 
 export function addScore(n) { score += Math.round(n); }
@@ -76,6 +104,16 @@ function unlock(zone) {
   if (zone > unlockedZone) { unlockedZone = zone; saveUnlock(); }
 }
 
+function loadSuperUnlock() {
+  try { if (typeof localStorage !== "undefined") return localStorage.getItem(SUPER_KEY) === "1"; }
+  catch (e) { /* no storage (headless / private mode) — ignore */ }
+  return false;
+}
+function saveSuperUnlock() {
+  try { if (typeof localStorage !== "undefined") localStorage.setItem(SUPER_KEY, superUnlocked ? "1" : "0"); }
+  catch (e) { /* ignore */ }
+}
+
 function loadHigh() {
   try {
     if (typeof localStorage !== "undefined") {
@@ -95,9 +133,12 @@ function recordScore() {
 }
 
 // --- run flow ---------------------------------------------------------------
-// Start a fresh run from a chosen (unlocked) zone's first level.
-export function startRun(zone) {
-  const z = Math.max(1, Math.min(zone, unlockedZone));
+// Start a fresh run from a chosen (unlocked) zone's first level. `asSuper` starts
+// the SUPER campaign instead (only takes effect if it's actually unlocked).
+export function startRun(zone, asSuper = false) {
+  superMode = asSuper && superUnlocked;
+  justUnlockedSuper = false;
+  const z = Math.max(1, Math.min(zone, superMode ? zoneCount : unlockedZone));
   lives = START_LIVES;
   score = 0;
   levelMult = 1;
@@ -119,9 +160,15 @@ export function completeLevel() {
 
 // Move on from a completed level: extra life on X-4 (no cap, §14), reset the
 // per-level multiplier, then the next level — or the campaign-complete screen.
+// Clearing the LAST level for the first time NOT in SUPER mode unlocks SUPER.
 export function advance() {
   if (currentLevel().extraLife) lives += 1;
-  if (levelIndex >= levelCount - 1) { recordScore(); state = "campaigncomplete"; return; }
+  if (levelIndex >= levelCount - 1) {
+    recordScore();
+    if (!superMode && !superUnlocked) { superUnlocked = true; saveSuperUnlock(); justUnlockedSuper = true; }
+    state = "campaigncomplete";
+    return;
+  }
   levelIndex += 1;
   levelMult = 1;
   unlock(currentLevel().zone);
@@ -143,6 +190,11 @@ export function toMenu() {
 // Test-only resets (used by headless tests).
 export function _resetUnlock() {
   unlockedZone = 1;
+}
+export function _resetSuper() {
+  superUnlocked = false;
+  superMode = false;
+  justUnlockedSuper = false;
 }
 export function _resetHigh() {
   highScore = 0;

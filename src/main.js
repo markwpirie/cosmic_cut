@@ -80,12 +80,22 @@ let sparxRespawnT = RESPAWN.delay;
 
 function zoneColor() { return THEMES[game.currentLevel().zone - 1].frontier; }
 
+// Highest selectable menu slot: unlocked zones, plus one more (the SUPER chip)
+// once SUPER mode has been earned by clearing 5-5.
+function menuMax() { return game.unlockedZone + (game.superUnlocked ? 1 : 0); }
+// Start whatever's selected — the SUPER chip (menuMax() when unlocked) starts the
+// SUPER campaign from 1-1; any other slot is a normal zone start.
+function startSelected() {
+  if (game.superUnlocked && menuSel === menuMax()) game.startRun(1, true);
+  else game.startRun(menuSel);
+}
+
 // Load the current level's world: clear the arena, home the marker, spawn the
 // level's Blobs, drop any held input, pop-ups and banner.
 function loadLevel() {
   grid.reset();
   resetMarker();
-  const lv = game.currentLevel();
+  const lv = game.currentSpec(); // SUPER-doubled counts + recalculated target when active
   enemy.reset({ qix: lv.qix || [], blobs: lv.blobs || [], hunters: lv.hunters || [], boss: lv.boss });
   sparx.reset(lv.sparx || 0, lv.fastSparx || 0);
   control.reset();
@@ -108,7 +118,7 @@ function loadLevel() {
 function respawn() {
   const spot = grid.respawnNode();
   homeMarker(spot.col, spot.row);
-  const rlv = game.currentLevel();
+  const rlv = game.currentSpec();
   enemy.reset({ qix: rlv.qix || [], blobs: rlv.blobs || [], hunters: rlv.hunters || [], boss: rlv.boss });
   sparx.reset(rlv.sparx || 0, rlv.fastSparx || 0);
   control.reset();
@@ -189,8 +199,8 @@ window.addEventListener("keydown", (e) => {
 
   if (game.state === "menu") {
     if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") { menuSel = Math.max(1, menuSel - 1); audio.ui(); }
-    else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") { menuSel = Math.min(game.unlockedZone, menuSel + 1); audio.ui(); }
-    else if (e.key === "Enter" || e.key === " ") { game.startRun(menuSel); audio.ui(); }
+    else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") { menuSel = Math.min(menuMax(), menuSel + 1); audio.ui(); }
+    else if (e.key === "Enter" || e.key === " ") { startSelected(); audio.ui(); }
     return;
   }
   // DEV/TEST: Z drops a ZOOM on the marker (instant pickup) to test the aim path.
@@ -228,7 +238,7 @@ window.addEventListener("keydown", (e) => {
   }
   if (game.state === "gameover" || game.state === "campaigncomplete") {
     game.toMenu();
-    menuSel = Math.min(menuSel, game.unlockedZone);
+    menuSel = Math.min(menuSel, menuMax());
   }
 });
 
@@ -282,7 +292,7 @@ function setTouchDir(name) {
   // it never feeds movement intents there.
   if (game.state === "menu") {
     if (name === "left") { menuSel = Math.max(1, menuSel - 1); audio.ui(); }
-    else if (name === "right") { menuSel = Math.min(game.unlockedZone, menuSel + 1); audio.ui(); }
+    else if (name === "right") { menuSel = Math.min(menuMax(), menuSel + 1); audio.ui(); }
     return;
   }
   if (touchDir === name) return;
@@ -303,7 +313,7 @@ function touchGesture() {
   // menu: handled on touchEND (tap = start, swipe = change selection) — see endTouch
   else if (game.state === "dead") { if (transT >= TIMING.deathHold) { respawn(); game.beginPlay(); } }
   else if (game.state === "gameover" || game.state === "campaigncomplete") {
-    game.toMenu(); menuSel = Math.min(menuSel, game.unlockedZone);
+    game.toMenu(); menuSel = Math.min(menuSel, menuMax());
   }
   return false;
 }
@@ -360,7 +370,7 @@ if (canvas && typeof window !== "undefined" && "ontouchstart" in window) {
     if (!steerStill) {
       // A tap (no movement) that both began AND ended on the menu starts the run.
       if (anchorState === "menu" && game.state === "menu" && !touchMoved && touchId !== null) {
-        game.startRun(menuSel); audio.ui();
+        startSelected(); audio.ui();
       }
       setTouchDir(null); touchId = null; touchAnchor = null; anchorState = null;
     }
@@ -502,7 +512,7 @@ function loop(now) {
     // — there should always be a star enemy to carve around. Short delay so it doesn't
     // pop in the instant the last one dies. Separate from (and takes priority over)
     // the poly floor below — a lone-Qix death must not also trigger a floor respawn.
-    const curLv = game.currentLevel();
+    const curLv = game.currentSpec();
     if (curLv.qix && curLv.qix.length && enemy.countSheafs() === 0) {
       sheafRespawnT -= dt;
       if (sheafRespawnT <= 0) {
@@ -571,7 +581,7 @@ function loop(now) {
           scorePulseT = 0;
         }
       }
-      if (grid.percent >= game.currentLevel().target) {
+      if (grid.percent >= game.currentSpec().target) {
         game.completeLevel();
         audio.levelClear();
         fx.addShake(6);

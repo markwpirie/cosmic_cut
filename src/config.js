@@ -463,6 +463,14 @@ export const RESPAWN = {
   minPlayerDist:  18,  // (cells) preferred minimum distance from the player on respawn
 };
 
+// SUPER mode (§5): unlocked by clearing 5-5. S1-1+ replays the same 25 levels with
+// doubled enemy counts and a recalculated (lower, floored) target.
+export const SUPER = {
+  enemyMult:      2,   // qix/blobs/hunters/sparx/fastSparx counts × this
+  targetDelta:   -4,   // applied to each level's target %
+  targetMin:     50,   // target % never drops below this
+};
+
 // Power-up tuning (Phase 6, §8). All durations in seconds; killPoints/distancePoints
 // are ZOOM scoring per enemy killed and per pixel travelled respectively.
 export const POWERUPS = {

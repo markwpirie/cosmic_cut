@@ -713,12 +713,12 @@ function drawMarker(ctx) {
 }
 
 function drawHUD(ctx, scorePulseT = 99) {
-  const L = game.currentLevel();
+  const L = game.currentSpec(); // SUPER-recalculated target when active
   ctx.textBaseline = "top";
   ctx.font = "600 18px system-ui, sans-serif";
   ctx.textAlign = "left";
   ctx.fillStyle = theme().frontier; // match the zone's border colour
-  ctx.fillText(`ZONE ${L.label}`, 12, 10);
+  ctx.fillText(`ZONE ${game.levelLabel()}`, 12, 10);
   ctx.fillStyle = COLORS.hud;
   ctx.fillText(`${percent.toFixed(0)}/${L.target}%`, 110, 10);
   ctx.fillStyle = COLORS.marker;
@@ -809,30 +809,32 @@ function drawMenu(ctx, menuSel) {
 
   // half fixed first, gap derived from the leftover span — see render-pixi.js's
   // drawMenu for why (the old gap-derives-half formula clipped chips at the edges).
-  const n = zoneCount;
+  // One extra chip for SUPER mode once it's been earned (clear 5-5).
+  const n = zoneCount + (game.superUnlocked ? 1 : 0);
   const EDGE_PAD = 16;
   const half = MOBILE ? 32 : 40;
   const gap = Math.min(110, (WIDTH - 2 * EDGE_PAD - 2 * half) / Math.max(1, n - 1));
   const startX = WIDTH / 2 - ((n - 1) * gap) / 2;
   const y = HEIGHT / 2 + 20;
   for (let z = 1; z <= n; z++) {
+    const isSuper = z === zoneCount + 1;
     const x = startX + (z - 1) * gap;
-    const locked = z > game.unlockedZone;
+    const locked = !isSuper && z > game.unlockedZone;
     const selected = z === menuSel;
     ctx.save();
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     // chip
     ctx.lineWidth = selected ? 3 : 1.5;
-    ctx.strokeStyle = locked ? COLORS.locked : selected ? COLORS.hudAccent : COLORS.arena;
+    ctx.strokeStyle = locked ? COLORS.locked : selected ? COLORS.hudAccent : (isSuper ? COLORS.hudAccent : COLORS.arena);
     if (selected && !locked) { ctx.shadowColor = COLORS.hudAccent; ctx.shadowBlur = 16; }
     ctx.strokeRect(x - half, y - half, half * 2, half * 2);
     ctx.shadowBlur = 0;
     ctx.fillStyle = locked ? COLORS.locked : selected ? COLORS.hudAccent : COLORS.frontier;
-    ctx.font = "700 30px system-ui, sans-serif";
-    ctx.fillText(String(z), x, y - 6);
+    ctx.font = isSuper ? "700 18px system-ui, sans-serif" : "700 30px system-ui, sans-serif";
+    ctx.fillText(isSuper ? "S" : String(z), x, y - 6);
     ctx.font = "500 13px system-ui, sans-serif";
-    ctx.fillText(locked ? "LOCKED" : `${z}-1`, x, y + 22);
+    ctx.fillText(locked ? "LOCKED" : (isSuper ? "SUPER" : `${z}-1`), x, y + 22);
     ctx.restore();
   }
   centerText(ctx, "← →  select        ENTER  start", HEIGHT - 78,
@@ -842,8 +844,8 @@ function drawMenu(ctx, menuSel) {
 }
 
 function drawIntro(ctx) {
-  const L = game.currentLevel();
-  centerText(ctx, `ZONE ${L.label}`, CY - 30, "700 52px system-ui, sans-serif", theme().frontier);
+  const L = game.currentSpec(); // SUPER-recalculated target when active
+  centerText(ctx, `ZONE ${game.levelLabel()}`, CY - 30, "700 52px system-ui, sans-serif", theme().frontier);
   centerText(ctx, L.boss ? `BOSS — CLAIM ${L.target}%` : `CLAIM ${L.target}%`, CY + 24,
     "600 26px system-ui, sans-serif", COLORS.hudAccent);
   centerText(ctx, "press a direction to begin", CY + 72, "500 17px system-ui, sans-serif", COLORS.hud);
@@ -1054,12 +1056,15 @@ function drawGameOver(ctx) {
 function drawCampaignComplete(ctx) {
   ctx.fillStyle = "rgba(5, 3, 15, 0.82)";
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
-  centerText(ctx, "CAMPAIGN COMPLETE", CY - 60, "700 46px system-ui, sans-serif", COLORS.frontier);
+  centerText(ctx, game.justUnlockedSuper ? "SUPER MODE UNLOCKED" : "CAMPAIGN COMPLETE", CY - 60,
+    "700 46px system-ui, sans-serif", COLORS.frontier);
   centerText(ctx, `FINAL SCORE ${fmt(game.score)}`, CY - 8, "700 28px system-ui, sans-serif", COLORS.hudAccent);
   if (game.newHigh) centerText(ctx, "★ NEW HIGH SCORE ★", CY + 32, "800 24px system-ui, sans-serif", theme().frontier);
   else centerText(ctx, `HI  ${fmt(game.highScore)}`, CY + 32, "600 22px system-ui, sans-serif", COLORS.locked);
-  centerText(ctx, "you cleared all five zones — press any key", CY + 72,
-    "500 20px system-ui, sans-serif", COLORS.hud);
+  const tail = game.justUnlockedSuper ? "replay the campaign with double the enemies — press any key"
+    : game.superMode ? "SUPER campaign cleared — press any key"
+    : "you cleared all five zones — press any key";
+  centerText(ctx, tail, CY + 72, "500 20px system-ui, sans-serif", COLORS.hud);
 }
 
 export function render(ctx, view = {}) {

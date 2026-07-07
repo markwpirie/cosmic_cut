@@ -1417,12 +1417,12 @@ function miniShip(gg, x, y, r, color, alpha = 1) {
     .fill({ color, alpha });
 }
 function drawHUD(scorePulseT) {
-  const L = game.currentLevel();
+  const L = game.currentSpec(); // SUPER-recalculated target when active
   const accent = theme().accent || theme().frontier;
   const ts = HUD.textSize, ss = HUD.scoreSize;
 
   // Zone chip framed by corner brackets (row 1, left).
-  const zt = drawText(`ZONE ${L.label}`, 16, 10, { size: ts, color: accent, weight: "700" });
+  const zt = drawText(`ZONE ${game.levelLabel()}`, 16, 10, { size: ts, color: accent, weight: "700" });
   const bx0 = 10, bx1 = 16 + zt.width + 8, by0 = 7, by1 = 10 + ts + 8, bl = 6;
   uiGfx.moveTo(bx0 + bl, by0).lineTo(bx0, by0).lineTo(bx0, by0 + bl)
     .moveTo(bx1 - bl, by1).lineTo(bx1, by1).lineTo(bx1, by1 - bl)
@@ -1522,25 +1522,28 @@ function drawMenu(menuSel) {
   // left over after reserving `half` + EDGE_PAD on both ends — so the outermost
   // chips can never spill off the canvas edge (the old formula derived half FROM
   // gap, which left no such guarantee and clipped ~7.5px off both edges on mobile).
-  const n = zoneCount;
+  // One extra chip for SUPER mode once it's been earned (clear 5-5).
+  const n = zoneCount + (game.superUnlocked ? 1 : 0);
   const EDGE_PAD = 16;
   const half = MOBILE ? 32 : 40, chipTxt = Math.min(30, half * 0.75);
   const gap = Math.min(110, (WIDTH - 2 * EDGE_PAD - 2 * half) / Math.max(1, n - 1));
   const startX = WIDTH / 2 - ((n - 1) * gap) / 2, y = HEIGHT / 2 + 20;
   for (let z = 1; z <= n; z++) {
+    const isSuper = z === zoneCount + 1;
     const x = startX + (z - 1) * gap;
-    const locked = z > game.unlockedZone, selected = z === menuSel;
-    G.overlay.rect(x - half, y - half, half * 2, half * 2).stroke({ width: selected ? 3 : 1.5, color: locked ? COLORS.locked : selected ? COLORS.hudAccent : COLORS.arena });
-    drawText(String(z), x, y - 6, { size: chipTxt, color: locked ? COLORS.locked : selected ? COLORS.hudAccent : COLORS.frontier, weight: "700", align: "center" });
-    drawText(locked ? "LOCKED" : `${z}-1`, x, y + half * 0.7, { size: Math.min(13, half * 0.34), color: locked ? COLORS.locked : COLORS.hud, weight: "500", align: "center" });
+    const locked = !isSuper && z > game.unlockedZone, selected = z === menuSel;
+    const stroke = locked ? COLORS.locked : selected ? COLORS.hudAccent : (isSuper ? COLORS.hudAccent : COLORS.arena);
+    G.overlay.rect(x - half, y - half, half * 2, half * 2).stroke({ width: selected ? 3 : 1.5, color: stroke });
+    drawText(isSuper ? "S" : String(z), x, y - 6, { size: isSuper ? chipTxt * 0.7 : chipTxt, color: locked ? COLORS.locked : selected ? COLORS.hudAccent : COLORS.frontier, weight: "700", align: "center" });
+    drawText(locked ? "LOCKED" : (isSuper ? "SUPER" : `${z}-1`), x, y + half * 0.7, { size: Math.min(13, half * 0.34), color: locked ? COLORS.locked : COLORS.hud, weight: "500", align: "center" });
   }
   centerText(MOBILE ? "swipe ← →  select      tap  start" : "← →  select        ENTER  start", HEIGHT - 78, 18, COLORS.hud, 1, "500");
   if (!MOBILE) centerText("M  mute     ·     N  music", HEIGHT - 48, 15, COLORS.locked, 1, "500");
 }
 
 function drawIntro() {
-  const L = game.currentLevel();
-  centerText(`ZONE ${L.label}`, CY - 30, 52, theme().accent || theme().frontier);
+  const L = game.currentSpec(); // SUPER-recalculated target when active
+  centerText(`ZONE ${game.levelLabel()}`, CY - 30, 52, theme().accent || theme().frontier);
   centerText(L.boss ? `BOSS — CLAIM ${L.target}%` : `CLAIM ${L.target}%`, CY + 24, 26, COLORS.hudAccent, 1, "600");
   centerText(MOBILE ? "swipe to begin" : "press a direction to begin", CY + 72, 17, COLORS.hud, 1, "500");
   centerText(MOBILE ? "hold SLOW (or a second finger) while cutting — double points"
@@ -1601,11 +1604,14 @@ function drawGameOver() {
 
 function drawCampaignComplete() {
   dim(0.82);
-  centerText("CAMPAIGN COMPLETE", CY - 60, 46, COLORS.frontier);
+  centerText(game.justUnlockedSuper ? "SUPER MODE UNLOCKED" : "CAMPAIGN COMPLETE", CY - 60, 46, COLORS.frontier);
   centerText(`FINAL SCORE ${fmt(game.score)}`, CY - 8, 28, COLORS.hudAccent, 1, "700");
   if (game.newHigh) centerText("★ NEW HIGH SCORE ★", CY + 32, 24, theme().frontier, 1, "800");
   else centerText(`HI  ${fmt(game.highScore)}`, CY + 32, 22, COLORS.locked, 1, "600");
-  centerText("you cleared all five zones — press any key", CY + 72, 20, COLORS.hud, 1, "500");
+  const tail = game.justUnlockedSuper ? "replay the campaign with double the enemies — press any key"
+    : game.superMode ? "SUPER campaign cleared — press any key"
+    : "you cleared all five zones — press any key";
+  centerText(tail, CY + 72, 20, COLORS.hud, 1, "500");
 }
 
 function drawPaused() {
