@@ -4,7 +4,8 @@
 // start menu, a level intro banner, the play field, the level-complete wipe, and
 // the game-over / campaign-complete overlays.
 
-import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, AUDIO, POWERUPS, SPECIAL_BLOBS, QIX, BLOB_POLY, SPARX, MARKER, MOBILE, RESPAWN, nodeX, nodeY } from "./config.js";
+import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, AUDIO, POWERUPS, SPECIAL_BLOBS, QIX, BLOB_POLY, SPARX, MARKER, MOBILE, RESPAWN, REVEAL, nodeX, nodeY } from "./config.js";
+import { revealSource } from "./reveal.js";
 import * as powerups from "./powerups.js";
 import { grid, slowFill, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
 import { marker, mode, dir, trail, slowActive } from "./marker.js";
@@ -185,6 +186,7 @@ function drawClaimed(ctx, wipeR = -1) {
   const th = theme();
   const fillNormal = th.claimedFill;
   const fillSlow = th.claimedFillSlow || COLORS.claimedFillSlow;
+  const boss = REVEAL.enabled && game.currentLevel().boss;
 
   // Gather visible claimed cells once (reused for the base fill and the clip).
   const cells = [];
@@ -199,11 +201,29 @@ function drawClaimed(ctx, wipeR = -1) {
   }
   if (!cells.length) return;
 
+  // Boss picture-reveal (§7): the zone's hero scene shows THROUGH the glass —
+  // drawn first, clipped to the claimed cells, with the flat fill below scaled
+  // down (glassMult) so the art reads clearly. Shimmer/specular (steps 2-3
+  // below) stay full-strength on top, so it still looks and feels like glass.
+  if (boss) {
+    ctx.save();
+    ctx.beginPath();
+    for (const [px, py] of cells) ctx.rect(px, py, CELL, CELL);
+    ctx.clip();
+    const img = revealSource(game.currentLevel().zone, field.w, field.h);
+    ctx.globalAlpha = REVEAL.dim;
+    ctx.drawImage(img, field.x, field.y, field.w, field.h);
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
   // 1) Base translucent glass (two passes so the slow/normal tints stay flat).
+  ctx.globalAlpha = boss ? REVEAL.glassMult : 1;
   ctx.fillStyle = fillNormal;
   for (const [px, py, s] of cells) if (!s) ctx.fillRect(px, py, CELL, CELL);
   ctx.fillStyle = fillSlow;
   for (const [px, py, s] of cells) if (s) ctx.fillRect(px, py, CELL, CELL);
+  ctx.globalAlpha = 1;
 
   const t = now() / 1000;
   const shimmer = 0.5 + 0.5 * Math.sin(t * 1.6);

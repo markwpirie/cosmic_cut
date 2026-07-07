@@ -116,6 +116,8 @@ Levels are grouped into **zones** of 5: **1-1 … 1-5**, then **2-1 … 2-5**, u
 
 **Every X-5 is a BOSS level (picture-reveal):** claimed areas uncover a hidden high-res image behind the field instead of glass blocks — the prettier picture is literally revealed as you clear it. A pacing beat every 5th level and a visual payoff. Boss levels use the **same enemy set** as the zone they cap (for now).
 
+**As built (2026-07-07):** the picture shows THROUGH the glass, not instead of it — the flat claimed fill is scaled down (`config.REVEAL.glassMult`, default 0.75) rather than removed, so the shimmer/specular sweep and emissive rim stay full-strength on top. `src/reveal.js` bakes a procedural per-zone "hero scene" to an offscreen canvas once and caches it (`revealSource(zone, w, h)`), matching `assets/levels.png`'s zone scenes: **1** spiral galaxy, **2** green ringed planet, **3** gold black hole + jet, **4** purple ringed planet + moon, **5** red cracked planet. Image-source-agnostic by design — swapping in supplied art later is just drawing an `Image` into the same cached canvas, no renderer changes. Both renderers clip it to the claimed-cell union (canvas: `ctx.clip()`; Pixi: a `revealSprite` sharing the shimmer's `glassMask`) and only activate it when `currentLevel().boss` is true ✓
+
 **The 5-5 boss is the campaign wall** — deliberately hard. Beating it unlocks **SUPER mode**:
 
 - **S1-1 onward** replays the same level layouts with **double the enemy count** of their base versions.
@@ -210,8 +212,8 @@ Each phase is a working, runnable thing. One concept per phase.
 | **6** | First power-up (Freeze), then the rest, ZOOM last. | Timed effects/state | ✅ Done (all five in `powerups.js`; enemy roster overhaul — Qix line-sheaf, polygon Blobs, Hunter, Sparx/Fast Sparx — landed alongside; rocket-ship player. 50% enemy floor (§6) and Special Blobs (§8) now wired) |
 | **7** | Touch controls for mobile. | Input abstraction (key step for iPhone) | ✅ Done (relative swipe joystick + on-screen SLOW button; touch listeners on `document` so swipes work anywhere; **mobile portrait mode** — auto-detected device branch reshapes the whole arena to 440×876 portrait, `config.MOBILE` — landed alongside) |
 | **8** | Make it a PWA — installable on iPhone home screen. | Deployment/packaging | ◻ Next |
-| **9** | Swap in Pixi.js, real sprites, glass blocks, neon, particles, juice. | Graphics layer, polish | ✅ Shipped to `main`, opt-in via `?pixi` (canvas stays the default renderer) — bloom, rounded glass, energy enemies, Orbitron HUD, boss stages; full art-direction pass complete. **Zone palette recoloured 2026-07-07** (below) — the cyan-hero flattening read too subtle; superseded by a clear per-zone hue. See PHASE9.md. Sprite-based stars/particles + glass-block depth + boss picture-reveal still open. |
-| **10** | Boss/picture-reveal levels, SUPER mode, audio, scoring polish, final feel. | Special modes & reward | SUPER mode ✅ built (2026-07-07, see §5). Boss picture-reveal, scoring polish still open. |
+| **9** | Swap in Pixi.js, real sprites, glass blocks, neon, particles, juice. | Graphics layer, polish | ✅ Shipped to `main`, opt-in via `?pixi` (canvas stays the default renderer) — bloom, rounded glass, energy enemies, Orbitron HUD, boss stages; full art-direction pass complete. **Zone palette recoloured 2026-07-07** (below) — the cyan-hero flattening read too subtle; superseded by a clear per-zone hue. See PHASE9.md. Boss picture-reveal ✅ built 2026-07-07 (§7). Sprite-based stars/particles + glass-block depth still open. |
+| **10** | Boss/picture-reveal levels, SUPER mode, audio, scoring polish, final feel. | Special modes & reward | SUPER mode ✅ and boss picture-reveal ✅ built (2026-07-07, see §5/§7). Scoring polish still open. |
 
 By Phase 3 you have something genuinely playable. Everything after is making it *good*.
 

@@ -495,6 +495,16 @@ export const SPECIAL_BLOBS = {
   SLOW: { color: "#8fd8ff", radius: 10, speed: 90, label: "SLOW-DOWN!", duration: 8, slowMult: 0.5 },
 };
 
+// Picture-reveal boss levels (§7): every X-5 uncovers a per-zone scene (reveal.js)
+// behind claimed cells instead of a flat glass block. The picture shows THROUGH
+// the glass, not instead of it — glassMult only scales the flat fill so the
+// shimmer/specular/rim stay full-strength on top (Mark: keep the glassy shine).
+export const REVEAL = {
+  enabled: true,
+  glassMult: 0.75, // flat claimed-fill alpha multiplier on boss levels (< 1 lets the art read)
+  dim: 0.9,        // the reveal image's own opacity
+};
+
 // Power-up tuning (Phase 6, §8). All durations in seconds; killPoints/distancePoints
 // are ZOOM scoring per enemy killed and per pixel travelled respectively.
 export const POWERUPS = {

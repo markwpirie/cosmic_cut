@@ -15,7 +15,8 @@
 
 import { Application, Container, Graphics, Sprite, TilingSprite, Texture, Text, Rectangle, DisplacementFilter } from "pixi.js";
 import { AdvancedBloomFilter } from "pixi-filters";
-import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, SPECIAL_BLOBS, QIX, BOSS, BLOB_POLY, SPARX, MARKER, RESPAWN, BLOOM, CORNERS, GLASS, NEBULA,STARFIELD, SHIP_TRAIL, SHIP_VIS, AMBIENT, ENERGY, IMPACT, GRID_BG, MOTES, VIGNETTE, HUD, MOBILE, TOUCH } from "./config.js";
+import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, SPECIAL_BLOBS, QIX, BOSS, BLOB_POLY, SPARX, MARKER, RESPAWN, REVEAL, BLOOM, CORNERS, GLASS, NEBULA,STARFIELD, SHIP_TRAIL, SHIP_VIS, AMBIENT, ENERGY, IMPACT, GRID_BG, MOTES, VIGNETTE, HUD, MOBILE, TOUCH } from "./config.js";
+import { revealSource } from "./reveal.js";
 import * as powerups from "./powerups.js";
 import { grid, slowFill, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
 import { marker, mode, dir, trail, slowActive, zoomDash } from "./marker.js";
@@ -48,6 +49,8 @@ let glassMask = null; // union of claimed cells, used to clip the specular sweep
 let sweepGroup = null; // masked container holding the additive reflection TilingSprites
 let sweepA = null, sweepB = null; // two parallax reflection layers
 let lastGlassTint = null; // re-tint the shimmer only when the zone's glassTint actually changes
+let revealSprite = null; // boss-level picture-reveal (§7), masked by glassMask like the shimmer
+let lastRevealZone = null;
 let sweepLast = 0;    // timestamp for sweep scroll dt
 // Boss multi-stage escalation (presentation-only): stage = how many claim-%
 // thresholds (BOSS.stages) have been crossed. The boss visibly angers per stage.
@@ -270,6 +273,13 @@ export async function init(canvas) {
   worldRoot.addChild(G.grid);  // faint holo-lattice over the unclaimed void (under everything)
   worldRoot.addChild(G.glass); // claimed-glass fill + emissive rim
 
+  // Boss picture-reveal (§7): a per-zone baked scene shown through the claimed
+  // glass on X-5 levels. Sits above the flat fill, below the shimmer/specular —
+  // "seen through glass", not "instead of glass". Masked below, alongside sweepGroup.
+  revealSprite = new Sprite(Texture.EMPTY);
+  revealSprite.visible = false;
+  worldRoot.addChild(revealSprite);
+
   // GLASS shimmer: two additive, diagonally-scrolling TilingSprites of a baked
   // streak/noise texture, grouped and clipped to the claimed shape by glassMask
   // (rebuilt each frame). Additive + transparency = organic drifting reflections
@@ -286,6 +296,7 @@ export async function init(canvas) {
   sweepGroup.addChild(sweepB, sweepA); // far layer behind near layer
   glassMask = new Graphics();
   sweepGroup.mask = glassMask;
+  revealSprite.mask = glassMask; // same claimed-cell union clips the reveal art too
   worldRoot.addChild(sweepGroup, glassMask);
 
   for (const name of ["seams", "arena", "perimeter", "trail",
@@ -865,19 +876,52 @@ function drawBackground(beat) {
   }
 }
 
+// rgba(r, g, b, a) string × alpha multiplier — used to dim the flat claimed fill
+// on boss levels without touching the rim/shimmer (which read fillNormal/Slow
+// only through THEMES, never through this scaled copy).
+function scaleAlpha(rgba, mult) {
+  const m = /rgba?\(([^)]+)\)/.exec(rgba);
+  if (!m) return rgba;
+  const [r, gg, b, a = "1"] = m[1].split(",").map(s => s.trim());
+  return `rgba(${r}, ${gg}, ${b}, ${(parseFloat(a) * mult).toFixed(3)})`;
+}
+
 function drawClaimed(wipeR = -1) {
   const g = G.glass; g.clear();
   const th = theme();
-  const fillNormal = th.claimedFill;
-  const fillSlow = th.claimedFillSlow || COLORS.claimedFillSlow;
+  const boss = REVEAL.enabled && game.currentLevel().boss;
+  const fillMult = boss ? REVEAL.glassMult : 1;
+  const fillNormal = fillMult < 1 ? scaleAlpha(th.claimedFill, fillMult) : th.claimedFill;
+  const fillSlow = fillMult < 1 ? scaleAlpha(th.claimedFillSlow || COLORS.claimedFillSlow, fillMult) : (th.claimedFillSlow || COLORS.claimedFillSlow);
 
   const visible = (px, py) => !(wipeR >= 0 && Math.hypot(px + CELL / 2 - CX, py + CELL / 2 - CY) <= wipeR);
+  let any = false;
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       if (grid[r][c] !== FILLED) continue;
       const px = field.x + c * CELL, py = field.y + r * CELL;
       if (!visible(px, py)) continue;
       g.rect(px, py, CELL, CELL).fill(slowFill[r][c] ? fillSlow : fillNormal);
+      any = true;
+    }
+  }
+
+  // Boss picture-reveal (§7): the zone's hero scene shows THROUGH the glass —
+  // masked to the same claimed-cell union as the shimmer (glassMask, rebuilt in
+  // drawGlassSweep), sitting between the flat fill and the shimmer/specular so
+  // it still reads as glass, not a flat picture.
+  if (revealSprite) {
+    if (boss && any) {
+      const zone = game.currentLevel().zone;
+      if (zone !== lastRevealZone) {
+        revealSprite.texture = Texture.from(revealSource(zone, field.w, field.h));
+        lastRevealZone = zone;
+      }
+      revealSprite.position.set(field.x, field.y);
+      revealSprite.alpha = REVEAL.dim;
+      revealSprite.visible = true;
+    } else {
+      revealSprite.visible = false;
     }
   }
 
