@@ -47,6 +47,7 @@ let worldRoot = null; // shaken container holding the play-field glow layers
 let glassMask = null; // union of claimed cells, used to clip the specular sweep to glass
 let sweepGroup = null; // masked container holding the additive reflection TilingSprites
 let sweepA = null, sweepB = null; // two parallax reflection layers
+let lastGlassTint = null; // re-tint the shimmer only when the zone's glassTint actually changes
 let sweepLast = 0;    // timestamp for sweep scroll dt
 // Boss multi-stage escalation (presentation-only): stage = how many claim-%
 // thresholds (BOSS.stages) have been crossed. The boss visibly angers per stage.
@@ -334,6 +335,7 @@ function drawHoloGrid() {
   const g = G.grid;
   const a = GRID_BG.alpha * (0.8 + 0.2 * Math.sin(now() / 1400)); // gentle breathing
   const N = GRID_BG.spacing;
+  const col = theme().frontier; // zone-tinted lattice (was a fixed cyan constant)
   for (let r = N; r < ROWS; r += N) {          // horizontal lines along lattice row r
     const y = field.y + r * CELL;
     let run = -1;
@@ -342,7 +344,7 @@ function drawHoloGrid() {
       if (open && run < 0) run = c;
       else if (!open && run >= 0) {
         g.moveTo(field.x + run * CELL, y).lineTo(field.x + c * CELL, y)
-          .stroke({ width: 1, color: GRID_BG.color, alpha: a });
+          .stroke({ width: 1, color: col, alpha: a });
         run = -1;
       }
     }
@@ -355,7 +357,7 @@ function drawHoloGrid() {
       if (open && run < 0) run = r;
       else if (!open && run >= 0) {
         g.moveTo(x, field.y + run * CELL).lineTo(x, field.y + r * CELL)
-          .stroke({ width: 1, color: GRID_BG.color, alpha: a });
+          .stroke({ width: 1, color: col, alpha: a });
         run = -1;
       }
     }
@@ -916,6 +918,11 @@ function drawGlassSweep(wipeR = -1) {
   sweepGroup.visible = on;
   if (!on) return;
   gm.fill({ color: 0xffffff }); // mask coverage (colour irrelevant)
+
+  // Retint the shimmer to the current zone's glass colour (§ zone palettes) —
+  // cheap check, only writes the tint when the zone actually changed.
+  const gt = theme().glassTint || GLASS.tint;
+  if (gt !== lastGlassTint) { sweepA.tint = gt; sweepB.tint = gt; lastGlassTint = gt; }
 
   const t = now();
   const dt = Math.min(0.05, (t - sweepLast) / 1000); sweepLast = t;
