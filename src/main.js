@@ -669,3 +669,15 @@ function loop(now) {
 }
 
 requestAnimationFrame(loop);
+
+// Phase 8: PWA — register the service worker (sw.js) for installability +
+// offline play. Guarded (unsupported in some embedded/headless contexts).
+// NOT gated on the window "load" event: this module itself has a top-level
+// await (?pixi's CDN import + renderer init), so it can be one of the very
+// things "load" is waiting on — by the time this line runs, "load" may have
+// ALREADY fired, and addEventListener("load", …) never retroactively fires a
+// past event. Registering immediately (registration is cheap and async; it
+// doesn't need to wait for anything) sidesteps that race entirely.
+if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./sw.js").catch(() => {}); // offline-first is a bonus, not a requirement
+}
