@@ -56,6 +56,9 @@ export function levelLabel() {
 
 export function addScore(n) { score += Math.round(n); }
 export function addLevelMult(m) { levelMult *= m; }
+// Granted by SPLIT-enclosing an "life" Special Blob (§8). No cap (§7 — matches
+// the X-4 extra-life pickup).
+export function addLife() { lives += 1; }
 
 // Score a finished cut and return the full breakdown for the on-screen read-out:
 //   { labels, base, mult, killPts, total }

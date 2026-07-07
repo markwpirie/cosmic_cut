@@ -6,7 +6,7 @@
 
 import { SPARX, MARKER, RESPAWN, COLS, ROWS, nodeX, nodeY } from "./config.js";
 import { rideRank } from "./grid.js";
-import { isFrozen, isShielded } from "./powerups.js";
+import { isFrozen, isShielded, enemySlowMult } from "./powerups.js";
 
 export const sparxList = []; // all active Sparx
 
@@ -161,6 +161,7 @@ function edgeValid(col, row, dx, dy, trail, canLatch) {
 
 export function update(dt, marker, trail) {
   if (isFrozen()) return;
+  dt *= enemySlowMult(); // Special Blob SLOW-DOWN effect (§8)
   for (const s of sparxList) {
     if (s.spawnT > 0) { s.spawnT = Math.max(0, s.spawnT - dt); s.t += dt; continue; } // telegraphing: visible, held still
     s.t += dt;

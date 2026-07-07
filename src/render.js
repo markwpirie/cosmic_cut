@@ -4,7 +4,7 @@
 // start menu, a level intro banner, the play field, the level-complete wipe, and
 // the game-over / campaign-complete overlays.
 
-import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, AUDIO, POWERUPS, QIX, BLOB_POLY, SPARX, MARKER, MOBILE, RESPAWN, nodeX, nodeY } from "./config.js";
+import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, AUDIO, POWERUPS, SPECIAL_BLOBS, QIX, BLOB_POLY, SPARX, MARKER, MOBILE, RESPAWN, nodeX, nodeY } from "./config.js";
 import * as powerups from "./powerups.js";
 import { grid, slowFill, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
 import { marker, mode, dir, trail, slowActive } from "./marker.js";
@@ -411,6 +411,32 @@ function drawPoly(ctx, b) {
   ctx.arc(b.x, b.y, 2.5, 0, Math.PI * 2);
   ctx.fill();
 
+  // Special Blob glyph (§8) — reads at a glance which reward it holds.
+  if (b.special === "life") {
+    ctx.globalAlpha = 0.95;
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2;
+    ctx.shadowBlur = 10;
+    const g = b.radius * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(b.x - g, b.y); ctx.lineTo(b.x + g, b.y);
+    ctx.moveTo(b.x, b.y - g); ctx.lineTo(b.x, b.y + g);
+    ctx.stroke();
+  } else if (b.special === "slow") {
+    ctx.globalAlpha = 0.95;
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1.6;
+    ctx.shadowBlur = 10;
+    const g = b.radius * 0.5;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, g, 0, Math.PI * 2);
+    ctx.moveTo(b.x, b.y);
+    ctx.lineTo(b.x, b.y - g * 0.8);
+    ctx.moveTo(b.x, b.y);
+    ctx.lineTo(b.x + g * 0.5, b.y);
+    ctx.stroke();
+  }
+
   if (b.hunter) {
     const dx = marker.x - b.x, dy = marker.y - b.y;
     const d  = Math.hypot(dx, dy);
@@ -747,6 +773,7 @@ function drawHUD(ctx, scorePulseT = 99) {
     ["boost",     POWERUPS.BOOST ],
     ["shield",    POWERUPS.SHIELD],
     ["solarwind", POWERUPS.SOLARWIND],
+    ["slowdown",  SPECIAL_BLOBS.SLOW],
   ].filter(([k]) => active[k] > 0);
   if (rows.length) {
     ctx.font = "600 13px system-ui, sans-serif";

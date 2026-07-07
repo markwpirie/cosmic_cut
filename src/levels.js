@@ -11,15 +11,17 @@
 //               opts.qix / opts.blobs for full per-level control.
 //   hunters[] — BLOB_TYPES indices for polygon Hunter Blobs (drift toward player)
 //   sparx / fastSparx — counts of normal / Fast Sparx spawned at the corners
+//   special[] — kinds ("life" | "slow") of Special Blobs (§8) to place, on top
+//               of the roster above
 function lvl(zone, sub, target, main, opts = {}) {
   const [first, ...rest] = main;
   const qix   = opts.qix   ?? (first !== undefined ? [first] : []);
   const blobs = opts.blobs ?? rest;
-  const { hunters = [], sparx = 0, fastSparx = 0 } = opts;
+  const { hunters = [], sparx = 0, fastSparx = 0, special = [] } = opts;
   return {
     zone, sub,
     label: `${zone}-${sub}`,
-    target, qix, blobs, hunters, sparx, fastSparx,
+    target, qix, blobs, hunters, sparx, fastSparx, special,
     extraLife: sub === 4,
     boss:      sub === 5,
   };
@@ -35,30 +37,30 @@ export const LEVELS = [
 
   // --- Zone 2 — orange; Fast Sparx arrives, Hunter Blob at 2-3 ---
   lvl(2, 1, 78, [1, 2, 3], { fastSparx: 1 }),
-  lvl(2, 2, 80, [2, 2, 3], { sparx: 2 }),
+  lvl(2, 2, 80, [2, 2, 3], { sparx: 2, special: ["life"] }),
   lvl(2, 3, 80, [2, 3],    { sparx: 1, hunters: [2] }),
   lvl(2, 4, 82, [2, 3],    { sparx: 2, hunters: [2] }),
   lvl(2, 5, 74, [2, 3, 4], { sparx: 1, hunters: [2] }), // boss
 
   // --- Zone 3 — green; mix of Sparx types + Hunters ---
   lvl(3, 1, 80, [2, 3, 4], { sparx: 1, fastSparx: 1 }),
-  lvl(3, 2, 82, [2, 3, 4], { sparx: 1, fastSparx: 1, hunters: [3] }),
+  lvl(3, 2, 82, [2, 3, 4], { sparx: 1, fastSparx: 1, hunters: [3], special: ["slow"] }),
   lvl(3, 3, 84, [3, 3, 4], { sparx: 2, fastSparx: 1, hunters: [3] }),
-  lvl(3, 4, 84, [3, 4, 4], { sparx: 2, fastSparx: 1, hunters: [3] }),
+  lvl(3, 4, 84, [3, 4, 4], { sparx: 2, fastSparx: 1, hunters: [3], special: ["life"] }),
   lvl(3, 5, 78, [3, 4, 4], { sparx: 1, fastSparx: 2, hunters: [3] }), // boss
 
   // --- Zone 4 — violet; rising Fast Sparx pressure ---
   lvl(4, 1, 84, [3, 4, 4], { sparx: 2, fastSparx: 1, hunters: [3, 4] }),
   lvl(4, 2, 86, [3, 4, 4], { sparx: 2, fastSparx: 2, hunters: [4] }),
-  lvl(4, 3, 86, [3, 4, 4, 4], { sparx: 2, fastSparx: 2, hunters: [4] }),
+  lvl(4, 3, 86, [3, 4, 4, 4], { sparx: 2, fastSparx: 2, hunters: [4], special: ["slow"] }),
   lvl(4, 4, 88, [4, 4, 4], { sparx: 2, fastSparx: 2, hunters: [4, 4] }),
   lvl(4, 5, 80, [4, 4, 4], { sparx: 2, fastSparx: 2, hunters: [4, 4] }), // boss
 
   // --- Zone 5 — gold; red swarm, peak difficulty ---
   lvl(5, 1, 86, [4, 4, 4], { sparx: 2, fastSparx: 2, hunters: [4] }),
-  lvl(5, 2, 88, [4, 4, 4], { sparx: 2, fastSparx: 2, hunters: [4, 4] }),
+  lvl(5, 2, 88, [4, 4, 4], { sparx: 2, fastSparx: 2, hunters: [4, 4], special: ["life"] }),
   lvl(5, 3, 90, [4, 4, 4, 4], { sparx: 3, fastSparx: 2, hunters: [4] }),
-  lvl(5, 4, 90, [4, 4, 4, 4], { sparx: 3, fastSparx: 2, hunters: [4, 4] }),
+  lvl(5, 4, 90, [4, 4, 4, 4], { sparx: 3, fastSparx: 2, hunters: [4, 4], special: ["slow"] }),
   lvl(5, 5, 82, [4, 4, 4, 4], { sparx: 2, fastSparx: 3, hunters: [4, 4] }), // campaign boss
 ];
 

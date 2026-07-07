@@ -471,6 +471,18 @@ export const SUPER = {
   targetMin:     50,   // target % never drops below this
 };
 
+// Special Blobs (§8): rare, visually distinct poly-Blob variants placed by level
+// data (`levels.js` `special: ["life"|"slow"]`). Still lethal to touch like any
+// Blob, but only ever REWARD the player on SPLIT-enclosure (a ZOOM dash kill
+// destroys them for no reward). Excluded from the 50% respawn floor (one-shot)
+// and from the SPLIT label/×2 multiplier (they're a bonus target, not a threat).
+// Colours stay clear of the violet→red danger band, Sparx yellow/orange, and
+// BOOST green.
+export const SPECIAL_BLOBS = {
+  LIFE: { color: "#9dffcf", radius: 10, speed: 90, label: "EXTRA LIFE!" },
+  SLOW: { color: "#8fd8ff", radius: 10, speed: 90, label: "SLOW-DOWN!", duration: 8, slowMult: 0.5 },
+};
+
 // Power-up tuning (Phase 6, §8). All durations in seconds; killPoints/distancePoints
 // are ZOOM scoring per enemy killed and per pixel travelled respectively.
 export const POWERUPS = {

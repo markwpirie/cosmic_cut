@@ -14,7 +14,7 @@ import { render } from "./render.js";
 import * as audio from "./audio.js";
 import * as director from "./audio-director.js";
 import * as fx from "./fx.js";
-import { TIMING, POINTS, THEMES, POWERUPS, RESPAWN, field, WIDTH, HEIGHT, MOBILE, TOUCH } from "./config.js";
+import { TIMING, POINTS, THEMES, POWERUPS, RESPAWN, SPECIAL_BLOBS, field, WIDTH, HEIGHT, MOBILE, TOUCH } from "./config.js";
 import * as powerups from "./powerups.js";
 import * as sparx from "./sparx.js";
 
@@ -96,7 +96,7 @@ function loadLevel() {
   grid.reset();
   resetMarker();
   const lv = game.currentSpec(); // SUPER-doubled counts + recalculated target when active
-  enemy.reset({ qix: lv.qix || [], blobs: lv.blobs || [], hunters: lv.hunters || [], boss: lv.boss });
+  enemy.reset({ qix: lv.qix || [], blobs: lv.blobs || [], hunters: lv.hunters || [], special: lv.special || [], boss: lv.boss });
   sparx.reset(lv.sparx || 0, lv.fastSparx || 0);
   control.reset();
   fx.reset();
@@ -119,7 +119,7 @@ function respawn() {
   const spot = grid.respawnNode();
   homeMarker(spot.col, spot.row);
   const rlv = game.currentSpec();
-  enemy.reset({ qix: rlv.qix || [], blobs: rlv.blobs || [], hunters: rlv.hunters || [], boss: rlv.boss });
+  enemy.reset({ qix: rlv.qix || [], blobs: rlv.blobs || [], hunters: rlv.hunters || [], special: rlv.special || [], boss: rlv.boss });
   sparx.reset(rlv.sparx || 0, rlv.fastSparx || 0);
   control.reset();
   powerups.reset();
@@ -412,12 +412,17 @@ function loop(now) {
     if (dashing) {
       dashKilled = enemy.killNear(px0, py0, marker.x, marker.y, POWERUPS.ZOOM.dashKillReach);
       if (dashKilled.length) {
-        game.addScore(POWERUPS.ZOOM.killPoints * dashKilled.length);
+        // Special Blobs caught in the dash are destroyed but grant NO reward (§8 —
+        // only SPLIT-enclosure rewards them); they still explode below like anything else.
+        const scoredKills = dashKilled.filter(k => !k.special).length;
+        if (scoredKills > 0) {
+          game.addScore(POWERUPS.ZOOM.killPoints * scoredKills);
+          popups.push({ text: `ZOOM +${POWERUPS.ZOOM.killPoints * scoredKills}`, x: marker.x, y: marker.y - 20, t: 0 });
+        }
         for (const k of dashKilled) {
           fx.explode(k.x, k.y, k.color, 1.2);
           fx.ring(k.x, k.y, k.color, 16, 260, 0.6);
         }
-        popups.push({ text: `ZOOM +${POWERUPS.ZOOM.killPoints * dashKilled.length}`, x: marker.x, y: marker.y - 20, t: 0 });
         audio.kill(); director.kill(); fx.addShake(12); scorePulseT = 0;
       }
     }
@@ -445,6 +450,11 @@ function loop(now) {
     // and explode, just via their own flat award below (mirrors how ZOOM kills are
     // scored directly rather than through scoreCut).
     const blobKills = prevCount - enemy.blobs.length - dashKilled.length;
+    // Special Blobs enclosed this SPLIT don't drive the SPLIT label/×2 multiplier
+    // or per-kill points — they're a bonus target, rewarded separately below.
+    // Gated on blobKills > 0 (like the explosion loop) so lastKilled is fresh.
+    const splitSpecials = blobKills > 0 ? enemy.lastKilled.filter(k => k.special) : [];
+    const normalBlobKills = blobKills - splitSpecials.length;
     // sparx.totalKilled diff, NOT a sparxList.length delta — an enclosed Sparx
     // respawns immediately (same kind, opposite side), which would mask a plain
     // count comparison.
@@ -456,8 +466,8 @@ function loop(now) {
       const a = Math.atan2(FCY - marker.y, FCX - marker.x);
       popups.push({ text: `+${Math.round(gained)}%`, x: marker.x + Math.cos(a) * 34, y: marker.y + Math.sin(a) * 34, t: 0 });
     }
-    if (gained >= 0.5 || blobKills > 0) {
-      const res = game.scoreCut(gained, lastCutLength, blobKills, lastCutSlow);
+    if (gained >= 0.5 || normalBlobKills > 0) {
+      const res = game.scoreCut(gained, lastCutLength, normalBlobKills, lastCutSlow);
       if (res.labels.length > 0 || res.total >= REWARD_MIN) reward = { ...res, t: 0 };
       scorePulseT = 0;
       audio.claim();
@@ -494,6 +504,17 @@ function loop(now) {
         }
       }
       fx.addShake(16);
+    }
+    // Special Blob rewards — SPLIT-enclosure only (a ZOOM dash kill above gave
+    // nothing, per §8). LIFE grants an extra life; SLOW-DOWN halves every
+    // enemy's speed for a while (powerups.enemySlowMult, read by enemy/sparx update).
+    for (const k of splitSpecials) {
+      const cfg = k.special === "life" ? SPECIAL_BLOBS.LIFE : SPECIAL_BLOBS.SLOW;
+      if (k.special === "life") game.addLife();
+      else powerups.activateSlowdown();
+      popups.push({ text: cfg.label, x: k.x, y: k.y - 20, t: 0 });
+      audio.powerupPickup();
+      fx.ring(k.x, k.y, cfg.color, 20, 300, 0.6);
     }
     // Check if a claim enclosed any pickups, and try to spawn a new one.
     if (gained >= 0.5) {

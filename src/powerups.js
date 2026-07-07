@@ -3,7 +3,7 @@
 // timed effects. Other modules read a handful of simple getters; this module
 // activates effects and consumes pickups when the player collects them.
 
-import { POWERUPS, CELL, COLS, ROWS, field, nodeX, nodeY, MARKER } from "./config.js";
+import { POWERUPS, SPECIAL_BLOBS, CELL, COLS, ROWS, field, nodeX, nodeY, MARKER } from "./config.js";
 import { grid, FILLED, EMPTY, cellSolid, percent } from "./grid.js";
 import { blobs, removeBlobs, cells as blobCells } from "./enemy.js";
 import * as audio from "./audio.js";
@@ -13,17 +13,20 @@ export let pickups = [];  // [{type, col, row}]  — claim-to-collect
 let zoom = null;           // {x,y,vx,vy,angle} or null — floating ZOOM marker
 let savedZoom = null;      // saved while aiming so cancel can restore it
 let aiming = false;        // true while player is choosing ZOOM direction
-const effects = { freeze: 0, boost: 0, shield: 0, solarwind: 0 };
+// `slowdown` is granted by SPLIT-enclosing a Special Blob (§8), not a pickup —
+// activated directly via activateSlowdown(), not through activate() below.
+const effects = { freeze: 0, boost: 0, shield: 0, solarwind: 0, slowdown: 0 };
 let solarDir = { x: 0, y: 0 }; // unit vector the solar wind is blowing toward
 
 // --- Getters (read by enemy, marker, render, main) ---
 export function isFrozen()        { return effects.freeze > 0; }
 export function isShielded()      { return effects.shield > 0; }
 export function boostMult()       { return effects.boost > 0 ? POWERUPS.BOOST.speedMult : 1; }
+export function enemySlowMult()   { return effects.slowdown > 0 ? SPECIAL_BLOBS.SLOW.slowMult : 1; }
 export function isAiming()        { return aiming; }
 export function getPickups()      { return pickups; }
 export function getZoom()         { return zoom; }
-export function getActiveEffects(){ return { freeze: effects.freeze, boost: effects.boost, shield: effects.shield, solarwind: effects.solarwind }; }
+export function getActiveEffects(){ return { freeze: effects.freeze, boost: effects.boost, shield: effects.shield, solarwind: effects.solarwind, slowdown: effects.slowdown }; }
 // For render: the active gust as {dir, time} or null (drives the wind streaks).
 export function getSolarWind()    { return effects.solarwind > 0 ? { dir: solarDir, time: effects.solarwind } : null; }
 
@@ -42,11 +45,12 @@ export function reset() {
   effects.boost  = 0;
   effects.shield = 0;
   effects.solarwind = 0;
+  effects.slowdown = 0;
 }
 
 // --- Per-frame update ---
 export function update(dt) {
-  for (const key of ["freeze", "boost", "shield", "solarwind"]) {
+  for (const key of ["freeze", "boost", "shield", "solarwind", "slowdown"]) {
     if (effects[key] > 0) {
       effects[key] -= dt;
       if (effects[key] <= 0) { effects[key] = 0; audio.powerupExpire(); }
@@ -187,6 +191,10 @@ function activateSolarWind() {
   solarDir = dirs[Math.floor(Math.random() * 4)];
   effects.solarwind = POWERUPS.SOLARWIND.duration; // sustained push (see update)
 }
+
+// Granted by SPLIT-enclosing a "slow" Special Blob (§8) — main.js calls this
+// directly (not through activate(), which only handles pickup types).
+export function activateSlowdown() { effects.slowdown = SPECIAL_BLOBS.SLOW.duration; }
 
 function solidAt(px, py) {
   return cellSolid(Math.floor((py - field.y) / CELL), Math.floor((px - field.x) / CELL));

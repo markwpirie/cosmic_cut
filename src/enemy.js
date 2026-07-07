@@ -9,9 +9,9 @@
 // All bouncers reflect off the arena wall and claimed territory. Touching the
 // marker or in-progress cut while cutting is death (main.js owns the consequence).
 
-import { field, CELL, COLS, ROWS, QIX, BOSS, BLOB_POLY, BLOB_TYPES, MARKER, RESPAWN, nodeX, nodeY } from "./config.js";
+import { field, CELL, COLS, ROWS, QIX, BOSS, BLOB_POLY, BLOB_TYPES, SPECIAL_BLOBS, MARKER, RESPAWN, nodeX, nodeY } from "./config.js";
 import { cellSolid } from "./grid.js";
-import { isFrozen, isShielded } from "./powerups.js";
+import { isFrozen, isShielded, enemySlowMult } from "./powerups.js";
 
 // Live list of active enemies. Each: { x, y, vx, vy, t, radius, speed, color,
 // hunter, shape, ... shape-specific fields }.
@@ -122,6 +122,31 @@ function makeEnemy(ti, r, c, shape, hunter, boss = false) {
   return b;
 }
 
+// A Special Blob (§8): a poly Blob whose look/size/speed comes from
+// config.SPECIAL_BLOBS instead of BLOB_TYPES, tagged `special` so kills/claims
+// treat it differently (reward-on-enclosure, excluded from the respawn floor,
+// takes precedence for being FILLED in a SPLIT — see grid.applyClaim).
+function makeSpecialEnemy(kind, r, c) {
+  const cfg = SPECIAL_BLOBS[kind.toUpperCase()];
+  const b = {
+    x: field.x + (c + 0.5) * CELL,
+    y: field.y + (r + 0.5) * CELL,
+    vx: 0, vy: 0, t: 0,
+    radius: cfg.radius * QIX.sizeScale * BLOB_POLY.sizeScale,
+    speed: cfg.speed,
+    color: cfg.color,
+    hunter: false,
+    shape: "poly",
+    ti: -1,
+    spawnT: 0,
+    special: kind,
+  };
+  b.verts = makeVerts();
+  b.bodyRot = Math.random() * Math.PI * 2;
+  launch(b);
+  return b;
+}
+
 // Live poly Blob/Hunter starting count for this level (the sheaf/Qix keeps its own
 // separate "always ≥1 alive" rule, so the 50% floor below applies to poly only).
 export let startCount = 0;
@@ -134,7 +159,9 @@ export const deadPool = [];
 //   qix     — BLOB_TYPES indices for sheaf Qix
 //   blobs   — BLOB_TYPES indices for polygon Blobs
 //   hunters — BLOB_TYPES indices for polygon Hunter Blobs (drift toward player)
-export function reset({ qix = [], blobs: polyIdx = [], hunters = [], boss = false } = {}) {
+//   special — kinds ("life" | "slow") of Special Blobs to place (§8); excluded
+//             from startCount/the respawn floor — they're one-shot bonus targets
+export function reset({ qix = [], blobs: polyIdx = [], hunters = [], special = [], boss = false } = {}) {
   blobs.length = 0;
   deadPool.length = 0;
   const specs = [
@@ -144,10 +171,14 @@ export function reset({ qix = [], blobs: polyIdx = [], hunters = [], boss = fals
     ...hunters.map(ti => ({ ti, shape: "poly", hunter: true })),
   ];
   startCount = polyIdx.length + hunters.length;
-  const cells = spawnCells(specs.length);
+  const cells = spawnCells(specs.length + special.length);
   specs.forEach((s, i) => {
     const [r, c] = cells[i];
     blobs.push(makeEnemy(s.ti, r, c, s.shape, s.hunter, s.boss));
+  });
+  special.forEach((kind, i) => {
+    const [r, c] = cells[specs.length + i];
+    blobs.push(makeSpecialEnemy(kind, r, c));
   });
 }
 reset();
@@ -303,6 +334,7 @@ function solidAt(px, py) {
 
 export function update(dt, markerX = 0, markerY = 0) {
   if (isFrozen()) return;
+  dt *= enemySlowMult(); // Special Blob SLOW-DOWN effect (§8)
   for (const b of blobs) {
     if (b.spawnT > 0) { b.spawnT = Math.max(0, b.spawnT - dt); b.t += dt; continue; } // telegraphing: visible, held still
     b.t += dt;
@@ -338,8 +370,8 @@ export function removeBlobs(indices) {
   for (let i = blobs.length - 1; i >= 0; i--) {
     if (!kill.has(i)) continue;
     const b = blobs[i];
-    lastKilled.push({ x: b.x, y: b.y, radius: b.radius, color: b.color });
-    if (b.shape === "poly") deadPool.push({ ti: b.ti, hunter: b.hunter });
+    lastKilled.push({ x: b.x, y: b.y, radius: b.radius, color: b.color, special: b.special || null });
+    if (b.shape === "poly" && !b.special) deadPool.push({ ti: b.ti, hunter: b.hunter });
     blobs.splice(i, 1);
   }
 }
@@ -348,6 +380,8 @@ export function cells() {
   return blobs.map(b => ({
     col: Math.floor((b.x - field.x) / CELL),
     row: Math.floor((b.y - field.y) / CELL),
+    // A Special Blob doesn't vote to keep its region open — see grid.applyClaim.
+    holdsOpen: !b.special,
   }));
 }
 
@@ -368,8 +402,10 @@ export function killNear(x0, y0, x1, y1, reach) {
       near = segSegDist(s.ax, s.ay, s.bx, s.by, x0, y0, x1, y1) < QIX.lineHitPad + reach;
     }
     if (near) {
-      killed.push({ x: b.x, y: b.y, radius: b.radius, color: b.color });
-      if (b.shape === "poly") deadPool.push({ ti: b.ti, hunter: b.hunter });
+      // A dash through a Special Blob destroys it but grants no reward (§8) —
+      // the caller can tell by the `special` flag on the returned entry.
+      killed.push({ x: b.x, y: b.y, radius: b.radius, color: b.color, special: b.special || null });
+      if (b.shape === "poly" && !b.special) deadPool.push({ ti: b.ti, hunter: b.hunter });
       blobs.splice(i, 1);
     }
   }

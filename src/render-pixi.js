@@ -15,7 +15,7 @@
 
 import { Application, Container, Graphics, Sprite, TilingSprite, Texture, Text, Rectangle, DisplacementFilter } from "pixi.js";
 import { AdvancedBloomFilter } from "pixi-filters";
-import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, QIX, BOSS, BLOB_POLY, SPARX, MARKER, RESPAWN, BLOOM, CORNERS, GLASS, NEBULA,STARFIELD, SHIP_TRAIL, SHIP_VIS, AMBIENT, ENERGY, IMPACT, GRID_BG, MOTES, VIGNETTE, HUD, MOBILE, TOUCH } from "./config.js";
+import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, SPECIAL_BLOBS, QIX, BOSS, BLOB_POLY, SPARX, MARKER, RESPAWN, BLOOM, CORNERS, GLASS, NEBULA,STARFIELD, SHIP_TRAIL, SHIP_VIS, AMBIENT, ENERGY, IMPACT, GRID_BG, MOTES, VIGNETTE, HUD, MOBILE, TOUCH } from "./config.js";
 import * as powerups from "./powerups.js";
 import { grid, slowFill, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
 import { marker, mode, dir, trail, slowActive, zoomDash } from "./marker.js";
@@ -1189,6 +1189,19 @@ function drawPoly(g, b) {
   }
   energyCore(g, b.x, b.y, 4, b.color, b.t * 1.7); // breathing halo under the core
   sphere(g, b.x, b.y, 4, b.color, { glow: 0.28 }); // glowy 3D core
+  // Special Blob glyph (§8) — reads at a glance which reward it holds.
+  if (b.special === "life") {
+    const gl = b.radius * 0.5;
+    g.moveTo(b.x - gl, b.y).lineTo(b.x + gl, b.y)
+      .moveTo(b.x, b.y - gl).lineTo(b.x, b.y + gl)
+      .stroke({ width: 2, color: 0xffffff, alpha: 0.95 });
+  } else if (b.special === "slow") {
+    const gl = b.radius * 0.5;
+    g.circle(b.x, b.y, gl).stroke({ width: 1.6, color: 0xffffff, alpha: 0.95 })
+      .moveTo(b.x, b.y).lineTo(b.x, b.y - gl * 0.8)
+      .moveTo(b.x, b.y).lineTo(b.x + gl * 0.5, b.y)
+      .stroke({ width: 1.6, color: 0xffffff, alpha: 0.95 });
+  }
   emitWake(b);
   if (b.hunter) {
     const dx = marker.x - b.x, dy = marker.y - b.y, d = Math.hypot(dx, dy);
@@ -1466,7 +1479,7 @@ function drawHUD(scorePulseT) {
   uiGfx.moveTo(10, HUD.sepY).lineTo(WIDTH - 10, HUD.sepY).stroke({ width: 1, color: COLORS.hud, alpha: HUD.lineAlpha });
 
   const active = powerups.getActiveEffects();
-  const rows = [["freeze", POWERUPS.FREEZE], ["boost", POWERUPS.BOOST], ["shield", POWERUPS.SHIELD], ["solarwind", POWERUPS.SOLARWIND]].filter(([k]) => active[k] > 0);
+  const rows = [["freeze", POWERUPS.FREEZE], ["boost", POWERUPS.BOOST], ["shield", POWERUPS.SHIELD], ["solarwind", POWERUPS.SOLARWIND], ["slowdown", SPECIAL_BLOBS.SLOW]].filter(([k]) => active[k] > 0);
   let ex = 16;
   for (const [key, cfg] of rows) {
     const label = `${cfg.label} ${active[key].toFixed(1)}s`;
