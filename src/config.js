@@ -526,6 +526,9 @@ export const POWERUPS = {
   // ZOOM is a DASH: pick a direction, then rocket across the field DRAWING A CUT at
   // dashSpeedMult× speed — invulnerable, killing any enemy the ship flies through
   // (within dashKillReach px of its body). The cut claims normally when it lands.
-  ZOOM:      { duration: 0, color: "#ff4400", label: "ZOOM",      killPoints:   80,
-               dashSpeedMult: 2, dashKillReach: 9 },
+  // killPoints stays below POINTS.perKill (500) — an invulnerable dash kill is
+  // cheaper than trapping an enemy in a real SPLIT. distancePoints rewards the
+  // length of the dash itself (awarded once, when the dash's cut closes).
+  ZOOM:      { duration: 0, color: "#ff4400", label: "ZOOM",      killPoints:   250,
+               dashSpeedMult: 2, dashKillReach: 9, distancePoints: 0.25 },
 };

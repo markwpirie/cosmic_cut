@@ -14,7 +14,7 @@ import { render } from "./render.js";
 import * as audio from "./audio.js";
 import * as director from "./audio-director.js";
 import * as fx from "./fx.js";
-import { TIMING, POINTS, THEMES, POWERUPS, RESPAWN, SPECIAL_BLOBS, field, WIDTH, HEIGHT, MOBILE, TOUCH } from "./config.js";
+import { TIMING, POINTS, THEMES, POWERUPS, RESPAWN, SPECIAL_BLOBS, CELL, field, WIDTH, HEIGHT, MOBILE, TOUCH } from "./config.js";
 import * as powerups from "./powerups.js";
 import * as sparx from "./sparx.js";
 
@@ -404,6 +404,17 @@ function loop(now) {
     powerups.update(dt);
 
     if (!aiming) updateMarker(dt);
+    // The dash's cut closes the instant the marker hits the wall (finishCut(),
+    // inside updateMarker above, clears zoomDash back to false) — the start-of-
+    // frame `dashing` flag still true afterward means THIS frame is the close.
+    const dashClosed = dashing && mode === "riding";
+    if (dashClosed && lastCutLength > 0) {
+      const distPts = Math.round(lastCutLength * CELL * POWERUPS.ZOOM.distancePoints);
+      if (distPts > 0) {
+        game.addScore(distPts);
+        popups.push({ text: `ZOOM +${distPts}`, x: marker.x, y: marker.y - 36, t: 0 });
+      }
+    }
 
     // ZOOM dash kill-sweep: destroy every enemy the ship flew through this frame.
     // (zoomDash clears itself the instant the dash's cut closes, so we use the
