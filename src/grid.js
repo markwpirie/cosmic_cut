@@ -194,17 +194,24 @@ export function applyClaim(trail, keepCells, slow = false) {
   //    in a claimed (smaller) region dies: that's the SPLIT (§14). With no blob
   //    info, fall back to keeping the largest region. Returns the indices (into
   //    keepCells) of blobs that were claimed, so the caller can remove them.
+  //    A keepCell can mark `holdsOpen: false` (Special Blobs, §8) — it doesn't
+  //    vote to keep its region open, so when it's the only thing in play its
+  //    side takes precedence for being FILLED rather than defaulting open.
   const killed = [];
   if (sizes.length > 1) {
-    const regionOf = [];            // region id under each keepCell, or -1
-    const enemyRegion = new Map();  // blob-holding region id -> its size
+    const regionOf = [];              // region id under each keepCell, or -1
+    const enemyRegion = new Map();    // blob-holding region id -> its size
+    const specialRegion = new Set();  // region ids holding ONLY non-voting keepCells
     if (keepCells) {
       keepCells.forEach((kc, i) => {
         let rid = -1;
         const { col, row } = kc;
         if (row >= 0 && row < ROWS && col >= 0 && col < COLS && comp[row][col] !== -1) rid = comp[row][col];
         regionOf[i] = rid;
-        if (rid !== -1) enemyRegion.set(rid, sizes[rid]);
+        if (rid !== -1) {
+          if (kc.holdsOpen === false) specialRegion.add(rid);
+          else enemyRegion.set(rid, sizes[rid]);
+        }
       });
     }
     let keepId = 0;
@@ -212,7 +219,14 @@ export function applyClaim(trail, keepCells, slow = false) {
       let best = -1;
       for (const [rid, sz] of enemyRegion) if (sz > best) { best = sz; keepId = rid; }
     } else {
-      for (let i = 1; i < sizes.length; i++) if (sizes[i] > sizes[keepId]) keepId = i;
+      // No real enemy anywhere: prefer the largest region that ISN'T holding a
+      // Special Blob, so a special-only side is always the one that gets filled.
+      let best = -1;
+      for (let i = 0; i < sizes.length; i++) {
+        if (specialRegion.has(i)) continue;
+        if (sizes[i] > best) { best = sizes[i]; keepId = i; }
+      }
+      if (best === -1) for (let i = 1; i < sizes.length; i++) if (sizes[i] > sizes[keepId]) keepId = i;
     }
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {

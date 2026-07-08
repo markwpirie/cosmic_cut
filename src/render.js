@@ -4,7 +4,8 @@
 // start menu, a level intro banner, the play field, the level-complete wipe, and
 // the game-over / campaign-complete overlays.
 
-import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, AUDIO, POWERUPS, QIX, BLOB_POLY, SPARX, MARKER, MOBILE, nodeX, nodeY } from "./config.js";
+import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, AUDIO, POWERUPS, SPECIAL_BLOBS, QIX, BLOB_POLY, SPARX, MARKER, MOBILE, RESPAWN, REVEAL, nodeX, nodeY } from "./config.js";
+import { revealSource } from "./reveal.js";
 import * as powerups from "./powerups.js";
 import { grid, slowFill, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
 import { marker, mode, dir, trail, slowActive } from "./marker.js";
@@ -185,6 +186,7 @@ function drawClaimed(ctx, wipeR = -1) {
   const th = theme();
   const fillNormal = th.claimedFill;
   const fillSlow = th.claimedFillSlow || COLORS.claimedFillSlow;
+  const boss = REVEAL.enabled && game.currentLevel().boss;
 
   // Gather visible claimed cells once (reused for the base fill and the clip).
   const cells = [];
@@ -199,11 +201,29 @@ function drawClaimed(ctx, wipeR = -1) {
   }
   if (!cells.length) return;
 
+  // Boss picture-reveal (§7): the zone's hero scene shows THROUGH the glass —
+  // drawn first, clipped to the claimed cells, with the flat fill below scaled
+  // down (glassMult) so the art reads clearly. Shimmer/specular (steps 2-3
+  // below) stay full-strength on top, so it still looks and feels like glass.
+  if (boss) {
+    ctx.save();
+    ctx.beginPath();
+    for (const [px, py] of cells) ctx.rect(px, py, CELL, CELL);
+    ctx.clip();
+    const img = revealSource(game.currentLevel().zone, field.w, field.h);
+    ctx.globalAlpha = REVEAL.dim;
+    ctx.drawImage(img, field.x, field.y, field.w, field.h);
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
   // 1) Base translucent glass (two passes so the slow/normal tints stay flat).
+  ctx.globalAlpha = boss ? REVEAL.glassMult : 1;
   ctx.fillStyle = fillNormal;
   for (const [px, py, s] of cells) if (!s) ctx.fillRect(px, py, CELL, CELL);
   ctx.fillStyle = fillSlow;
   for (const [px, py, s] of cells) if (s) ctx.fillRect(px, py, CELL, CELL);
+  ctx.globalAlpha = 1;
 
   const t = now() / 1000;
   const shimmer = 0.5 + 0.5 * Math.sin(t * 1.6);
@@ -411,6 +431,32 @@ function drawPoly(ctx, b) {
   ctx.arc(b.x, b.y, 2.5, 0, Math.PI * 2);
   ctx.fill();
 
+  // Special Blob glyph (§8) — reads at a glance which reward it holds.
+  if (b.special === "life") {
+    ctx.globalAlpha = 0.95;
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2;
+    ctx.shadowBlur = 10;
+    const g = b.radius * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(b.x - g, b.y); ctx.lineTo(b.x + g, b.y);
+    ctx.moveTo(b.x, b.y - g); ctx.lineTo(b.x, b.y + g);
+    ctx.stroke();
+  } else if (b.special === "slow") {
+    ctx.globalAlpha = 0.95;
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1.6;
+    ctx.shadowBlur = 10;
+    const g = b.radius * 0.5;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, g, 0, Math.PI * 2);
+    ctx.moveTo(b.x, b.y);
+    ctx.lineTo(b.x, b.y - g * 0.8);
+    ctx.moveTo(b.x, b.y);
+    ctx.lineTo(b.x + g * 0.5, b.y);
+    ctx.stroke();
+  }
+
   if (b.hunter) {
     const dx = marker.x - b.x, dy = marker.y - b.y;
     const d  = Math.hypot(dx, dy);
@@ -430,8 +476,33 @@ function drawPoly(ctx, b) {
   ctx.restore();
 }
 
+// Respawn telegraph: a contracting ring + pulsing dot in the enemy's own colour,
+// standing in for the body while it's freshly respawned (harmless, still — §6).
+function drawSpawning(ctx, x, y, color, radius, spawnT) {
+  const f = 1 - Math.max(0, Math.min(1, spawnT / RESPAWN.telegraph)); // 0 → 1 as it arrives
+  ctx.save();
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 14;
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = 0.5 + 0.4 * Math.sin(f * Math.PI * 6);
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(x, y, radius * (1.8 - 0.8 * f), 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = "#ffffff";
+  ctx.shadowBlur = 10;
+  ctx.beginPath();
+  ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawQix(ctx) {
-  for (const b of blobs) (b.shape === "sheaf" ? drawSheaf : drawPoly)(ctx, b);
+  for (const b of blobs) {
+    if (b.spawnT > 0) { drawSpawning(ctx, b.x, b.y, b.color, boundRadius(b), b.spawnT); continue; }
+    (b.shape === "sheaf" ? drawSheaf : drawPoly)(ctx, b);
+  }
 }
 
 // SOLAR WIND: streaks of light blowing across the field in the gust direction.
@@ -474,6 +545,7 @@ function drawSolarWind(ctx) {
 
 function drawSparx(ctx) {
   for (const s of sparxList) {
+    if (s.spawnT > 0) { drawSpawning(ctx, s.x, s.y, s.color, SPARX.radius, s.spawnT); continue; }
     const col   = s.latched ? SPARX.latchColor : s.color;
     const glow  = s.latched ? 22 : 14;
     const pulse = 0.6 + 0.4 * Math.sin(s.t * 8 + (s.fast ? 1.5 : 0));
@@ -687,12 +759,12 @@ function drawMarker(ctx) {
 }
 
 function drawHUD(ctx, scorePulseT = 99) {
-  const L = game.currentLevel();
+  const L = game.currentSpec(); // SUPER-recalculated target when active
   ctx.textBaseline = "top";
   ctx.font = "600 18px system-ui, sans-serif";
   ctx.textAlign = "left";
   ctx.fillStyle = theme().frontier; // match the zone's border colour
-  ctx.fillText(`ZONE ${L.label}`, 12, 10);
+  ctx.fillText(`ZONE ${game.levelLabel()}`, 12, 10);
   ctx.fillStyle = COLORS.hud;
   ctx.fillText(`${percent.toFixed(0)}/${L.target}%`, 110, 10);
   ctx.fillStyle = COLORS.marker;
@@ -721,6 +793,7 @@ function drawHUD(ctx, scorePulseT = 99) {
     ["boost",     POWERUPS.BOOST ],
     ["shield",    POWERUPS.SHIELD],
     ["solarwind", POWERUPS.SOLARWIND],
+    ["slowdown",  SPECIAL_BLOBS.SLOW],
   ].filter(([k]) => active[k] > 0);
   if (rows.length) {
     ctx.font = "600 13px system-ui, sans-serif";
@@ -783,30 +856,32 @@ function drawMenu(ctx, menuSel) {
 
   // half fixed first, gap derived from the leftover span — see render-pixi.js's
   // drawMenu for why (the old gap-derives-half formula clipped chips at the edges).
-  const n = zoneCount;
+  // One extra chip for SUPER mode once it's been earned (clear 5-5).
+  const n = zoneCount + (game.superUnlocked ? 1 : 0);
   const EDGE_PAD = 16;
   const half = MOBILE ? 32 : 40;
   const gap = Math.min(110, (WIDTH - 2 * EDGE_PAD - 2 * half) / Math.max(1, n - 1));
   const startX = WIDTH / 2 - ((n - 1) * gap) / 2;
   const y = HEIGHT / 2 + 20;
   for (let z = 1; z <= n; z++) {
+    const isSuper = z === zoneCount + 1;
     const x = startX + (z - 1) * gap;
-    const locked = z > game.unlockedZone;
+    const locked = !isSuper && z > game.unlockedZone;
     const selected = z === menuSel;
     ctx.save();
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     // chip
     ctx.lineWidth = selected ? 3 : 1.5;
-    ctx.strokeStyle = locked ? COLORS.locked : selected ? COLORS.hudAccent : COLORS.arena;
+    ctx.strokeStyle = locked ? COLORS.locked : selected ? COLORS.hudAccent : (isSuper ? COLORS.hudAccent : COLORS.arena);
     if (selected && !locked) { ctx.shadowColor = COLORS.hudAccent; ctx.shadowBlur = 16; }
     ctx.strokeRect(x - half, y - half, half * 2, half * 2);
     ctx.shadowBlur = 0;
     ctx.fillStyle = locked ? COLORS.locked : selected ? COLORS.hudAccent : COLORS.frontier;
-    ctx.font = "700 30px system-ui, sans-serif";
-    ctx.fillText(String(z), x, y - 6);
+    ctx.font = isSuper ? "700 18px system-ui, sans-serif" : "700 30px system-ui, sans-serif";
+    ctx.fillText(isSuper ? "S" : String(z), x, y - 6);
     ctx.font = "500 13px system-ui, sans-serif";
-    ctx.fillText(locked ? "LOCKED" : `${z}-1`, x, y + 22);
+    ctx.fillText(locked ? "LOCKED" : (isSuper ? "SUPER" : `${z}-1`), x, y + 22);
     ctx.restore();
   }
   centerText(ctx, "← →  select        ENTER  start", HEIGHT - 78,
@@ -816,8 +891,8 @@ function drawMenu(ctx, menuSel) {
 }
 
 function drawIntro(ctx) {
-  const L = game.currentLevel();
-  centerText(ctx, `ZONE ${L.label}`, CY - 30, "700 52px system-ui, sans-serif", theme().frontier);
+  const L = game.currentSpec(); // SUPER-recalculated target when active
+  centerText(ctx, `ZONE ${game.levelLabel()}`, CY - 30, "700 52px system-ui, sans-serif", theme().frontier);
   centerText(ctx, L.boss ? `BOSS — CLAIM ${L.target}%` : `CLAIM ${L.target}%`, CY + 24,
     "600 26px system-ui, sans-serif", COLORS.hudAccent);
   centerText(ctx, "press a direction to begin", CY + 72, "500 17px system-ui, sans-serif", COLORS.hud);
@@ -1028,12 +1103,15 @@ function drawGameOver(ctx) {
 function drawCampaignComplete(ctx) {
   ctx.fillStyle = "rgba(5, 3, 15, 0.82)";
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
-  centerText(ctx, "CAMPAIGN COMPLETE", CY - 60, "700 46px system-ui, sans-serif", COLORS.frontier);
+  centerText(ctx, game.justUnlockedSuper ? "SUPER MODE UNLOCKED" : "CAMPAIGN COMPLETE", CY - 60,
+    "700 46px system-ui, sans-serif", COLORS.frontier);
   centerText(ctx, `FINAL SCORE ${fmt(game.score)}`, CY - 8, "700 28px system-ui, sans-serif", COLORS.hudAccent);
   if (game.newHigh) centerText(ctx, "★ NEW HIGH SCORE ★", CY + 32, "800 24px system-ui, sans-serif", theme().frontier);
   else centerText(ctx, `HI  ${fmt(game.highScore)}`, CY + 32, "600 22px system-ui, sans-serif", COLORS.locked);
-  centerText(ctx, "you cleared all five zones — press any key", CY + 72,
-    "500 20px system-ui, sans-serif", COLORS.hud);
+  const tail = game.justUnlockedSuper ? "replay the campaign with double the enemies — press any key"
+    : game.superMode ? "SUPER campaign cleared — press any key"
+    : "you cleared all five zones — press any key";
+  centerText(ctx, tail, CY + 72, "500 20px system-ui, sans-serif", COLORS.hud);
 }
 
 export function render(ctx, view = {}) {

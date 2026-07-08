@@ -52,14 +52,18 @@ export const MARKER = {
 // under MARKER.speed (200) so the player can always outrun them. The pulse is a
 // cheap nod to the design's "expanding/contracting" Blob (full shape in Phase 9).
 export const BLOB = { pulse: 2 };
-// Art pass: enemies OWN the warm/pink end of the palette (cyan is the world's hero
-// colour, magenta/pink/violet = danger) — a heat spectrum from slow violet to fast red.
+// Art pass: enemies OWN a fixed magenta/hot-pink "danger" band (a heat spectrum
+// from slow violet-magenta to fast hot-pink), kept OUT of every zone's own hue
+// (cyan/green/gold/purple/red, THEMES below) so a Blob never blends into the
+// zone-5 red glass, the zone-3 gold glass, etc. — recoloured 2026-07-07 after the
+// zone palettes below were widened; the old spectrum (violet→red) overlapped
+// zone 4 (purple) and zone 5 (red) once those zones stopped being cyan-flattened.
 export const BLOB_TYPES = [
-  { name: "violet",  color: "#a06bff", radius: 13, speed: 85 },
-  { name: "magenta", color: "#ff3df0", radius: 11, speed: 105 },
-  { name: "pink",    color: "#ff5ca8", radius: 10, speed: 130 },
-  { name: "orange",  color: "#ff8a3c", radius: 8,  speed: 155 },
-  { name: "red",     color: "#ff4d3c", radius: 7,  speed: 182 },
+  { name: "violet",  color: "#c13dff", radius: 13, speed: 85 },
+  { name: "magenta", color: "#e83dff", radius: 11, speed: 105 },
+  { name: "pink",    color: "#ff3df0", radius: 10, speed: 130 },
+  { name: "rose",    color: "#ff3da6", radius: 8,  speed: 155 },
+  { name: "hotpink", color: "#ff3d7a", radius: 7,  speed: 182 },
 ];
 
 // Neon palette (§10). Glass blocks / slow-cut shading arrive in Phase 9.
@@ -80,16 +84,21 @@ export const COLORS = {
   trail: "#5ad6ff",
 };
 
-// Per-zone field palette — ART PASS (cyan-hero discipline, per the NEXUS reference
-// board): every zone's playfield stays in the cyan/teal family (identity = subtle
-// temperature shifts only), while the zone's OLD hue lives on as a restrained
-// `accent` (seam tint, arena border, ZONE labels). Pink/magenta now MEANS danger.
+// Per-zone field palette — recoloured 2026-07-07 for a CLEAR hue shift per zone
+// (Mark: the cyan-hero flattening pass made zones read near-identical, especially
+// the claimed glass; reference `assets/levels.png` — 1 CYAN → 2 GREEN → 3 YELLOW →
+// 4 PURPLE → 5 RED). Every field (frontier/claimedFill/claimedFillSlow/trail/seam/
+// arena/accent/glassTint) now carries the zone's own hue, not just `accent`.
+// Pink/magenta stays reserved for danger (BLOB_TYPES/SPARX below) — zone 4's
+// purple is kept blue-leaning and zone 5's red kept a pure red, both clear of the
+// enemies' magenta/hot-pink band. `glassTint` retints the Pixi glass shimmer
+// layer per zone (render-pixi.js — the shimmer used to be a fixed constant).
 export const THEMES = [
-  { frontier: "#7df9ff", claimedFill: "rgba(25, 230, 255, 0.16)",  claimedFillSlow: "rgba(4, 30, 44, 0.62)",  trail: "#5ad6ff", seam: "rgba(125, 249, 255, 0.35)", arena: "#1f8fa3", accent: "#19e6ff" }, // 1 pure teal-cyan (the hero look)
-  { frontier: "#8fc9ff", claimedFill: "rgba(90, 180, 255, 0.16)",  claimedFillSlow: "rgba(6, 22, 44, 0.62)",  trail: "#6fb4ff", seam: "rgba(255, 185, 110, 0.28)", arena: "#a3631f", accent: "#ffb24d" }, // 2 ice-blue, ember accents
-  { frontier: "#7dffd4", claimedFill: "rgba(40, 255, 200, 0.15)",  claimedFillSlow: "rgba(5, 36, 30, 0.62)",  trail: "#5affc9", seam: "rgba(130, 255, 180, 0.28)", arena: "#1fa35a", accent: "#79ff9e" }, // 3 sea-green cyan
-  { frontier: "#a8c4ff", claimedFill: "rgba(140, 170, 255, 0.15)", claimedFillSlow: "rgba(16, 18, 46, 0.64)", trail: "#8fb0ff", seam: "rgba(190, 160, 255, 0.28)", arena: "#5a2fa3", accent: "#bb8cff" }, // 4 steel-blue, violet whisper
-  { frontier: "#eaffff", claimedFill: "rgba(200, 245, 255, 0.14)", claimedFillSlow: "rgba(20, 34, 44, 0.62)", trail: "#c8f6ff", seam: "rgba(255, 220, 120, 0.28)", arena: "#a3851f", accent: "#ffd24d" }, // 5 white-hot electric cyan, gold accents
+  { frontier: "#7df9ff", claimedFill: "rgba(25, 230, 255, 0.16)", claimedFillSlow: "rgba(4, 30, 44, 0.62)",   trail: "#5ad6ff", seam: "rgba(125, 249, 255, 0.35)", arena: "#1f8fa3", accent: "#19e6ff", glassTint: "#7fd4ff" }, // 1 CYAN — the hero look, unchanged
+  { frontier: "#6dffb0", claimedFill: "rgba(60, 255, 150, 0.16)", claimedFillSlow: "rgba(4, 36, 26, 0.62)",   trail: "#4dffa0", seam: "rgba(130, 255, 180, 0.32)", arena: "#1fa35a", accent: "#4dffb0", glassTint: "#7fffc0" }, // 2 GREEN
+  { frontier: "#ffe066", claimedFill: "rgba(255, 214, 90, 0.15)", claimedFillSlow: "rgba(40, 32, 4, 0.64)",   trail: "#ffdb4d", seam: "rgba(255, 224, 130, 0.30)", arena: "#a3781f", accent: "#ffd24d", glassTint: "#ffe28f" }, // 3 YELLOW/gold
+  { frontier: "#a68cff", claimedFill: "rgba(140, 120, 255, 0.16)", claimedFillSlow: "rgba(18, 14, 46, 0.64)", trail: "#9078ff", seam: "rgba(180, 160, 255, 0.28)", arena: "#5a3fa3", accent: "#b48cff", glassTint: "#c3b2ff" }, // 4 PURPLE (blue-leaning, clear of enemy violet)
+  { frontier: "#ff6b6b", claimedFill: "rgba(255, 90, 90, 0.14)",  claimedFillSlow: "rgba(40, 10, 10, 0.64)",  trail: "#ff8080", seam: "rgba(255, 150, 150, 0.28)", arena: "#a32f2f", accent: "#ff5a5a", glassTint: "#ffb0b0" }, // 5 RED (pure red, clear of enemy hot-pink)
 ];
 
 // Phase 9 art-direction §1: BLOOM (Pixi-only, AdvancedBloomFilter from pixi-filters).
@@ -444,10 +453,56 @@ export const SPARX = {
   fastSpeed:     120,   // Fast Sparx perimeter speed
   latchSpeed:    240,   // Fast Sparx speed when latched to the cut trail
   radius:          9,   // collision + visual radius (1.5× the original 6)
-  normalColor: "#ffee00", // normal Sparx neon yellow
-  fastColor:   "#ff6200", // Fast Sparx hot orange
-  latchColor:  "#ff2200", // Fast Sparx color when latched (danger red)
+  // Recoloured 2026-07-07 into the same magenta/hot-pink danger band as
+  // BLOB_TYPES (was yellow/orange/red, which clashed with zone 3's new gold and
+  // zone 5's new red) — Sparx keep their own identity (pure pink, no violet lean).
+  normalColor: "#ff5ec2", // normal Sparx hot pink
+  fastColor:   "#ff3d9e", // Fast Sparx deeper magenta-pink
+  latchColor:  "#ff1f6b", // Fast Sparx color when latched (danger — deepest pink-red)
   trailLen:       12,   // number of recent positions kept for the visual trail
+};
+
+// Enemy floor & respawn rule (§6): killed enemies stay dead. Each family — poly
+// Blobs/Hunters, and Sparx — only tops back up once its LIVE count drops below
+// floorPct of that level's starting count for the family, one at a time, at a
+// delay, appearing with a harmless telegraph window before it's live. The sheaf
+// Qix has its own separate "always ≥1 alive" rule (main.js) — not floor-based.
+export const RESPAWN = {
+  floorPct:      0.5,  // live count floor, as a fraction of the level's starting count
+  delay:         1.5,  // seconds between a family dropping below its floor and a respawn
+  telegraph:     0.9,  // seconds a freshly respawned enemy is visible but harmless
+  edgeBand:        3,  // respawn cell must be within this many cells of an arena edge
+  minPlayerDist:  18,  // (cells) preferred minimum distance from the player on respawn
+};
+
+// SUPER mode (§5): unlocked by clearing 5-5. S1-1+ replays the same 25 levels with
+// doubled enemy counts and a recalculated (lower, floored) target.
+export const SUPER = {
+  enemyMult:      2,   // qix/blobs/hunters/sparx/fastSparx counts × this
+  targetDelta:   -4,   // applied to each level's target %
+  targetMin:     50,   // target % never drops below this
+};
+
+// Special Blobs (§8): rare, visually distinct poly-Blob variants placed by level
+// data (`levels.js` `special: ["life"|"slow"]`). Still lethal to touch like any
+// Blob, but only ever REWARD the player on SPLIT-enclosure (a ZOOM dash kill
+// destroys them for no reward). Excluded from the 50% respawn floor (one-shot)
+// and from the SPLIT label/×2 multiplier (they're a bonus target, not a threat).
+// Colours stay clear of the violet→red danger band, Sparx yellow/orange, and
+// BOOST green.
+export const SPECIAL_BLOBS = {
+  LIFE: { color: "#9dffcf", radius: 10, speed: 90, label: "EXTRA LIFE!" },
+  SLOW: { color: "#8fd8ff", radius: 10, speed: 90, label: "SLOW-DOWN!", duration: 8, slowMult: 0.5 },
+};
+
+// Picture-reveal boss levels (§7): every X-5 uncovers a per-zone scene (reveal.js)
+// behind claimed cells instead of a flat glass block. The picture shows THROUGH
+// the glass, not instead of it — glassMult only scales the flat fill so the
+// shimmer/specular/rim stay full-strength on top (Mark: keep the glassy shine).
+export const REVEAL = {
+  enabled: true,
+  glassMult: 0.75, // flat claimed-fill alpha multiplier on boss levels (< 1 lets the art read)
+  dim: 0.9,        // the reveal image's own opacity
 };
 
 // Power-up tuning (Phase 6, §8). All durations in seconds; killPoints/distancePoints
@@ -471,6 +526,9 @@ export const POWERUPS = {
   // ZOOM is a DASH: pick a direction, then rocket across the field DRAWING A CUT at
   // dashSpeedMult× speed — invulnerable, killing any enemy the ship flies through
   // (within dashKillReach px of its body). The cut claims normally when it lands.
-  ZOOM:      { duration: 0, color: "#ff4400", label: "ZOOM",      killPoints:   80,
-               dashSpeedMult: 2, dashKillReach: 9 },
+  // killPoints stays below POINTS.perKill (500) — an invulnerable dash kill is
+  // cheaper than trapping an enemy in a real SPLIT. distancePoints rewards the
+  // length of the dash itself (awarded once, when the dash's cut closes).
+  ZOOM:      { duration: 0, color: "#ff4400", label: "ZOOM",      killPoints:   250,
+               dashSpeedMult: 2, dashKillReach: 9, distancePoints: 0.25 },
 };

@@ -14,7 +14,7 @@ import { render } from "./render.js";
 import * as audio from "./audio.js";
 import * as director from "./audio-director.js";
 import * as fx from "./fx.js";
-import { TIMING, POINTS, THEMES, POWERUPS, field, WIDTH, HEIGHT, MOBILE, TOUCH } from "./config.js";
+import { TIMING, POINTS, THEMES, POWERUPS, RESPAWN, SPECIAL_BLOBS, CELL, field, WIDTH, HEIGHT, MOBILE, TOUCH } from "./config.js";
 import * as powerups from "./powerups.js";
 import * as sparx from "./sparx.js";
 
@@ -70,18 +70,33 @@ let danger = 0;        // 0..1, how close a blob is to your exposed trail
 let prevCutting = false; // tracks the cut-tension tone on/off
 let audioStarted = false;
 let paused = false;      // P / ESC freeze during play
-const SHEAF_RESPAWN = 1.5; // seconds before a new Qix appears once the board has none
-let sheafRespawnT = SHEAF_RESPAWN;
+// Respawn timers (§6): the sheaf Qix keeps its own "always ≥1 alive" rule; poly
+// Blobs/Hunters and Sparx each respawn one at a time once below their 50% floor
+// (config.RESPAWN). All three count down independently and reset whenever their
+// family is back at/above its target.
+let sheafRespawnT = RESPAWN.delay;
+let blobRespawnT = RESPAWN.delay;
+let sparxRespawnT = RESPAWN.delay;
 
 function zoneColor() { return THEMES[game.currentLevel().zone - 1].frontier; }
+
+// Highest selectable menu slot: unlocked zones, plus one more (the SUPER chip)
+// once SUPER mode has been earned by clearing 5-5.
+function menuMax() { return game.unlockedZone + (game.superUnlocked ? 1 : 0); }
+// Start whatever's selected — the SUPER chip (menuMax() when unlocked) starts the
+// SUPER campaign from 1-1; any other slot is a normal zone start.
+function startSelected() {
+  if (game.superUnlocked && menuSel === menuMax()) game.startRun(1, true);
+  else game.startRun(menuSel);
+}
 
 // Load the current level's world: clear the arena, home the marker, spawn the
 // level's Blobs, drop any held input, pop-ups and banner.
 function loadLevel() {
   grid.reset();
   resetMarker();
-  const lv = game.currentLevel();
-  enemy.reset({ qix: lv.qix || [], blobs: lv.blobs || [], hunters: lv.hunters || [], boss: lv.boss });
+  const lv = game.currentSpec(); // SUPER-doubled counts + recalculated target when active
+  enemy.reset({ qix: lv.qix || [], blobs: lv.blobs || [], hunters: lv.hunters || [], special: lv.special || [], boss: lv.boss });
   sparx.reset(lv.sparx || 0, lv.fastSparx || 0);
   control.reset();
   fx.reset();
@@ -92,6 +107,9 @@ function loadLevel() {
   deathPoint = null;
   deathBlob = null;
   danger = 0;
+  sheafRespawnT = RESPAWN.delay;
+  blobRespawnT = RESPAWN.delay;
+  sparxRespawnT = RESPAWN.delay;
 }
 
 // Lost a life but still alive: forfeit the cut, re-home marker + Blobs, keep the
@@ -100,14 +118,17 @@ function loadLevel() {
 function respawn() {
   const spot = grid.respawnNode();
   homeMarker(spot.col, spot.row);
-  const rlv = game.currentLevel();
-  enemy.reset({ qix: rlv.qix || [], blobs: rlv.blobs || [], hunters: rlv.hunters || [], boss: rlv.boss });
+  const rlv = game.currentSpec();
+  enemy.reset({ qix: rlv.qix || [], blobs: rlv.blobs || [], hunters: rlv.hunters || [], special: rlv.special || [], boss: rlv.boss });
   sparx.reset(rlv.sparx || 0, rlv.fastSparx || 0);
   control.reset();
   powerups.reset();
   deathPoint = null;
   deathBlob = null;
   popups = [];
+  sheafRespawnT = RESPAWN.delay;
+  blobRespawnT = RESPAWN.delay;
+  sparxRespawnT = RESPAWN.delay;
 }
 
 // React to entering a new state — the AudioDirector owns which music moment it
@@ -178,8 +199,8 @@ window.addEventListener("keydown", (e) => {
 
   if (game.state === "menu") {
     if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") { menuSel = Math.max(1, menuSel - 1); audio.ui(); }
-    else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") { menuSel = Math.min(game.unlockedZone, menuSel + 1); audio.ui(); }
-    else if (e.key === "Enter" || e.key === " ") { game.startRun(menuSel); audio.ui(); }
+    else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") { menuSel = Math.min(menuMax(), menuSel + 1); audio.ui(); }
+    else if (e.key === "Enter" || e.key === " ") { startSelected(); audio.ui(); }
     return;
   }
   // DEV/TEST: Z drops a ZOOM on the marker (instant pickup) to test the aim path.
@@ -217,7 +238,7 @@ window.addEventListener("keydown", (e) => {
   }
   if (game.state === "gameover" || game.state === "campaigncomplete") {
     game.toMenu();
-    menuSel = Math.min(menuSel, game.unlockedZone);
+    menuSel = Math.min(menuSel, menuMax());
   }
 });
 
@@ -271,7 +292,7 @@ function setTouchDir(name) {
   // it never feeds movement intents there.
   if (game.state === "menu") {
     if (name === "left") { menuSel = Math.max(1, menuSel - 1); audio.ui(); }
-    else if (name === "right") { menuSel = Math.min(game.unlockedZone, menuSel + 1); audio.ui(); }
+    else if (name === "right") { menuSel = Math.min(menuMax(), menuSel + 1); audio.ui(); }
     return;
   }
   if (touchDir === name) return;
@@ -292,7 +313,7 @@ function touchGesture() {
   // menu: handled on touchEND (tap = start, swipe = change selection) — see endTouch
   else if (game.state === "dead") { if (transT >= TIMING.deathHold) { respawn(); game.beginPlay(); } }
   else if (game.state === "gameover" || game.state === "campaigncomplete") {
-    game.toMenu(); menuSel = Math.min(menuSel, game.unlockedZone);
+    game.toMenu(); menuSel = Math.min(menuSel, menuMax());
   }
   return false;
 }
@@ -349,7 +370,7 @@ if (canvas && typeof window !== "undefined" && "ontouchstart" in window) {
     if (!steerStill) {
       // A tap (no movement) that both began AND ended on the menu starts the run.
       if (anchorState === "menu" && game.state === "menu" && !touchMoved && touchId !== null) {
-        game.startRun(menuSel); audio.ui();
+        startSelected(); audio.ui();
       }
       setTouchDir(null); touchId = null; touchAnchor = null; anchorState = null;
     }
@@ -383,6 +404,17 @@ function loop(now) {
     powerups.update(dt);
 
     if (!aiming) updateMarker(dt);
+    // The dash's cut closes the instant the marker hits the wall (finishCut(),
+    // inside updateMarker above, clears zoomDash back to false) — the start-of-
+    // frame `dashing` flag still true afterward means THIS frame is the close.
+    const dashClosed = dashing && mode === "riding";
+    if (dashClosed && lastCutLength > 0) {
+      const distPts = Math.round(lastCutLength * CELL * POWERUPS.ZOOM.distancePoints);
+      if (distPts > 0) {
+        game.addScore(distPts);
+        popups.push({ text: `ZOOM +${distPts}`, x: marker.x, y: marker.y - 36, t: 0 });
+      }
+    }
 
     // ZOOM dash kill-sweep: destroy every enemy the ship flew through this frame.
     // (zoomDash clears itself the instant the dash's cut closes, so we use the
@@ -391,12 +423,17 @@ function loop(now) {
     if (dashing) {
       dashKilled = enemy.killNear(px0, py0, marker.x, marker.y, POWERUPS.ZOOM.dashKillReach);
       if (dashKilled.length) {
-        game.addScore(POWERUPS.ZOOM.killPoints * dashKilled.length);
+        // Special Blobs caught in the dash are destroyed but grant NO reward (§8 —
+        // only SPLIT-enclosure rewards them); they still explode below like anything else.
+        const scoredKills = dashKilled.filter(k => !k.special).length;
+        if (scoredKills > 0) {
+          game.addScore(POWERUPS.ZOOM.killPoints * scoredKills);
+          popups.push({ text: `ZOOM +${POWERUPS.ZOOM.killPoints * scoredKills}`, x: marker.x, y: marker.y - 20, t: 0 });
+        }
         for (const k of dashKilled) {
           fx.explode(k.x, k.y, k.color, 1.2);
           fx.ring(k.x, k.y, k.color, 16, 260, 0.6);
         }
-        popups.push({ text: `ZOOM +${POWERUPS.ZOOM.killPoints * dashKilled.length}`, x: marker.x, y: marker.y - 20, t: 0 });
         audio.kill(); director.kill(); fx.addShake(12); scorePulseT = 0;
       }
     }
@@ -424,6 +461,11 @@ function loop(now) {
     // and explode, just via their own flat award below (mirrors how ZOOM kills are
     // scored directly rather than through scoreCut).
     const blobKills = prevCount - enemy.blobs.length - dashKilled.length;
+    // Special Blobs enclosed this SPLIT don't drive the SPLIT label/×2 multiplier
+    // or per-kill points — they're a bonus target, rewarded separately below.
+    // Gated on blobKills > 0 (like the explosion loop) so lastKilled is fresh.
+    const splitSpecials = blobKills > 0 ? enemy.lastKilled.filter(k => k.special) : [];
+    const normalBlobKills = blobKills - splitSpecials.length;
     // sparx.totalKilled diff, NOT a sparxList.length delta — an enclosed Sparx
     // respawns immediately (same kind, opposite side), which would mask a plain
     // count comparison.
@@ -435,8 +477,8 @@ function loop(now) {
       const a = Math.atan2(FCY - marker.y, FCX - marker.x);
       popups.push({ text: `+${Math.round(gained)}%`, x: marker.x + Math.cos(a) * 34, y: marker.y + Math.sin(a) * 34, t: 0 });
     }
-    if (gained >= 0.5 || blobKills > 0) {
-      const res = game.scoreCut(gained, lastCutLength, blobKills, lastCutSlow);
+    if (gained >= 0.5 || normalBlobKills > 0) {
+      const res = game.scoreCut(gained, lastCutLength, normalBlobKills, lastCutSlow);
       if (res.labels.length > 0 || res.total >= REWARD_MIN) reward = { ...res, t: 0 };
       scorePulseT = 0;
       audio.claim();
@@ -474,6 +516,17 @@ function loop(now) {
       }
       fx.addShake(16);
     }
+    // Special Blob rewards — SPLIT-enclosure only (a ZOOM dash kill above gave
+    // nothing, per §8). LIFE grants an extra life; SLOW-DOWN halves every
+    // enemy's speed for a while (powerups.enemySlowMult, read by enemy/sparx update).
+    for (const k of splitSpecials) {
+      const cfg = k.special === "life" ? SPECIAL_BLOBS.LIFE : SPECIAL_BLOBS.SLOW;
+      if (k.special === "life") game.addLife();
+      else powerups.activateSlowdown();
+      popups.push({ text: cfg.label, x: k.x, y: k.y - 20, t: 0 });
+      audio.powerupPickup();
+      fx.ring(k.x, k.y, cfg.color, 20, 300, 0.6);
+    }
     // Check if a claim enclosed any pickups, and try to spawn a new one.
     if (gained >= 0.5) {
       const collected = powerups.checkClaim();
@@ -489,16 +542,42 @@ function loop(now) {
 
     // Repopulate the Qix if the board has none left (all killed via ZOOM dash / SPLIT)
     // — there should always be a star enemy to carve around. Short delay so it doesn't
-    // pop in the instant the last one dies.
-    const curLv = game.currentLevel();
+    // pop in the instant the last one dies. Separate from (and takes priority over)
+    // the poly floor below — a lone-Qix death must not also trigger a floor respawn.
+    const curLv = game.currentSpec();
     if (curLv.qix && curLv.qix.length && enemy.countSheafs() === 0) {
       sheafRespawnT -= dt;
       if (sheafRespawnT <= 0) {
         enemy.addSheaf(curLv.qix[0], curLv.boss);
-        sheafRespawnT = SHEAF_RESPAWN;
+        sheafRespawnT = RESPAWN.delay;
       }
     } else {
-      sheafRespawnT = SHEAF_RESPAWN;
+      sheafRespawnT = RESPAWN.delay;
+    }
+
+    // Poly Blob/Hunter floor (§6): killed enemies stay dead; respawn one at a time,
+    // at a delay, only while the live count is below 50% of the level's start count.
+    const blobFloor = Math.ceil(enemy.startCount * RESPAWN.floorPct);
+    if (enemy.countPoly() < blobFloor) {
+      blobRespawnT -= dt;
+      if (blobRespawnT <= 0) {
+        enemy.respawnOne(marker.col, marker.row);
+        blobRespawnT = RESPAWN.delay;
+      }
+    } else {
+      blobRespawnT = RESPAWN.delay;
+    }
+
+    // Sparx floor (§6): same rule, replacing the old instant 1-for-1 respawn.
+    const sparxFloor = Math.ceil(sparx.startCount * RESPAWN.floorPct);
+    if (sparx.sparxList.length < sparxFloor) {
+      sparxRespawnT -= dt;
+      if (sparxRespawnT <= 0) {
+        sparx.respawnOne(marker.col, marker.row);
+        sparxRespawnT = RESPAWN.delay;
+      }
+    } else {
+      sparxRespawnT = RESPAWN.delay;
     }
 
     // Death checks. The player is invulnerable to enemies while AIMING a ZOOM (frozen)
@@ -534,7 +613,7 @@ function loop(now) {
           scorePulseT = 0;
         }
       }
-      if (grid.percent >= game.currentLevel().target) {
+      if (grid.percent >= game.currentSpec().target) {
         game.completeLevel();
         audio.levelClear();
         fx.addShake(6);
@@ -590,3 +669,15 @@ function loop(now) {
 }
 
 requestAnimationFrame(loop);
+
+// Phase 8: PWA — register the service worker (sw.js) for installability +
+// offline play. Guarded (unsupported in some embedded/headless contexts).
+// NOT gated on the window "load" event: this module itself has a top-level
+// await (?pixi's CDN import + renderer init), so it can be one of the very
+// things "load" is waiting on — by the time this line runs, "load" may have
+// ALREADY fired, and addEventListener("load", …) never retroactively fires a
+// past event. Registering immediately (registration is cheap and async; it
+// doesn't need to wait for anything) sidesteps that race entirely.
+if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./sw.js").catch(() => {}); // offline-first is a bonus, not a requirement
+}

@@ -15,7 +15,8 @@
 
 import { Application, Container, Graphics, Sprite, TilingSprite, Texture, Text, Rectangle, DisplacementFilter } from "pixi.js";
 import { AdvancedBloomFilter } from "pixi-filters";
-import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, QIX, BOSS, BLOB_POLY, SPARX, MARKER, BLOOM, CORNERS, GLASS, NEBULA,STARFIELD, SHIP_TRAIL, SHIP_VIS, AMBIENT, ENERGY, IMPACT, GRID_BG, MOTES, VIGNETTE, HUD, MOBILE, TOUCH } from "./config.js";
+import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, SPECIAL_BLOBS, QIX, BOSS, BLOB_POLY, SPARX, MARKER, RESPAWN, REVEAL, BLOOM, CORNERS, GLASS, NEBULA,STARFIELD, SHIP_TRAIL, SHIP_VIS, AMBIENT, ENERGY, IMPACT, GRID_BG, MOTES, VIGNETTE, HUD, MOBILE, TOUCH } from "./config.js";
+import { revealSource } from "./reveal.js";
 import * as powerups from "./powerups.js";
 import { grid, slowFill, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
 import { marker, mode, dir, trail, slowActive, zoomDash } from "./marker.js";
@@ -47,6 +48,9 @@ let worldRoot = null; // shaken container holding the play-field glow layers
 let glassMask = null; // union of claimed cells, used to clip the specular sweep to glass
 let sweepGroup = null; // masked container holding the additive reflection TilingSprites
 let sweepA = null, sweepB = null; // two parallax reflection layers
+let lastGlassTint = null; // re-tint the shimmer only when the zone's glassTint actually changes
+let revealSprite = null; // boss-level picture-reveal (§7), masked by glassMask like the shimmer
+let lastRevealZone = null;
 let sweepLast = 0;    // timestamp for sweep scroll dt
 // Boss multi-stage escalation (presentation-only): stage = how many claim-%
 // thresholds (BOSS.stages) have been crossed. The boss visibly angers per stage.
@@ -269,6 +273,13 @@ export async function init(canvas) {
   worldRoot.addChild(G.grid);  // faint holo-lattice over the unclaimed void (under everything)
   worldRoot.addChild(G.glass); // claimed-glass fill + emissive rim
 
+  // Boss picture-reveal (§7): a per-zone baked scene shown through the claimed
+  // glass on X-5 levels. Sits above the flat fill, below the shimmer/specular —
+  // "seen through glass", not "instead of glass". Masked below, alongside sweepGroup.
+  revealSprite = new Sprite(Texture.EMPTY);
+  revealSprite.visible = false;
+  worldRoot.addChild(revealSprite);
+
   // GLASS shimmer: two additive, diagonally-scrolling TilingSprites of a baked
   // streak/noise texture, grouped and clipped to the claimed shape by glassMask
   // (rebuilt each frame). Additive + transparency = organic drifting reflections
@@ -285,6 +296,7 @@ export async function init(canvas) {
   sweepGroup.addChild(sweepB, sweepA); // far layer behind near layer
   glassMask = new Graphics();
   sweepGroup.mask = glassMask;
+  revealSprite.mask = glassMask; // same claimed-cell union clips the reveal art too
   worldRoot.addChild(sweepGroup, glassMask);
 
   for (const name of ["seams", "arena", "perimeter", "trail",
@@ -334,6 +346,7 @@ function drawHoloGrid() {
   const g = G.grid;
   const a = GRID_BG.alpha * (0.8 + 0.2 * Math.sin(now() / 1400)); // gentle breathing
   const N = GRID_BG.spacing;
+  const col = theme().frontier; // zone-tinted lattice (was a fixed cyan constant)
   for (let r = N; r < ROWS; r += N) {          // horizontal lines along lattice row r
     const y = field.y + r * CELL;
     let run = -1;
@@ -342,7 +355,7 @@ function drawHoloGrid() {
       if (open && run < 0) run = c;
       else if (!open && run >= 0) {
         g.moveTo(field.x + run * CELL, y).lineTo(field.x + c * CELL, y)
-          .stroke({ width: 1, color: GRID_BG.color, alpha: a });
+          .stroke({ width: 1, color: col, alpha: a });
         run = -1;
       }
     }
@@ -355,7 +368,7 @@ function drawHoloGrid() {
       if (open && run < 0) run = r;
       else if (!open && run >= 0) {
         g.moveTo(x, field.y + run * CELL).lineTo(x, field.y + r * CELL)
-          .stroke({ width: 1, color: GRID_BG.color, alpha: a });
+          .stroke({ width: 1, color: col, alpha: a });
         run = -1;
       }
     }
@@ -863,19 +876,52 @@ function drawBackground(beat) {
   }
 }
 
+// rgba(r, g, b, a) string × alpha multiplier — used to dim the flat claimed fill
+// on boss levels without touching the rim/shimmer (which read fillNormal/Slow
+// only through THEMES, never through this scaled copy).
+function scaleAlpha(rgba, mult) {
+  const m = /rgba?\(([^)]+)\)/.exec(rgba);
+  if (!m) return rgba;
+  const [r, gg, b, a = "1"] = m[1].split(",").map(s => s.trim());
+  return `rgba(${r}, ${gg}, ${b}, ${(parseFloat(a) * mult).toFixed(3)})`;
+}
+
 function drawClaimed(wipeR = -1) {
   const g = G.glass; g.clear();
   const th = theme();
-  const fillNormal = th.claimedFill;
-  const fillSlow = th.claimedFillSlow || COLORS.claimedFillSlow;
+  const boss = REVEAL.enabled && game.currentLevel().boss;
+  const fillMult = boss ? REVEAL.glassMult : 1;
+  const fillNormal = fillMult < 1 ? scaleAlpha(th.claimedFill, fillMult) : th.claimedFill;
+  const fillSlow = fillMult < 1 ? scaleAlpha(th.claimedFillSlow || COLORS.claimedFillSlow, fillMult) : (th.claimedFillSlow || COLORS.claimedFillSlow);
 
   const visible = (px, py) => !(wipeR >= 0 && Math.hypot(px + CELL / 2 - CX, py + CELL / 2 - CY) <= wipeR);
+  let any = false;
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       if (grid[r][c] !== FILLED) continue;
       const px = field.x + c * CELL, py = field.y + r * CELL;
       if (!visible(px, py)) continue;
       g.rect(px, py, CELL, CELL).fill(slowFill[r][c] ? fillSlow : fillNormal);
+      any = true;
+    }
+  }
+
+  // Boss picture-reveal (§7): the zone's hero scene shows THROUGH the glass —
+  // masked to the same claimed-cell union as the shimmer (glassMask, rebuilt in
+  // drawGlassSweep), sitting between the flat fill and the shimmer/specular so
+  // it still reads as glass, not a flat picture.
+  if (revealSprite) {
+    if (boss && any) {
+      const zone = game.currentLevel().zone;
+      if (zone !== lastRevealZone) {
+        revealSprite.texture = Texture.from(revealSource(zone, field.w, field.h));
+        lastRevealZone = zone;
+      }
+      revealSprite.position.set(field.x, field.y);
+      revealSprite.alpha = REVEAL.dim;
+      revealSprite.visible = true;
+    } else {
+      revealSprite.visible = false;
     }
   }
 
@@ -916,6 +962,11 @@ function drawGlassSweep(wipeR = -1) {
   sweepGroup.visible = on;
   if (!on) return;
   gm.fill({ color: 0xffffff }); // mask coverage (colour irrelevant)
+
+  // Retint the shimmer to the current zone's glass colour (§ zone palettes) —
+  // cheap check, only writes the tint when the zone actually changed.
+  const gt = theme().glassTint || GLASS.tint;
+  if (gt !== lastGlassTint) { sweepA.tint = gt; sweepB.tint = gt; lastGlassTint = gt; }
 
   const t = now();
   const dt = Math.min(0.05, (t - sweepLast) / 1000); sweepLast = t;
@@ -1040,9 +1091,22 @@ function drawSolarWind() {
   }
 }
 
+// Respawn telegraph: a contracting ring + pulsing white dot in the enemy's own
+// colour, standing in for the body while it's freshly respawned (harmless, still,
+// no wake/sparks — §6). Shared by drawEnemies and drawSparx.
+function drawSpawning(g, x, y, color, radius, spawnT) {
+  const f = 1 - Math.max(0, Math.min(1, spawnT / RESPAWN.telegraph)); // 0 → 1 as it arrives
+  const alpha = 0.5 + 0.4 * Math.sin(f * Math.PI * 6);
+  g.circle(x, y, radius * (1.8 - 0.8 * f)).stroke({ width: 2, color, alpha });
+  g.circle(x, y, 2.5).fill({ color: 0xffffff, alpha: 0.85 });
+}
+
 function drawEnemies() {
   const g = G.enemy; g.clear();
-  for (const b of blobs) (b.shape === "sheaf" ? drawSheaf : drawPoly)(g, b);
+  for (const b of blobs) {
+    if (b.spawnT > 0) { drawSpawning(g, b.x, b.y, b.color, boundRadius(b), b.spawnT); continue; }
+    (b.shape === "sheaf" ? drawSheaf : drawPoly)(g, b);
+  }
 }
 
 // Energy-being treatment: a breathing double halo around a body core (bloom turns it
@@ -1176,6 +1240,19 @@ function drawPoly(g, b) {
   }
   energyCore(g, b.x, b.y, 4, b.color, b.t * 1.7); // breathing halo under the core
   sphere(g, b.x, b.y, 4, b.color, { glow: 0.28 }); // glowy 3D core
+  // Special Blob glyph (§8) — reads at a glance which reward it holds.
+  if (b.special === "life") {
+    const gl = b.radius * 0.5;
+    g.moveTo(b.x - gl, b.y).lineTo(b.x + gl, b.y)
+      .moveTo(b.x, b.y - gl).lineTo(b.x, b.y + gl)
+      .stroke({ width: 2, color: 0xffffff, alpha: 0.95 });
+  } else if (b.special === "slow") {
+    const gl = b.radius * 0.5;
+    g.circle(b.x, b.y, gl).stroke({ width: 1.6, color: 0xffffff, alpha: 0.95 })
+      .moveTo(b.x, b.y).lineTo(b.x, b.y - gl * 0.8)
+      .moveTo(b.x, b.y).lineTo(b.x + gl * 0.5, b.y)
+      .stroke({ width: 1.6, color: 0xffffff, alpha: 0.95 });
+  }
   emitWake(b);
   if (b.hunter) {
     const dx = marker.x - b.x, dy = marker.y - b.y, d = Math.hypot(dx, dy);
@@ -1190,6 +1267,7 @@ function drawPoly(g, b) {
 function drawSparx() {
   const g = G.sparx; g.clear();
   for (const s of sparxList) {
+    if (s.spawnT > 0) { drawSpawning(g, s.x, s.y, s.color, SPARX.radius, s.spawnT); continue; }
     const col = s.latched ? SPARX.latchColor : s.color;
     const pulse = 0.6 + 0.4 * Math.sin(s.t * 8 + (s.fast ? 1.5 : 0));
     for (let i = 0; i < s.tail.length; i++) {
@@ -1403,12 +1481,12 @@ function miniShip(gg, x, y, r, color, alpha = 1) {
     .fill({ color, alpha });
 }
 function drawHUD(scorePulseT) {
-  const L = game.currentLevel();
+  const L = game.currentSpec(); // SUPER-recalculated target when active
   const accent = theme().accent || theme().frontier;
   const ts = HUD.textSize, ss = HUD.scoreSize;
 
   // Zone chip framed by corner brackets (row 1, left).
-  const zt = drawText(`ZONE ${L.label}`, 16, 10, { size: ts, color: accent, weight: "700" });
+  const zt = drawText(`ZONE ${game.levelLabel()}`, 16, 10, { size: ts, color: accent, weight: "700" });
   const bx0 = 10, bx1 = 16 + zt.width + 8, by0 = 7, by1 = 10 + ts + 8, bl = 6;
   uiGfx.moveTo(bx0 + bl, by0).lineTo(bx0, by0).lineTo(bx0, by0 + bl)
     .moveTo(bx1 - bl, by1).lineTo(bx1, by1).lineTo(bx1, by1 - bl)
@@ -1452,7 +1530,7 @@ function drawHUD(scorePulseT) {
   uiGfx.moveTo(10, HUD.sepY).lineTo(WIDTH - 10, HUD.sepY).stroke({ width: 1, color: COLORS.hud, alpha: HUD.lineAlpha });
 
   const active = powerups.getActiveEffects();
-  const rows = [["freeze", POWERUPS.FREEZE], ["boost", POWERUPS.BOOST], ["shield", POWERUPS.SHIELD], ["solarwind", POWERUPS.SOLARWIND]].filter(([k]) => active[k] > 0);
+  const rows = [["freeze", POWERUPS.FREEZE], ["boost", POWERUPS.BOOST], ["shield", POWERUPS.SHIELD], ["solarwind", POWERUPS.SOLARWIND], ["slowdown", SPECIAL_BLOBS.SLOW]].filter(([k]) => active[k] > 0);
   let ex = 16;
   for (const [key, cfg] of rows) {
     const label = `${cfg.label} ${active[key].toFixed(1)}s`;
@@ -1508,25 +1586,28 @@ function drawMenu(menuSel) {
   // left over after reserving `half` + EDGE_PAD on both ends — so the outermost
   // chips can never spill off the canvas edge (the old formula derived half FROM
   // gap, which left no such guarantee and clipped ~7.5px off both edges on mobile).
-  const n = zoneCount;
+  // One extra chip for SUPER mode once it's been earned (clear 5-5).
+  const n = zoneCount + (game.superUnlocked ? 1 : 0);
   const EDGE_PAD = 16;
   const half = MOBILE ? 32 : 40, chipTxt = Math.min(30, half * 0.75);
   const gap = Math.min(110, (WIDTH - 2 * EDGE_PAD - 2 * half) / Math.max(1, n - 1));
   const startX = WIDTH / 2 - ((n - 1) * gap) / 2, y = HEIGHT / 2 + 20;
   for (let z = 1; z <= n; z++) {
+    const isSuper = z === zoneCount + 1;
     const x = startX + (z - 1) * gap;
-    const locked = z > game.unlockedZone, selected = z === menuSel;
-    G.overlay.rect(x - half, y - half, half * 2, half * 2).stroke({ width: selected ? 3 : 1.5, color: locked ? COLORS.locked : selected ? COLORS.hudAccent : COLORS.arena });
-    drawText(String(z), x, y - 6, { size: chipTxt, color: locked ? COLORS.locked : selected ? COLORS.hudAccent : COLORS.frontier, weight: "700", align: "center" });
-    drawText(locked ? "LOCKED" : `${z}-1`, x, y + half * 0.7, { size: Math.min(13, half * 0.34), color: locked ? COLORS.locked : COLORS.hud, weight: "500", align: "center" });
+    const locked = !isSuper && z > game.unlockedZone, selected = z === menuSel;
+    const stroke = locked ? COLORS.locked : selected ? COLORS.hudAccent : (isSuper ? COLORS.hudAccent : COLORS.arena);
+    G.overlay.rect(x - half, y - half, half * 2, half * 2).stroke({ width: selected ? 3 : 1.5, color: stroke });
+    drawText(isSuper ? "S" : String(z), x, y - 6, { size: isSuper ? chipTxt * 0.7 : chipTxt, color: locked ? COLORS.locked : selected ? COLORS.hudAccent : COLORS.frontier, weight: "700", align: "center" });
+    drawText(locked ? "LOCKED" : (isSuper ? "SUPER" : `${z}-1`), x, y + half * 0.7, { size: Math.min(13, half * 0.34), color: locked ? COLORS.locked : COLORS.hud, weight: "500", align: "center" });
   }
   centerText(MOBILE ? "swipe ← →  select      tap  start" : "← →  select        ENTER  start", HEIGHT - 78, 18, COLORS.hud, 1, "500");
   if (!MOBILE) centerText("M  mute     ·     N  music", HEIGHT - 48, 15, COLORS.locked, 1, "500");
 }
 
 function drawIntro() {
-  const L = game.currentLevel();
-  centerText(`ZONE ${L.label}`, CY - 30, 52, theme().accent || theme().frontier);
+  const L = game.currentSpec(); // SUPER-recalculated target when active
+  centerText(`ZONE ${game.levelLabel()}`, CY - 30, 52, theme().accent || theme().frontier);
   centerText(L.boss ? `BOSS — CLAIM ${L.target}%` : `CLAIM ${L.target}%`, CY + 24, 26, COLORS.hudAccent, 1, "600");
   centerText(MOBILE ? "swipe to begin" : "press a direction to begin", CY + 72, 17, COLORS.hud, 1, "500");
   centerText(MOBILE ? "hold SLOW (or a second finger) while cutting — double points"
@@ -1587,11 +1668,14 @@ function drawGameOver() {
 
 function drawCampaignComplete() {
   dim(0.82);
-  centerText("CAMPAIGN COMPLETE", CY - 60, 46, COLORS.frontier);
+  centerText(game.justUnlockedSuper ? "SUPER MODE UNLOCKED" : "CAMPAIGN COMPLETE", CY - 60, 46, COLORS.frontier);
   centerText(`FINAL SCORE ${fmt(game.score)}`, CY - 8, 28, COLORS.hudAccent, 1, "700");
   if (game.newHigh) centerText("★ NEW HIGH SCORE ★", CY + 32, 24, theme().frontier, 1, "800");
   else centerText(`HI  ${fmt(game.highScore)}`, CY + 32, 22, COLORS.locked, 1, "600");
-  centerText("you cleared all five zones — press any key", CY + 72, 20, COLORS.hud, 1, "500");
+  const tail = game.justUnlockedSuper ? "replay the campaign with double the enemies — press any key"
+    : game.superMode ? "SUPER campaign cleared — press any key"
+    : "you cleared all five zones — press any key";
+  centerText(tail, CY + 72, 20, COLORS.hud, 1, "500");
 }
 
 function drawPaused() {

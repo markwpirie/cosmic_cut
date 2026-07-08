@@ -119,7 +119,9 @@ as-built decisions in §14/§16. Tick items off as they land.
       rounded corners (`roundedPath` via `arcTo`). Corner radius in `config.CORNERS.radius`
       (clamped per-corner; ~4 smooths the 8px staircases into scallops). Fixed the
       separate "beaded/pixely perimeter" bug (was round caps on per-cell segments).
-- [ ] Sprite-based stars/particles (ParticleContainer); glass-block depth; boss reveal.
+- [x] **Boss picture-reveal** (2026-07-07) — `src/reveal.js` procedural per-zone
+      scene shown through the glass on every X-5 (see the Phase 10 entry below).
+- [ ] Sprite-based stars/particles (ParticleContainer); glass-block depth.
 - [ ] *Perf note:* `traceLoops` runs every frame (cheap at 90×65); cache on claim if needed.
 - [ ] *Watch:* rounded-edge tracer pinch-points (diagonal cell touches) use a turn
       preference — eyeball diagonal cuts for any stray connecting line.
@@ -181,11 +183,18 @@ Open decisions (Mark to decide):
       backgrounds; possibly AI-generated) while gameplay stays crisp procedural vectors.
 
 ## Next up
-- [ ] **Special Blobs** (the other half of §8) — extra-life Blob + slow-down Blob.
-- [ ] **Enemy floor / respawn rule (§6)** — keep ≥75% of starting enemy count;
-      respawn at the edge when SPLIT/ZOOM drop below it. Not yet wired for **Blobs**.
-      *(Sparx now always respawn 1-for-1 on enclosure-kill, opposite the player —
-      see "Sparx enclose-to-kill" above — a simpler rule than the Blob floor.)*
+- [x] **Special Blobs** (the other half of §8) — extra-life Blob + slow-down Blob.
+      Built 2026-07-07: `config.SPECIAL_BLOBS`, placed via `levels.js` `special:
+      ["life"|"slow"]` on 2-2/3-2/3-4/4-3/5-2/5-4. Reward on SPLIT-enclosure only;
+      excluded from the respawn floor and the region-fill-keeps-open vote (see
+      GAME_DESIGN §8).
+- [x] **Enemy floor / respawn rule (§6) — redesigned 2026-07-07.** Killed enemies
+      now **stay dead**; each family (Blobs/Hunters, Sparx) respawns one at a time,
+      at an edge, only once its live count drops below **50%** (was going to be a
+      75%-floor-with-backfill design, changed before it shipped) of the level's
+      starting count. Sparx's old "always respawn 1-for-1 immediately" behaviour is
+      gone, replaced by the same floor rule. The sheaf Qix keeps its separate
+      always-≥1-alive rule. `config.RESPAWN`.
 - [ ] **Tune the new enemies by feel** — Qix surge (`QIX.spanMax`,
       `surgeIntervalMin/Max`, `endpointSpeed`); Sparx speeds + latch; Hunter drift;
       per-level counts in `levels.js`.
@@ -225,20 +234,44 @@ Open decisions (Mark to decide):
       overlay text scale to the canvas. `QIX.spanMax` now derives from the field short
       side. Verified on emulated iPhone 13 + desktop regression; **real-device feel
       pass still wanted.**
-- [ ] **Phase 8** — PWA, installable on iPhone home screen.
+- [x] **Phase 8** — PWA, installable on iPhone home screen. Built 2026-07-07:
+      `manifest.json` + `sw.js` (root, no build step), procedural icons in
+      `assets/icons/`. Verified headless (offline reload, offline `?pixi` after
+      priming, MP3 Range/206 support); **install + real-device check on Mark's
+      iPhone still wanted.**
 - [x] **Phase 9** — Pixi.js graphics layer: bloom, rounded edges, gorgeous glass
       (TilingSprite shimmer + refraction), churning nebula (DisplacementFilter), glowy
       particles, rainbow Qix, lightning storms + crackles. (See PHASE9.md; sprite-based
       stars + glass-block depth still open.)
-- [~] **Phase 10** — **boss done for X-5** (big rainbow lightning Qix, `config.BOSS`).
-      Still to come: picture-reveal levels, **SUPER mode** (clear 5-5 → 2× enemies),
-      scoring polish, final feel.
+- [x] **Phase 10** — **boss done for X-5** (big rainbow lightning Qix, `config.BOSS`).
+      **Built 2026-07-07:** picture-reveal levels (`src/reveal.js`), **SUPER mode**
+      (clear 5-5 → 2× enemies, `game.currentSpec()`/`superUnlocked`), ZOOM scoring
+      polish (`killPoints`/`distancePoints`). Still open: final feel pass.
 
 ## Verify by eye (art super-upgrade pass — all steps WERE checked headless in
 ## Chrome: zero console errors, screenshots at each step; these need taste, not triage)
-- [ ] **Palette across zones 2–5** — headless run only covered zone 1; confirm the
-      ice-blue / sea-green / steel-blue / white-hot zone temperatures read distinct
-      and the seam/arena accents carry the old zone identity.
+- [x] **Palette across zones 1–5, redone 2026-07-07** — the cyan-hero flattening
+      (ice-blue/sea-green/steel-blue/white-hot) was superseded by a clear per-zone
+      hue matching `assets/levels.png` (cyan/green/gold/purple/red); headless
+      screenshots confirm all 5 zones read distinct in both renderers. **Still
+      worth an eyeball pass:** zone 3 gold vs. anything else warm, zone 4 purple
+      vs. the enemies' violet end, zone 5 red vs. the enemies' hot-pink end — the
+      enemies were recoloured into a fixed magenta/hot-pink band specifically to
+      clear these, but only Mark's eye can confirm it actually reads clean at
+      speed, mid-fight, not just in a static screenshot.
+- [ ] **Special Blob glyph readability** — the "+" (life) / clock (slow) glyph at
+      the blob's centre is small under bloom; confirm it reads at a glance, or
+      just lean on colour + the level's known `special` placement.
+- [ ] **Reveal art per zone** — `src/reveal.js`'s procedural scenes (galaxy/ringed
+      planet/black hole/cracked planet) are a first pass matching `assets/levels.png`'s
+      *composition*, not its fidelity. Tune `REVEAL.dim`/`glassMult`, or swap in
+      real art later (same `revealSource()` contract, see GAME_DESIGN §7).
+- [ ] **6-chip SUPER menu at 440px mobile** — screenshotted clean at 390×844 in this
+      session; worth a real-device check (the exact chip-gap math had a genuine
+      off-by-construction bug once before).
+- [ ] **PWA install on Mark's iPhone** — headless-verified (offline reload, offline
+      `?pixi`, MP3 Range/206); needs the real "Add to Home Screen" + icon/splash
+      check that only a device can give.
 - [ ] **Glass shimmer strength** (`GLASS.opacity/tint`) under the new cyan palette.
 - [ ] **Ribbon + thruster feel** — `SHIP_TRAIL` life/width/rates; ZOOM-dash colour.
 - [ ] **Particle density** — `ENERGY` rates + `AMBIENT.max` (drop first if GPU strain).
@@ -266,6 +299,15 @@ Open decisions (Mark to decide):
       `BLOOM.resolution`/`pixelSize`.
 
 ## Deferred (captured, not blocking — §15)
-- [ ] **ZOOM** scoring tuning (kill + distance values). *(Slow-cut bonus + darker glass: done.)*
-- [ ] SUPER-mode build-out (wired conceptually; 5-5 currently ends at campaign-complete).
+- [x] **ZOOM** scoring tuning (kill + distance values) — done 2026-07-07:
+      `killPoints` 80→250, new `distancePoints` (0.25/px). *(Slow-cut bonus + darker glass: done.)*
+- [x] SUPER-mode build-out — done 2026-07-07 (`game.currentSpec()`/`superUnlocked`,
+      see GAME_DESIGN §5). Beyond S5-5 (wrap to SS mode? procedural?) is still open.
 - [ ] LONG-cut multiplier cap vs. unbounded; Solar Wind vs ZOOM overlap.
+
+## SUPER mode target table (for the eventual tuning pass)
+Every level's SUPER target = `max(SUPER.targetMin=50, target + SUPER.targetDelta=-4)`,
+enemy counts (qix/blobs/hunters/sparx/fastSparx) × `SUPER.enemyMult=2`. Since every
+base target in `levels.js` is ≥70%, the floor never actually bites yet — every
+SUPER target today is simply `target - 4` (66% for 1-1's 70%, up to 86% for the
+90% levels). `targetMin` only matters if a future zone's base target drops below 54%.
