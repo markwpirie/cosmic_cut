@@ -1,17 +1,12 @@
-// COSMIC CUT — render-pixi (Phase 9 graphics layer)
-// A drop-in alternative to render.js that paints the same world with Pixi.js
-// instead of the 2D canvas. It exposes the SAME contract main.js already uses:
+// COSMIC CUT — render-pixi (Phase 9 graphics layer, now the only renderer)
+// Paints the world with Pixi.js/WebGL. Exposes the contract main.js uses:
 //   await init(canvas)   — set up the Pixi Application (async; CDN ESM import)
 //   render(view)         — paint one frame from the given view + live world state
-// It reads exactly the same world modules as render.js (grid/marker/enemy/…), so
-// no game logic changes — this is purely presentation (design principle §1.2).
+// It reads the world modules (grid/marker/enemy/…) but never changes them —
+// this is purely presentation (design principle §1.2).
 //
-// Opt-in: main.js only loads this module when the URL has ?pixi, so the canvas
-// renderer stays the default and the branch is always playable while this grows.
-//
-// Style note: we draw in an immediate-mode style (clear + rebuild each frame)
-// to mirror render.js closely and keep the port easy to reason about. Glow is
-// faked with a few widening, fading stroke passes (Pixi has no shadowBlur).
+// Style note: draws in an immediate-mode style (clear + rebuild each frame).
+// Glow is faked with a few widening, fading stroke passes (Pixi has no shadowBlur).
 
 import { Application, Container, Graphics, Sprite, TilingSprite, Texture, Text, Rectangle, DisplacementFilter } from "pixi.js";
 import { AdvancedBloomFilter } from "pixi-filters";

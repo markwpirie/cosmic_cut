@@ -1,10 +1,9 @@
 // COSMIC CUT — fx (juice: particles + screen shake)
-// Pure maths, no DOM, so it's headless-testable. render.js / render-pixi.js read the
+// Pure maths, no DOM, so it's headless-testable. render-pixi.js reads the
 // particle list and the shake offset; main.js spawns bursts and adds shake on events.
 //
 // A particle is { x, y, vx, vy, life, max, size, color, glow?, shrink?, grav? }.
-// `glow`/`shrink`/`grav` are optional richness fields the Pixi renderer honours (the
-// canvas renderer just draws size/color/life and ignores them — backward compatible).
+// `glow`/`shrink`/`grav` are optional richness fields the Pixi renderer honours.
 
 import { FX } from "./config.js"; // pure data — fx stays browser-API-free
 

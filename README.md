@@ -45,12 +45,9 @@ knobs are centralised in [`config.js`](src/config.js) (`AUDIO`, `POWERUPS`, `QIX
 `BLOB_POLY`, `SPARX`). See [TODO.md](TODO.md) for the running list and §14/§16 of
 [GAME_DESIGN.md](GAME_DESIGN.md).
 
-**Now in progress — Phase 9 (graphics):** the rendering layer is being ported to
-**Pixi.js v8** on the `phase9-pixi` branch. Pixi loads as a CDN ES module via an
-importmap — **no build step** — and it's **opt-in via `?pixi`** (e.g.
-`http://localhost:8000/?pixi`) so the canvas version stays the default while it
-matures. All game logic is shared and untouched. See [PHASE9.md](PHASE9.md). Phase 7
-(touch controls) follows once Phase 9 lands.
+**Phase 9 (graphics):** the rendering layer runs on **Pixi.js v8**, loaded as a
+CDN ES module via an importmap — **no build step**. All game logic is
+untouched; only presentation changed. See [PHASE9.md](PHASE9.md).
 
 ## How to play
 
@@ -91,14 +88,13 @@ job, so a given fix lands in one place:
 | [`audio.js`](src/audio.js) | Low-level Web-Audio engine: SFX, synth, MP3 track registry, beat analyser | sound design |
 | [`audio-director.js`](src/audio-director.js) | Music policy: scene cues, interrupt/resume jingles, sonar tension, stingers | when/how music reacts to play |
 | [`fx.js`](src/fx.js) | Particle bursts + screen shake (pure maths) | juice / feedback |
-| [`render.js`](src/render.js) | All drawing — canvas (starfield, menu, HUD, read-out, overlays) | anything visual |
-| [`render-pixi.js`](src/render-pixi.js) | Phase 9 Pixi.js renderer — same `render(view)` contract, opt-in via `?pixi` | the graphics upgrade |
-| [`main.js`](src/main.js) | Wiring + the game loop / state routing / event→audio+fx / renderer switch | rarely |
+| [`render-pixi.js`](src/render-pixi.js) | All drawing — Pixi.js v8 (starfield, menu, HUD, read-out, overlays, bloom/glass/particles) | anything visual |
+| [`main.js`](src/main.js) | Wiring + the game loop / state routing / event→audio+fx | rarely |
 
 The pure game logic (`grid`, `marker`, `enemy`, `game`, `levels`, `fx`) is
 browser-API-free, so it stays separate from presentation (design principle §1.2)
 and imports cleanly in Node for tests. The modules that *do* touch the browser
-(`render`/canvas, `main`/DOM, `audio`/Web-Audio, plus `game`'s `localStorage`)
+(`render-pixi`/WebGL, `main`/DOM, `audio`/Web-Audio, plus `game`'s `localStorage`)
 guard every access so they still import headlessly. This keeps a future
 native/Godot port realistic and lets tests drive the real engine.
 
@@ -135,5 +131,5 @@ push to `main`).
 
 ## Tech
 
-Plain JavaScript (ES modules) + HTML5 Canvas; Pixi.js arrives in Phase 9. See
-§12 of [GAME_DESIGN.md](GAME_DESIGN.md).
+Plain JavaScript (ES modules) + Pixi.js v8 (WebGL) rendering onto an HTML5
+canvas element. See §12 of [GAME_DESIGN.md](GAME_DESIGN.md).

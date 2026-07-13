@@ -1,10 +1,16 @@
 # Phase 9 — Pixi.js graphics layer
 
+> **Status (2026-07-13): shipped and made the only renderer.** `phase9-pixi` merged
+> to `main` on 2026-07-08; once it had covered every visual case, the `?pixi` flag
+> and the old canvas renderer (`render.js`) were removed and `phase9-pixi` deleted.
+> `src/render-pixi.js` now loads unconditionally in `main.js`. The rest of this doc
+> is left as-written for historical context on how the port was decided/built.
+
 Branch: **`phase9-pixi`** (cut from `main`). Goal: swap the presentation layer for
 **Pixi.js** for richer neon/glass/particles, **without touching game logic**. The
 canvas renderer (`render.js`) stays the default; Pixi is opt-in while it matures.
 
-## How to run / test
+## How to run / test (historical — see status note above)
 ```
 python -m http.server 8000
 ```

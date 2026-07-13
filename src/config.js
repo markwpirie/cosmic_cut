@@ -339,7 +339,7 @@ export const TIMING = {
 };
 
 // Audio feel knobs, gathered so the mix, beat-throb and music tension are all
-// tunable in one place (read by audio.js, render.js and audio-director.js).
+// tunable in one place (read by audio.js, render-pixi.js and audio-director.js).
 export const AUDIO = {
   sfxLevel: 1.15,   // SFX submix gain (sits above the music)
   moveLevel: 0.09,  // base volume of the movement "schoo"

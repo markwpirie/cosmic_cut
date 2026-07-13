@@ -8,12 +8,12 @@
 //                 for HTMLAudioElement/iOS, which streams via Range, not a
 //                 straight GET.
 //   CDN_CACHE   — the Pixi CDN (cdn.jsdelivr.net) + Google Fonts: cache-first, so
-//                 offline `?pixi` and Orbitron still work after one online visit.
+//                 offline play and Orbitron still work after one online visit.
 // CORE_CACHE is versioned (bump on a real deploy so old clients pick up new
 // code promptly via skipWaiting+clients.claim); MEDIA_CACHE/CDN_CACHE are not —
 // there's no reason to re-download a 5MB track or the Pixi bundle on every deploy.
 
-const CACHE_VERSION = "v1";
+const CACHE_VERSION = "v2";
 const CORE_CACHE = `cosmic-cut-core-${CACHE_VERSION}`;
 const MEDIA_CACHE = "cosmic-cut-media";
 const CDN_CACHE = "cosmic-cut-cdn";
@@ -21,7 +21,7 @@ const CDN_CACHE = "cosmic-cut-cdn";
 // Warmed explicitly on install rather than left to passive fetch interception:
 // dynamic import() of a bare specifier resolved via the importmap doesn't
 // reliably go through the SW's "fetch" event in every engine, so a plain
-// fetch()+cache.put() here is the only guaranteed way to get offline ?pixi
+// fetch()+cache.put() here is the only guaranteed way to get offline play
 // working after a single online visit. Keep in sync with index.html's importmap.
 const CDN_ASSETS = [
   "https://cdn.jsdelivr.net/npm/pixi.js@8/dist/pixi.min.mjs",
@@ -46,7 +46,6 @@ const CORE_ASSETS = [
   "./src/audio.js",
   "./src/audio-director.js",
   "./src/fx.js",
-  "./src/render.js",
   "./src/render-pixi.js",
   "./src/reveal.js",
   "./assets/icons/icon-192.png",
@@ -59,7 +58,7 @@ self.addEventListener("install", (event) => {
   self.skipWaiting();
   event.waitUntil(Promise.all([
     caches.open(CORE_CACHE).then((cache) => cache.addAll(CORE_ASSETS)).catch(() => {}),
-    // Best-effort: offline ?pixi still works even if this fails (e.g. installing
+    // Best-effort: offline play still works even if this fails (e.g. installing
     // while offline) — the CDN request just falls through to the network as usual.
     caches.open(CDN_CACHE).then((cache) =>
       Promise.all(CDN_ASSETS.map((url) =>

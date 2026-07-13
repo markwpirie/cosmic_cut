@@ -10,7 +10,7 @@ import * as grid from "./grid.js";
 import { marker, mode, dir, trail, lastCutLength, lastCutSlow, zoomDash, selfHit, startZoomDash, snapToNode, update as updateMarker, reset as resetMarker, home as homeMarker } from "./marker.js";
 import * as enemy from "./enemy.js";
 import * as game from "./game.js";
-import { render } from "./render.js";
+import * as pixiRenderer from "./render-pixi.js";
 import * as audio from "./audio.js";
 import * as director from "./audio-director.js";
 import * as fx from "./fx.js";
@@ -18,23 +18,12 @@ import { TIMING, POINTS, THEMES, POWERUPS, RESPAWN, SPECIAL_BLOBS, CELL, field, 
 import * as powerups from "./powerups.js";
 import * as sparx from "./sparx.js";
 
-// Renderer selection (Phase 9). Default is the canvas renderer; add ?pixi to the
-// URL to use the Pixi.js renderer (loaded on demand so canvas mode never fetches
-// Pixi). Both honour the same render(view) contract via the draw() helper below.
-const USE_PIXI = typeof location !== "undefined" && new URLSearchParams(location.search).has("pixi");
 const canvas = document.getElementById("game");
 // The canvas takes its size from config (device-branched: portrait on mobile),
-// overriding the static HTML attributes — set BEFORE either renderer initialises.
+// overriding the static HTML attributes — set BEFORE the renderer initialises.
 canvas.width = WIDTH;
 canvas.height = HEIGHT;
-let ctx = null;
-let pixiRenderer = null;
-if (USE_PIXI) {
-  pixiRenderer = await import("./render-pixi.js");
-  await pixiRenderer.init(canvas);
-} else {
-  ctx = canvas.getContext("2d");
-}
+await pixiRenderer.init(canvas);
 // Contain-fit display sizing, applied AFTER init because Pixi's autoDensity writes
 // its own inline style. Biggest undistorted fit: viewport width, or the width the
 // viewport height allows, capped at native size so desktop stays pixel-crisp.
@@ -44,8 +33,7 @@ canvas.style.width = `min(100vw, calc(100dvh * ${RATIO}), ${WIDTH}px)`;
 canvas.style.height = "auto";
 canvas.style.aspectRatio = `${WIDTH} / ${HEIGHT}`;
 function draw(view) {
-  if (pixiRenderer) pixiRenderer.render(view);
-  else render(ctx, view);
+  pixiRenderer.render(view);
 }
 
 // Total level-complete beat: read out the score, hold the banner, ripple, tail.
@@ -673,7 +661,7 @@ requestAnimationFrame(loop);
 // Phase 8: PWA — register the service worker (sw.js) for installability +
 // offline play. Guarded (unsupported in some embedded/headless contexts).
 // NOT gated on the window "load" event: this module itself has a top-level
-// await (?pixi's CDN import + renderer init), so it can be one of the very
+// await (the Pixi CDN import + renderer init), so it can be one of the very
 // things "load" is waiting on — by the time this line runs, "load" may have
 // ALREADY fired, and addEventListener("load", …) never retroactively fires a
 // past event. Registering immediately (registration is cheap and async; it

@@ -1,6 +1,7 @@
 # CLAUDE.md — Cosmic Cut
 
-Neon space-themed Qix clone. Plain JS (ES modules) + HTML5 Canvas. No build step.
+Neon space-themed Qix clone. Plain JS (ES modules) + Pixi.js v8 (WebGL) rendering
+onto an HTML5 canvas element. No build step.
 Live at https://markwpirie.github.io/cosmic_cut/ (GitHub Pages, deploys on push to `main`).
 
 ## Run locally
@@ -13,9 +14,9 @@ On Windows use `python` not `python3`.
 ## Phase status
 - **Phases 0–5 + 2 feel passes: done and live.**
 - **Phase 6 (power-ups): done** — Freeze, Solar Wind, Boost, Shield, ZOOM all implemented in `src/powerups.js`. **Solar Wind** is a *sustained* timed gust (pins all enemies to one wall for `SOLARWIND.duration`), applied each frame in `powerups.update()` before `enemy.update()`.
-- **Slow-cut + visual/feel pass: done** — **hold SPACE while cutting** for a SLOW DRAW (slower via `MARKER.slowCutMult`; cut tagged in `grid.slowFill`; darker glass `THEMES.claimedFillSlow`; **×2** area via `POINTS.slowCutMult` + "SLOW DRAW" label in `game.scoreCut`). Claimed areas render as **glossy shimmering glass** and the background is a baked **nebula/galaxy starscape** with twinkling parallax stars (both in `render.js`). Pickup sound is a louder rising arpeggio (`audio.powerupPickup`).
+- **Slow-cut + visual/feel pass: done** — **hold SPACE while cutting** for a SLOW DRAW (slower via `MARKER.slowCutMult`; cut tagged in `grid.slowFill`; darker glass `THEMES.claimedFillSlow`; **×2** area via `POINTS.slowCutMult` + "SLOW DRAW" label in `game.scoreCut`). Claimed areas render as **glossy shimmering glass** and the background is a baked **nebula/galaxy starscape** with twinkling parallax stars (both in `render-pixi.js`). Pickup sound is a louder rising arpeggio (`audio.powerupPickup`).
 - **Enemy overhaul: done** — two enemy shapes in `enemy.js`: `"sheaf"` (the star Qix — classic Kix line-sheaf, sticks surge up to ~50% screen then settle, collides on the live line; bounce margin = current span + endpoints clamped to the field in `liveSeg`, so it never leaves the arena) and `"poly"` (polygon Blobs + Hunter Blobs). Poly collision uses `hitRadius` (`BLOB_POLY.hitScale`, tighter than the visual bounding radius). Per-level mix via `qix`/`blobs`/`hunters` in `levels.js` (positional array auto-splits: first = Qix, rest = poly Blobs). Sparx + Fast Sparx in `sparx.js` (BFS chase, trail-latch, perimeter-kill). Player is a rocket ship pointing along travel dir.
-- **Phase 9 (Pixi.js): art super-upgrade landed on branch `phase9-pixi`** — see `PHASE9.md`. Pixi v8 via CDN importmap (no build step), **opt-in with `?pixi`** (canvas stays default). Full renderer in `src/render-pixi.js` (mirrors `render.js`'s `render(view)`); renderer switch + async init in `main.js`. Includes: **bloom** (`config.BLOOM`), **rounded territory edges** (`config.CORNERS`), **gorgeous glass** (additive `TilingSprite` shimmer + masked nebula **refraction**, `config.GLASS`), **churning nebula** (`config.NEBULA`), **per-zone palette** (recoloured 2026-07-07 — see below; **pink/magenta = danger**), **swept-dart ship + ribbon tail + thruster embers** (`config.SHIP_TRAIL`, renderer-local ambient particles capped by `config.AMBIENT`), **energy enemies** (halo cores, wakes, sparx sparks — `config.ENERGY`; kill dust in `fx.explode`, `config.FX`), **death-impact FX** (`config.IMPACT`), **holo-grid void + motes + baked vignette** (`config.GRID_BG/MOTES/VIGNETTE`), **Orbitron HUD** with eased claim bar (`config.HUD`), **boss stage escalation** keyed to claim % (`BOSS.stages`). **Browser-verified headless** (Playwright + system Chrome; console clean); taste-level eyeball checks listed in `TODO.md`.
+- **Phase 9 (Pixi.js): art super-upgrade — done, and the only renderer** — see `PHASE9.md`. Pixi v8 loads via CDN importmap (no build step); the old canvas renderer (`render.js`) was removed 2026-07-13 once Pixi covered every visual case, so there's no `?pixi` flag or renderer switch left — `src/render-pixi.js` is loaded and `init()`'d unconditionally in `main.js`. Includes: **bloom** (`config.BLOOM`), **rounded territory edges** (`config.CORNERS`), **gorgeous glass** (additive `TilingSprite` shimmer + masked nebula **refraction**, `config.GLASS`), **churning nebula** (`config.NEBULA`), **per-zone palette** (recoloured 2026-07-07 — see below; **pink/magenta = danger**), **swept-dart ship + ribbon tail + thruster embers** (`config.SHIP_TRAIL`, renderer-local ambient particles capped by `config.AMBIENT`), **energy enemies** (halo cores, wakes, sparx sparks — `config.ENERGY`; kill dust in `fx.explode`, `config.FX`), **death-impact FX** (`config.IMPACT`), **holo-grid void + motes + baked vignette** (`config.GRID_BG/MOTES/VIGNETTE`), **Orbitron HUD** with eased claim bar (`config.HUD`), **boss stage escalation** keyed to claim % (`BOSS.stages`). **Browser-verified headless** (Playwright + system Chrome; console clean); taste-level eyeball checks listed in `TODO.md`.
 - **Phase 7 (touch controls): done** — relative virtual joystick (swipe = heading, two fingers = slow draw), taps advance menus; in `main.js`, built on `control.press/release/setSlow`. Keyboard still works. Listeners are on the **document** (swipes work anywhere, incl. letterbox). CSS: page fully locked (`position:fixed` body, `touch-action:none`), no pinch-zoom.
 - **Mobile portrait mode: done** — `config.MOBILE` (decided once at load: coarse pointer + phone screen) switches the whole geometry: **portrait canvas 440×876, field 400×712 → 50×89 cells**, 64px HUD strip, 100px bottom touch strip with a visible **SLOW ×2 hold button** (`config.TOUCH.slowBtn`, drawn in render-pixi, state via `view.slowBtn`). Desktop stays 800×680/90×75. Canvas attrs + contain-fit style are set from config in `main.js` (don't hardcode the ratio in CSS). `QIX.spanMax` derives from the field short side. HUD/overlay/menu/VFX scale via `config.HUD` branch + `TXT_SCALE`/`BGS` in render-pixi. Touch listeners live on `document` (not the canvas) so swipes work from anywhere on screen, including the letterbox. Perf on mobile: both `DisplacementFilter`s off (`NEBULA.warp`/`GLASS.refraction` → 0), lower `BLOOM.quality`/`resolution`, `AMBIENT.max` halved — bloom itself stays on.
 - **Boss (X-5 levels): done** — the first Qix of a boss level becomes a **big rainbow lightning boss** (per-enemy sheaf params in `enemy.js`, scaled by `config.BOSS`; render-pixi draws rainbow + lashing arcs + pulsing core). Surge span kept at normal size on purpose (bigger would exceed the wall-bounce margin and pin it). **Every X-5 also reveals a per-zone procedural scene through the glass** (`src/reveal.js`, `config.REVEAL`) instead of a flat block — the shimmer/rim stay full-strength on top, so it still reads as glass.
@@ -27,9 +28,14 @@ On Windows use `python` not `python3`.
 - Full roadmap in `GAME_DESIGN.md §11`. Locked decisions in `§14`.
 
 ## Branches
-- `main` — the canvas game (current, deploys live on push).
-- `phase9-pixi` — Pixi.js graphics layer (active work). Reuses all logic untouched;
-  only the presentation layer differs. Test with `http://localhost:8000/?pixi`.
+- `main` — the only active branch (deploys live on push). `phase9-pixi` is merged
+  and now redundant — its content is identical to `main`; safe to delete.
+
+## Requirements
+- Pixi.js v8 requires **WebGL** (it dropped v7's canvas-renderer fallback) — a
+  browser/device with WebGL disabled has no graceful degradation. Accepted
+  trade-off for a hobby project on modern browsers; revisit only if that's
+  ever reported as a real blocker.
 
 ## File map
 
@@ -48,9 +54,8 @@ On Windows use `python` not `python3`.
 | `audio.js` | Low-level Web-Audio: SFX, synth, MP3 registry, beat analyser |
 | `audio-director.js` | Music policy: scene cues, interrupt/resume jingles, sonar (currently off) |
 | `fx.js` | Particles (embers/explosions, glow/grav) + screen shake |
-| `render.js` | All drawing (canvas): field, blobs, power-up icons, HUD, overlays, boss reveal art |
-| `render-pixi.js` | Phase 9 Pixi.js renderer — same `render(view)` contract, opt-in via `?pixi` |
-| `main.js` | Game loop + state routing + event wiring + renderer switch (`USE_PIXI`) + touch controls + SW registration |
+| `render-pixi.js` | All drawing (Pixi.js v8/WebGL): field, blobs, power-up icons, HUD, overlays, boss reveal art, bloom/glass/nebula/particles |
+| `main.js` | Game loop + state routing + event wiring + touch controls + SW registration |
 | `sw.js` / `manifest.json` | PWA: service worker (root, three cache strategies) + web app manifest |
 
 ## Key design rules (§14)

@@ -101,12 +101,15 @@ as-built decisions in §14/§16. Tick items off as they land.
       - **Dark glass actually reads now** — deeper/opaque `claimedFillSlow`; the bright
         zone sheen is clipped to normal cells so slow glass stays dark.
 
-## Phase 9 — Pixi.js (in progress, `phase9-pixi` branch — see PHASE9.md)
-- [x] **Pixi v8 via CDN importmap, no build step**; opt-in with `?pixi` (canvas stays
-      the default so the branch is always playable).
+## Phase 9 — Pixi.js (shipped and merged to main — see PHASE9.md)
+- [x] **Pixi v8 via CDN importmap, no build step.**
 - [x] **Full renderer ported** (`render-pixi.js`): nebula/galaxy bg + stars, glass
       field, perimeter/trail, enemies (sheaf + poly + sparx), power-ups, rocket marker,
-      particles, HUD + all overlays. Renderer switch + async init in `main.js`.
+      particles, HUD + all overlays.
+- [x] **Canvas renderer retired (2026-07-13)** — `render.js` deleted, `?pixi` flag and
+      renderer switch removed from `main.js`; `render-pixi.js` is now the only
+      renderer, loaded unconditionally. `phase9-pixi` branch is redundant (merged,
+      identical to `main`) and safe to delete.
 - [x] **Glisten confined to claimed cells** (was leaking a grey band over the whole field).
 - [x] **Real glow** via `pixi-filters` `AdvancedBloomFilter` (replaces the multi-pass
       stroke fake — the strokes now feed the bloom instead of faking it). Anti-pixelation
