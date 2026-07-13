@@ -14,7 +14,7 @@ import * as pixiRenderer from "./render-pixi.js";
 import * as audio from "./audio.js";
 import * as director from "./audio-director.js";
 import * as fx from "./fx.js";
-import { TIMING, POINTS, THEMES, POWERUPS, RESPAWN, SPECIAL_BLOBS, CELL, field, WIDTH, HEIGHT, MOBILE, TOUCH } from "./config.js";
+import { TIMING, POINTS, THEMES, POWERUPS, RESPAWN, SPECIAL_BLOBS, CELL, field, WIDTH, HEIGHT, MOBILE, TOUCH, AUDIO, PAUSE_MENU, pauseRowY } from "./config.js";
 import * as powerups from "./powerups.js";
 import * as sparx from "./sparx.js";
 
@@ -58,6 +58,7 @@ let danger = 0;        // 0..1, how close a blob is to your exposed trail
 let prevCutting = false; // tracks the cut-tension tone on/off
 let audioStarted = false;
 let paused = false;      // P / ESC freeze during play
+let pauseSel = 0;        // selected row in the pause menu (RESUME/SFX/MUSIC/QUIT)
 // Respawn timers (§6): the sheaf Qix keeps its own "always ≥1 alive" rule; poly
 // Blobs/Hunters and Sparx each respawn one at a time once below their 50% floor
 // (config.RESPAWN). All three count down independently and reset whenever their
@@ -76,6 +77,41 @@ function menuMax() { return game.unlockedZone + (game.superUnlocked ? 1 : 0); }
 function startSelected() {
   if (game.superUnlocked && menuSel === menuMax()) game.startRun(1, true);
   else game.startRun(menuSel);
+}
+
+// --- Pause menu (RESUME / SFX / MUSIC / QUIT TO MENU) ------------------------
+// P/Esc still toggles pause instantly either way (freeze/resume); once paused,
+// the same freeze doubles as a small menu — arrows/WASD move the selection,
+// left/right adjust the SFX/music sliders, Enter/Space activates RESUME or QUIT.
+// control.setPaused() stops those same keys (and the touch joystick, which also
+// calls control.press()) from being recorded as movement intents while frozen.
+function enterPause() {
+  paused = true;
+  pauseSel = 0;
+  control.setPaused(true);
+  audio.stopMusic(); audio.moveTone(false); audio.cutStop(); prevCutting = false;
+}
+function resumeFromPause() {
+  paused = false;
+  control.setPaused(false);
+  audio.startMusic();
+}
+function quitFromPause() {
+  paused = false;
+  control.setPaused(false);
+  game.quitToMenu();
+  menuSel = Math.min(menuSel, menuMax());
+  audio.ui();
+}
+function adjustPauseVolume(dir) {
+  if (pauseSel === 1) audio.setSfxVolume(audio.getSfxVolume() + dir * AUDIO.volumeStep);
+  else if (pauseSel === 2) audio.setMusicVolume(audio.getMusicVolume() + dir * AUDIO.volumeStep);
+  else return;
+  audio.ui();
+}
+function activatePauseRow() {
+  if (pauseSel === 0) resumeFromPause();
+  else if (pauseSel === 3) quitFromPause();
 }
 
 // Load the current level's world: clear the arena, home the marker, spawn the
@@ -170,18 +206,25 @@ window.addEventListener("keydown", (e) => {
   if (e.key === "n" || e.key === "N") { audio.toggleMusic(); return; }
 
   // Pause toggle (during the active level / death freeze). Halts the loop, ducks
-  // the music + movement/cut tones, and resumes them on unpause.
+  // the music + movement/cut tones, and resumes them on unpause. Also doubles as
+  // the pause MENU's own resume shortcut once already paused.
   if (e.key === "p" || e.key === "P" || e.key === "Escape") {
     if (powerups.isAiming()) { powerups.cancelZoom(); return; } // cancel ZOOM aim
-    if (game.state === "playing" || game.state === "intro" || game.state === "dead") {
-      paused = !paused;
-      audio.ui();
-      if (paused) { audio.stopMusic(); audio.moveTone(false); audio.cutStop(); prevCutting = false; }
-      else audio.startMusic();
-    }
+    if (paused) { resumeFromPause(); audio.ui(); }
+    else if (game.state === "playing" || game.state === "intro" || game.state === "dead") { enterPause(); audio.ui(); }
     return;
   }
-  if (paused) return; // swallow all other input while paused
+  if (paused) {
+    // RESUME / SFX / MUSIC / QUIT — arrows or WASD move the selection, left/right
+    // adjust a slider, Enter/Space activates RESUME or QUIT.
+    const n = PAUSE_MENU.items.length;
+    if (e.key === "ArrowUp" || e.key === "w" || e.key === "W") { pauseSel = (pauseSel + n - 1) % n; audio.ui(); }
+    else if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") { pauseSel = (pauseSel + 1) % n; audio.ui(); }
+    else if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") { adjustPauseVolume(-1); }
+    else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") { adjustPauseVolume(1); }
+    else if (e.key === "Enter" || e.key === " ") { activatePauseRow(); }
+    return; // swallow everything else while paused
+  }
 
   if (game.state === "title") { game.toMenu(); audio.ui(); return; } // splash → stage select
 
@@ -254,6 +297,33 @@ function hitSlowBtn(t) {
   const p = canvasPos(t), b = TOUCH.slowBtn;
   return Math.hypot(p.x - b.x, p.y - b.y) <= b.hitR;
 }
+function hitPauseBtn(t) {
+  if (!MOBILE) return false;
+  const p = canvasPos(t), b = TOUCH.pauseBtn;
+  return Math.hypot(p.x - b.x, p.y - b.y) <= b.hitR;
+}
+// Which pause-menu row (if any) a touch landed on, and which half (for the
+// SFX/MUSIC sliders: left half decreases, right half increases) — mirrors the
+// row geometry render-pixi.js draws from the same config.PAUSE_MENU/pauseRowY.
+function hitPauseRow(t) {
+  const p = canvasPos(t);
+  const { items, rowW, rowH } = PAUSE_MENU;
+  for (let i = 0; i < items.length; i++) {
+    const y = pauseRowY(i);
+    if (Math.abs(p.y - y) <= rowH / 2 && Math.abs(p.x - WIDTH / 2) <= rowW / 2) {
+      return { row: i, side: p.x < WIDTH / 2 ? -1 : 1 };
+    }
+  }
+  return null;
+}
+function handlePauseTouch(t) {
+  audio.resume();
+  const hit = hitPauseRow(t);
+  if (!hit) return;
+  pauseSel = hit.row;
+  if (hit.row === 1 || hit.row === 2) adjustPauseVolume(hit.side);
+  else activatePauseRow();
+}
 // SLOW is held while the button finger is down OR two+ steering fingers are down
 // (the original two-finger gesture still works).
 function refreshSlow(e) {
@@ -296,7 +366,6 @@ function setTouchDir(name) {
 function touchGesture() {
   audio.resume();
   if (!audioStarted) { audio.startMusic(); audioStarted = true; return true; }
-  if (paused) return true;
   if (game.state === "title") { game.toMenu(); audio.ui(); }
   // menu: handled on touchEND (tap = start, swipe = change selection) — see endTouch
   else if (game.state === "dead") { if (transT >= TIMING.deathHold) { respawn(); game.beginPlay(); } }
@@ -313,6 +382,14 @@ if (canvas && typeof window !== "undefined" && "ontouchstart" in window) {
   document.addEventListener("touchstart", (e) => {
     e.preventDefault();
     for (const t of e.changedTouches) {
+      // Paused: every touch is a pause-menu tap (RESUME/SFX/MUSIC/QUIT) — the
+      // joystick/SLOW button are irrelevant while frozen.
+      if (paused) { handlePauseTouch(t); continue; }
+      // The on-screen pause button (mobile only — there's no Esc key on a phone).
+      if (hitPauseBtn(t) && (game.state === "playing" || game.state === "intro" || game.state === "dead")) {
+        audio.resume(); enterPause(); audio.ui();
+        continue;
+      }
       if (t.identifier === slowTouchId) continue; // already the SLOW finger
       // A finger landing on the SLOW button holds slow — it never steers.
       if (slowTouchId === null && hitSlowBtn(t)) {
@@ -376,7 +453,7 @@ function loop(now) {
   lastTime = now;
 
   if (paused) { // frozen: draw the overlay over the held frame, advance nothing
-    draw({ transT, menuSel, popups, reward, deathPoint, deathBlob, scorePulseT, danger, beat: 0, paused: true, slowBtn: slowTouchId !== null });
+    draw({ transT, menuSel, popups, reward, deathPoint, deathBlob, scorePulseT, danger, beat: 0, paused: true, slowBtn: slowTouchId !== null, pauseSel });
     requestAnimationFrame(loop);
     return;
   }
@@ -652,7 +729,7 @@ function loop(now) {
   fx.update(dt);
 
   const beat = audio.musicPulse(); // 0..1 bass-driven pulse for a beat-synced screen glow
-  draw({ transT, menuSel, popups, reward, deathPoint, deathBlob, scorePulseT, danger, beat, slowBtn: slowTouchId !== null });
+  draw({ transT, menuSel, popups, reward, deathPoint, deathBlob, scorePulseT, danger, beat, slowBtn: slowTouchId !== null, pauseSel });
   requestAnimationFrame(loop);
 }
 

@@ -294,7 +294,26 @@ export const HUD = {
 // sits under the LEFT thumb instead of competing with the steering hand.
 export const TOUCH = {
   slowBtn: { x: 64, y: HEIGHT - 52, r: 34, hitR: 54 },
+  // Mirrors slowBtn on the right of the same bottom control strip — the only
+  // way to pause on a phone (there's no Esc key). Smaller/lower-emphasis since
+  // it's reached far less often than the SLOW button.
+  pauseBtn: { x: WIDTH - 64, y: HEIGHT - 52, r: 28, hitR: 46 },
 };
+
+// Pause menu (P/Esc → RESUME / SFX / MUSIC / QUIT TO MENU). Row geometry shared
+// between touch hit-testing (main.js) and drawing (render-pixi.js) — the text
+// itself is always centered on WIDTH/2 (matches render-pixi's centerText), so
+// only the vertical layout needs to live here.
+export const PAUSE_MENU = {
+  items: ["RESUME", "SFX", "MUSIC", "QUIT"],
+  cy: HEIGHT / 2 + (MOBILE ? 10 : 20),
+  rowGap: MOBILE ? 58 : 48,
+  rowW: 280,                        // tap width per row, centered on WIDTH/2
+  rowH: MOBILE ? 46 : 38,           // tap height per row
+};
+export function pauseRowY(i) {
+  return PAUSE_MENU.cy + (i - (PAUSE_MENU.items.length - 1) / 2) * PAUSE_MENU.rowGap;
+}
 
 // Art pass — player-death IMPACT (Pixi-only). The hit point erupts: one-shot spark
 // burst, an expanding shock ring, radial magenta arcs (magenta = danger, earned here)
@@ -342,6 +361,8 @@ export const TIMING = {
 // tunable in one place (read by audio.js, render-pixi.js and audio-director.js).
 export const AUDIO = {
   sfxLevel: 1.15,   // SFX submix gain (sits above the music)
+  musicLevel: 0.5,  // music submix gain while playing (before the musicVolume slider)
+  volumeStep: 0.1,  // per-press/tap increment for the SFX/music volume sliders
   moveLevel: 0.09,  // base volume of the movement "schoo"
   beat: {           // beat-reactive throb on the frontier line
     bassBins: 6,      // # of lowest FFT bins summed for the sub-bass pulse

@@ -190,6 +190,14 @@ export function toMenu() {
   state = "menu";
 }
 
+// Bail out of the current run (from the pause menu) straight to stage-select.
+// Commits the score so far to the high-score table first — quitting early
+// shouldn't forfeit a high score just because the run didn't end in game over.
+export function quitToMenu() {
+  recordScore();
+  state = "menu";
+}
+
 // Test-only resets (used by headless tests).
 export function _resetUnlock() {
   unlockedZone = 1;

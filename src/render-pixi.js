@@ -10,7 +10,7 @@
 
 import { Application, Container, Graphics, Sprite, TilingSprite, Texture, Text, Rectangle, DisplacementFilter } from "pixi.js";
 import { AdvancedBloomFilter } from "pixi-filters";
-import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, SPECIAL_BLOBS, QIX, BOSS, BLOB_POLY, SPARX, MARKER, RESPAWN, REVEAL, BLOOM, CORNERS, GLASS, NEBULA,STARFIELD, SHIP_TRAIL, SHIP_VIS, AMBIENT, ENERGY, IMPACT, GRID_BG, MOTES, VIGNETTE, HUD, MOBILE, TOUCH } from "./config.js";
+import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, SPECIAL_BLOBS, QIX, BOSS, BLOB_POLY, SPARX, MARKER, RESPAWN, REVEAL, BLOOM, CORNERS, GLASS, NEBULA,STARFIELD, SHIP_TRAIL, SHIP_VIS, AMBIENT, ENERGY, IMPACT, GRID_BG, MOTES, VIGNETTE, HUD, MOBILE, TOUCH, PAUSE_MENU, pauseRowY } from "./config.js";
 import { revealSource } from "./reveal.js";
 import * as powerups from "./powerups.js";
 import { grid, slowFill, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
@@ -20,6 +20,7 @@ import { sparxList } from "./sparx.js";
 import * as game from "./game.js";
 import { zoneCount } from "./levels.js";
 import * as fx from "./fx.js";
+import * as audio from "./audio.js";
 
 const CX = field.x + field.w / 2;
 const CY = field.y + field.h / 2;
@@ -1673,16 +1674,47 @@ function drawCampaignComplete() {
   centerText(tail, CY + 72, 20, COLORS.hud, 1, "500");
 }
 
-function drawPaused() {
-  dim(0.6);
-  centerText("PAUSED", CY - 18, 52, COLORS.frontier);
-  centerText("P / ESC  resume     ·     M  mute     ·     N  music", CY + 40, 17, COLORS.hud, 1, "500");
+// Interactive pause menu: RESUME / SFX / MUSIC / QUIT TO MENU. Row Y positions
+// come from config.pauseRowY so touch hit-testing in main.js lines up exactly.
+function drawPaused(sel = 0) {
+  dim(0.7);
+  centerText("PAUSED", pauseRowY(0) - 70, 44, COLORS.frontier);
+  const labels = [
+    "RESUME",
+    `SFX     ◀  ${Math.round(audio.getSfxVolume() * 100)}%  ▶`,
+    `MUSIC   ◀  ${Math.round(audio.getMusicVolume() * 100)}%  ▶`,
+    "QUIT TO MENU",
+  ];
+  labels.forEach((label, i) => {
+    const y = pauseRowY(i);
+    const isSel = i === sel;
+    if (isSel) {
+      uiGfx.roundRect(WIDTH / 2 - PAUSE_MENU.rowW / 2, y - PAUSE_MENU.rowH / 2, PAUSE_MENU.rowW, PAUSE_MENU.rowH, 8)
+        .fill({ color: COLORS.hudAccent, alpha: 0.12 })
+        .roundRect(WIDTH / 2 - PAUSE_MENU.rowW / 2, y - PAUSE_MENU.rowH / 2, PAUSE_MENU.rowW, PAUSE_MENU.rowH, 8)
+        .stroke({ width: 2, color: COLORS.hudAccent, alpha: 0.9 });
+    }
+    centerText(label, y, isSel ? 22 : 19, isSel ? COLORS.hudAccent : COLORS.hud, isSel ? 1 : 0.75, isSel ? "800" : "600");
+  });
+  const hint = MOBILE
+    ? "tap RESUME / QUIT · tap left/right of SFX · MUSIC to adjust"
+    : "↑↓ select   ·   ←→ adjust   ·   ENTER choose   ·   P/ESC resume";
+  centerText(hint, pauseRowY(3) + 46, 14, COLORS.locked, 1, "500");
+}
+
+function drawPauseButton() {
+  if (!MOBILE) return;
+  const b = TOUCH.pauseBtn;
+  uiGfx.circle(b.x, b.y, b.r).fill({ color: "#06121f", alpha: 0.6 })
+    .circle(b.x, b.y, b.r).stroke({ width: 2, color: COLORS.hud, alpha: 0.65 });
+  uiGfx.roundRect(b.x - 8, b.y - 9, 5, 18, 1.5).fill({ color: COLORS.hud, alpha: 0.9 });
+  uiGfx.roundRect(b.x + 3, b.y - 9, 5, 18, 1.5).fill({ color: COLORS.hud, alpha: 0.9 });
 }
 
 // --- The frame -------------------------------------------------------------
 export function render(view = {}) {
   if (!app) return;
-  const { transT = 0, menuSel = 1, popups = [], reward = null, deathPoint = null, scorePulseT = 99, danger = 0, beat = 0, paused = false, slowBtn = false } = view;
+  const { transT = 0, menuSel = 1, popups = [], reward = null, deathPoint = null, scorePulseT = 99, danger = 0, beat = 0, paused = false, slowBtn = false, pauseSel = 0 } = view;
 
   // Pixi display objects persist between frames, so wipe every layer up front
   // (and reset any shake offset) — otherwise the previous state's scene lingers
@@ -1746,12 +1778,13 @@ export function render(view = {}) {
   drawReward(reward);
   drawHUD(scorePulseT);
   drawSlowButton(slowBtn); // mobile-only touch UI in the bottom control strip
+  drawPauseButton();       // mobile-only touch UI in the bottom control strip
 
   if (game.state === "intro") drawIntro();
   else if (game.state === "dead") drawDeathFlash(deathPoint, transT);
   else if (game.state === "gameover") drawGameOver();
   else if (game.state === "campaigncomplete") drawCampaignComplete();
-  if (paused) drawPaused();
+  if (paused) drawPaused(pauseSel);
 
   applyShake(off);
   finishFrame();

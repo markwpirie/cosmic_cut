@@ -23,6 +23,29 @@ let musicWanted = load("cosmiccut.music") !== "0"; // on by default
 function load(k) { try { return typeof localStorage !== "undefined" ? localStorage.getItem(k) : null; } catch (e) { return null; } }
 function save(k, v) { try { if (typeof localStorage !== "undefined") localStorage.setItem(k, v); } catch (e) { /* ignore */ } }
 
+// Independent SFX/music volume sliders (0..1), on top of the M mute / N music-on-off
+// toggles above — those are all-or-nothing, these are the "how loud" knobs.
+function loadVol(k) {
+  const v = parseFloat(load(k));
+  return Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
+}
+let sfxVolume = loadVol("cosmiccut.sfxVolume");
+let musicVolume = loadVol("cosmiccut.musicVolume");
+export function getSfxVolume() { return sfxVolume; }
+export function getMusicVolume() { return musicVolume; }
+export function setSfxVolume(v) {
+  sfxVolume = Math.max(0, Math.min(1, v));
+  save("cosmiccut.sfxVolume", String(sfxVolume));
+  if (sfxBus && ctx) sfxBus.gain.setTargetAtTime(AUDIO.sfxLevel * sfxVolume, ctx.currentTime, 0.05);
+}
+export function setMusicVolume(v) {
+  musicVolume = Math.max(0, Math.min(1, v));
+  save("cosmiccut.musicVolume", String(musicVolume));
+  // Only re-ramp while music is actually meant to be audible — mirrors startMusic's
+  // own target so this doesn't fight stopMusic's fade-to-0 when music is off.
+  if (musicBus && ctx && musicWanted) musicBus.gain.setTargetAtTime(AUDIO.musicLevel * musicVolume, ctx.currentTime, 0.05);
+}
+
 // Exponential-decay noise → a cheap, lush reverb impulse response.
 function reverbIR(seconds, decay) {
   const rate = ctx.sampleRate;
@@ -60,7 +83,7 @@ function ensure() {
   delay.connect(master);
 
   sfxBus = ctx.createGain();
-  sfxBus.gain.value = AUDIO.sfxLevel; // SFX sit a touch above the music
+  sfxBus.gain.value = AUDIO.sfxLevel * sfxVolume; // SFX sit a touch above the music
   sfxBus.connect(master);
 
   musicBus = ctx.createGain();
@@ -378,7 +401,7 @@ function scheduler() {
 
 export function startMusic() {
   if (!ensure() || !musicWanted) return;
-  musicBus.gain.setTargetAtTime(0.5, ctx.currentTime, 1.5);
+  musicBus.gain.setTargetAtTime(AUDIO.musicLevel * musicVolume, ctx.currentTime, 1.5);
   if (!activeTrack) activeTrack = "title"; // first play = the opening theme
   const entry = loadTrack(activeTrack);
   if (entry.ok && entry.el) {

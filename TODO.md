@@ -4,6 +4,19 @@ Running task list. Roadmap phases live in [GAME_DESIGN.md](GAME_DESIGN.md) §11;
 as-built decisions in §14/§16. Tick items off as they land.
 
 ## Done recently
+- [x] **Pause menu: RESUME / SFX / MUSIC / QUIT TO MENU — done 2026-07-13.** P/Esc
+      still toggles pause instantly either way; once paused it doubles as a small
+      menu (`config.PAUSE_MENU`/`pauseRowY`, drawn in `render-pixi.js`'s `drawPaused`).
+      Keyboard: ↑↓ or WASD move the selection, ←→ adjust the SFX/MUSIC sliders,
+      Enter/Space activates RESUME or QUIT. Touch (phone — no Esc key exists there):
+      a new on-screen pause button mirrors the SLOW button on the other side of the
+      bottom control strip (`TOUCH.pauseBtn`); once paused, every touch hit-tests the
+      menu rows (`hitPauseRow`/`handlePauseTouch` in `main.js`) — tap RESUME/QUIT,
+      tap left/right of a slider to adjust. **Quitting commits the run's score to
+      the high-score table first** (`game.quitToMenu()`) so bailing early doesn't
+      forfeit a high score. `control.js` gained a `paused` guard (`setPaused()`) so
+      the menu-nav keys/touch-joystick calls don't leak into movement intents and
+      yank the marker on resume. Real-device (phone) check still wanted.
 - [x] **Post-mobile-playtest follow-up (2026-07-03), confirmed fixed on Mark's phone:**
       - **ZOOM really was stuck on touch** — the previous fix only covered keyboard.
         `setTouchDir()` never called into the aiming logic at all, so a swipe while
@@ -203,8 +216,11 @@ Open decisions (Mark to decide):
       per-level counts in `levels.js`.
 
 ## Audio / feel follow-ups (from the Audio + Feel pass 2)
-- [ ] **Separate SFX vs music volume** controls (in-game keys or a small menu). The
-      buses already exist (`sfxBus` / `musicBus` in `audio.js`); add independent gains.
+- [x] **Separate SFX vs music volume — done 2026-07-13.** Independent 0-100% sliders
+      (`audio.getSfxVolume/setSfxVolume`, `getMusicVolume/setMusicVolume`, persisted
+      in `localStorage`, `AUDIO.volumeStep` = 10%/press) live in the pause menu — see
+      below. `sfxBus`/`musicBus` gains now scale by these on top of the existing M
+      mute / N music-on-off toggles.
 - [ ] **Sonar vs cut-tension hum** — both now play while cutting; decide whether to dial
       back or remove the older `cutStart`/`cutTension` hum now the sonar carries the
       exposed-tension feel.

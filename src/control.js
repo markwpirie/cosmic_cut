@@ -21,12 +21,19 @@ const KEY_VEC = {
 let pending = null;
 const heldKeys = []; // movement keys currently down, in press order
 let slow = false;    // SPACE held → "slow draw" (slower, doubled, darker glass)
+// While paused, main.js repurposes arrows/WASD/space for pause-menu nav — this
+// stops those presses (keyboard AND the touch joystick, which also calls press())
+// from polluting heldKeys/pending, which would otherwise yank the marker onto
+// whatever direction was last pressed to navigate the menu the moment it resumes.
+let paused = false;
+export function setPaused(v) { paused = v; }
 
 // Is the slow-cut key (SPACE) currently held?
 export function slowHeld() { return slow; }
 export function setSlow(on) { slow = on; }
 
 export function press(key) {
+  if (paused) return;
   if (!KEY_VEC[key]) return;
   if (heldKeys.includes(key)) return; // ignore OS auto-repeat
   heldKeys.push(key);
@@ -55,6 +62,7 @@ export function reset() {
 
 if (typeof window !== "undefined") {
   window.addEventListener("keydown", (e) => {
+    if (paused) return; // main.js's pause menu owns arrows/WASD/space while paused
     if (e.key === " ") { e.preventDefault(); slow = true; return; } // slow-draw key
     if (!KEY_VEC[e.key]) return;
     e.preventDefault(); // stop arrows scrolling the page

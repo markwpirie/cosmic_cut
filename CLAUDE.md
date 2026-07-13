@@ -25,6 +25,7 @@ On Windows use `python` not `python3`.
 - **Special Blobs: done** — rare `config.SPECIAL_BLOBS` variants ("life"/"slow") placed via `levels.js` `special: [...]`; reward only on SPLIT-enclosure (extra life / slow every enemy), excluded from the respawn floor and from the region-fill "keep open" vote in `grid.applyClaim()` (a lone special's region gets **filled**, not kept open).
 - **Zone palette: recoloured 2026-07-07** — each zone has a clear, distinct hue (1 cyan → 2 green → 3 gold → 4 purple → 5 red, matching `assets/levels.png`), superseding the earlier cyan-hero flattening. Enemies (`BLOB_TYPES`, `SPARX`) recoloured into a fixed magenta/hot-pink danger band clear of every zone's hue.
 - **PWA: done** — `manifest.json` + `sw.js` at the repo root (no build step); installable + offline-capable. Three cache strategies: core (stale-while-revalidate, versioned), media/MP3s (cache-on-demand, Range/206 support), CDN (Pixi + fonts, cache-first, warmed on install).
+- **Pause menu + independent volume: done 2026-07-13** — P/Esc pauses (unchanged shortcut), and while paused it doubles as a small menu: RESUME / SFX / MUSIC / QUIT TO MENU (`config.PAUSE_MENU`/`pauseRowY`, drawn in `render-pixi.js`'s `drawPaused`). SFX and music now have independent persisted volume sliders (`audio.get/setSfxVolume`, `get/setMusicVolume`, step = `AUDIO.volumeStep`) on top of the existing M-mute/N-music-toggle. Phone has no Esc key, so there's a dedicated on-screen pause button (`TOUCH.pauseBtn`, mirrors `TOUCH.slowBtn` on the other side of the bottom control strip) plus touch hit-testing for the menu rows themselves (`main.js`'s `hitPauseRow`/`handlePauseTouch`). Quitting calls `game.quitToMenu()`, which commits the run's score to the high-score table first. `control.js` gained a `paused` flag (`setPaused()`) so pause-menu nav (keyboard or the touch joystick) never leaks into movement intents.
 - Full roadmap in `GAME_DESIGN.md §11`. Locked decisions in `§14`.
 
 ## Branches
@@ -43,15 +44,15 @@ On Windows use `python` not `python3`.
 |------|------|
 | `config.js` | All tunable numbers — grid, speeds, colours (zone THEMES, BLOB_TYPES/SPARX danger band), scoring, audio, POWERUPS, SPECIAL_BLOBS, BOSS, RESPAWN, SUPER, REVEAL; Pixi-look knobs BLOOM/CORNERS/GLASS/NEBULA |
 | `levels.js` | Campaign data — 25 levels (zones 1-1…5-5), target %, blob types, `special` (Special Blobs), `boss` flag |
-| `control.js` | Keyboard input → movement intents (touch lives in `main.js`, reusing these) |
+| `control.js` | Keyboard input → movement intents (touch lives in `main.js`, reusing these); `setPaused()` guard stops pause-menu nav from being recorded as movement |
 | `grid.js` | Arena cells, flood-fill claim, seams, `applyClaim()` (Special Blobs don't vote to keep their region open) |
 | `marker.js` | Player movement, cutting, perimeter logic |
 | `enemy.js` | Blobs + Special Blobs: bounce, spawn, collision, respawn floor (`startCount`/`deadPool`/`respawnOne`), `isFrozen`/`isShielded` guards |
 | `powerups.js` | All power-up state: pickups, ZOOM float, timed effects (incl. Special Blob slowdown), spawn, ZOOM aiming |
 | `sparx.js` | Sparx enemies: BFS perimeter-chase, trail-latch (Fast Sparx), kill-on-perimeter, respawn floor (`startCount`/`deadPool`/`respawnOne`) |
-| `game.js` | State machine: lives, score, level/zone, SUPER mode (`currentSpec()`/`superUnlocked`), `scoreCut()`/`addLife()` |
+| `game.js` | State machine: lives, score, level/zone, SUPER mode (`currentSpec()`/`superUnlocked`), `scoreCut()`/`addLife()`, `quitToMenu()` (pause-menu quit, commits score first) |
 | `reveal.js` | Boss picture-reveal (§7): procedural per-zone scene baked to an offscreen canvas, cached; renderer-only |
-| `audio.js` | Low-level Web-Audio: SFX, synth, MP3 registry, beat analyser |
+| `audio.js` | Low-level Web-Audio: SFX, synth, MP3 registry, beat analyser, independent persisted SFX/music volume (`get/setSfxVolume`, `get/setMusicVolume`) |
 | `audio-director.js` | Music policy: scene cues, interrupt/resume jingles, sonar (currently off) |
 | `fx.js` | Particles (embers/explosions, glow/grav) + screen shake |
 | `render-pixi.js` | All drawing (Pixi.js v8/WebGL): field, blobs, power-up icons, HUD, overlays, boss reveal art, bloom/glass/nebula/particles |
