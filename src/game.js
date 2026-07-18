@@ -11,6 +11,8 @@ const START_LIVES = 3;
 const UNLOCK_KEY = "cosmiccut.unlockedZone";
 const HIGH_KEY = "cosmiccut.highScore";
 const SUPER_KEY = "cosmiccut.superUnlocked";
+const CANDY_KEY = "cosmiccut.candyTheme";
+const CANDY_MUSIC_KEY = "cosmiccut.candyMusic";
 
 // state: "title" | "menu" | "intro" | "playing" | "dead" | "levelcomplete" | "gameover" | "campaigncomplete"
 // "title" is the opening splash; "menu" is the stage-select screen.
@@ -29,6 +31,11 @@ export let newHigh = false; // did this run just beat the high score?
 export let superMode = false;
 export let superUnlocked = loadSuperUnlock();
 export let justUnlockedSuper = false;
+// CANDY MODE (cosmetic skin, config.CANDY): both flags persist. `candyTheme` is
+// the skin itself; `candyMusic` picks Pink Mode vs the normal zone themes while
+// the skin is on (defaults ON — it only matters when candyTheme is true).
+export let candyTheme = loadFlag(CANDY_KEY, false);
+export let candyMusic = loadFlag(CANDY_MUSIC_KEY, true);
 
 export function currentLevel() {
   return LEVELS[levelIndex];
@@ -105,6 +112,34 @@ function saveUnlock() {
 }
 function unlock(zone) {
   if (zone > unlockedZone) { unlockedZone = zone; saveUnlock(); }
+}
+
+// Generic persisted boolean (guarded like the rest): "1"/"0" in storage,
+// `fallback` when unset or storage is unavailable (headless / private mode).
+function loadFlag(key, fallback) {
+  try {
+    if (typeof localStorage !== "undefined") {
+      const v = localStorage.getItem(key);
+      if (v === "1") return true;
+      if (v === "0") return false;
+    }
+  } catch (e) { /* ignore */ }
+  return fallback;
+}
+function saveFlag(key, val) {
+  try { if (typeof localStorage !== "undefined") localStorage.setItem(key, val ? "1" : "0"); }
+  catch (e) { /* ignore */ }
+}
+export function toggleCandy() { candyTheme = !candyTheme; saveFlag(CANDY_KEY, candyTheme); }
+export function toggleCandyMusic() { candyMusic = !candyMusic; saveFlag(CANDY_MUSIC_KEY, candyMusic); }
+
+// Pause-menu row order — single source of truth so main.js (input/hit-testing)
+// and render-pixi.js (drawing) never drift apart. CANDY MUSIC only appears
+// while the skin itself is on (mirrors the start-menu chip/row pairing).
+export function pauseMenuRows() {
+  return candyTheme
+    ? ["resume", "sfx", "music", "candy", "candyMusic", "quit"]
+    : ["resume", "sfx", "music", "candy", "quit"];
 }
 
 function loadSuperUnlock() {

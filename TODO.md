@@ -241,6 +241,11 @@ Open decisions (Mark to decide):
 - [ ] Re-enable the on-screen beat readout only if needed (`config.AUDIO.debugBeat`).
 
 ## Roadmap (later phases — see §11)
+- [ ] **Candy Mode → easter egg.** Today it's a visible start-menu toggle (built
+      2026-07-18); Mark's end goal is for it to be *unearthed unexpectedly* — hide the
+      chip, pick an in-game trigger (secret input? a rare pickup? clearing a level a
+      special way?), and keep `Pink Mode 1.mp3` as its signature track. Tuning pass on
+      the cupcake faces + candy background welcome after real play.
 - [x] **Phase 7** — **touch controls done.** Relative virtual joystick (swipe = heading,
       two fingers = slow draw); taps advance menus; a swipe begins the level. In `main.js`,
       built on `control.press/release/setSlow`. Verify on a real iPhone.

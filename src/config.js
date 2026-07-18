@@ -101,6 +101,101 @@ export const THEMES = [
   { frontier: "#ff6b6b", claimedFill: "rgba(255, 90, 90, 0.14)",  claimedFillSlow: "rgba(40, 10, 10, 0.64)",  trail: "#ff8080", seam: "rgba(255, 150, 150, 0.28)", arena: "#a32f2f", accent: "#ff5a5a", glassTint: "#ffb0b0" }, // 5 RED (pure red, clear of enemy hot-pink)
 ];
 
+// Per-zone BACKGROUND palettes (2026-07-18, Mark: entering a zone should feel
+// like the same total colour flip Candy Mode does). The baked starscape used to
+// be one fixed cyan/teal scene for all 25 levels; now render-pixi bakes one per
+// zone (lazily, cached) from these colours, keyed to the zone hue (1 cyan →
+// 2 green → 3 gold → 4 purple → 5 red). `clouds` are the five big soft gradient
+// haze colours (fixed positions/radii live in the renderer); `nebA`/`nebB` are
+// the [r,g,b] daub colour sets for the two organic nebulae. Same rules as
+// THEMES: zone 4 stays blue-leaning and zone 5 pure red, clear of the enemies'
+// magenta/hot-pink danger band. Zone 1 keeps the original hero values exactly.
+export const ZONE_BG = [
+  { // 1 CYAN — the original deep-space bake, unchanged
+    clouds: ["rgba(40,95,155,0.13)", "rgba(20,110,170,0.13)", "rgba(30,120,150,0.08)", "rgba(50,55,140,0.09)", "rgba(30,22,72,0.08)"],
+    nebA: [[90, 150, 255], [110, 190, 235], [120, 225, 255], [190, 225, 245]],
+    nebB: [[60, 220, 205], [120, 255, 200], [80, 140, 220], [110, 150, 255]],
+  },
+  { // 2 GREEN
+    clouds: ["rgba(30,140,90,0.12)", "rgba(20,150,110,0.12)", "rgba(40,150,80,0.08)", "rgba(35,110,70,0.09)", "rgba(15,60,40,0.08)"],
+    nebA: [[90, 255, 170], [120, 235, 150], [140, 255, 190], [200, 255, 220]],
+    nebB: [[60, 220, 140], [160, 255, 160], [80, 200, 140], [120, 255, 200]],
+  },
+  { // 3 GOLD
+    clouds: ["rgba(160,120,40,0.12)", "rgba(170,140,30,0.11)", "rgba(150,110,50,0.08)", "rgba(120,80,30,0.09)", "rgba(70,50,20,0.08)"],
+    nebA: [[255, 210, 90], [255, 190, 110], [255, 230, 140], [255, 240, 200]],
+    nebB: [[230, 170, 60], [255, 220, 120], [200, 140, 70], [255, 200, 110]],
+  },
+  { // 4 PURPLE (blue-leaning)
+    clouds: ["rgba(90,70,180,0.13)", "rgba(70,60,190,0.12)", "rgba(110,90,200,0.08)", "rgba(60,40,150,0.09)", "rgba(30,20,90,0.08)"],
+    nebA: [[150, 120, 255], [130, 140, 255], [180, 160, 255], [210, 200, 255]],
+    nebB: [[110, 90, 230], [170, 150, 255], [90, 80, 200], [140, 130, 255]],
+  },
+  { // 5 RED (pure red)
+    clouds: ["rgba(180,50,50,0.12)", "rgba(190,60,40,0.11)", "rgba(160,50,60,0.08)", "rgba(120,30,30,0.09)", "rgba(70,15,15,0.08)"],
+    nebA: [[255, 110, 90], [255, 140, 110], [255, 170, 140], [255, 210, 190]],
+    nebB: [[230, 80, 60], [255, 150, 120], [200, 60, 50], [255, 120, 90]],
+  },
+];
+
+// CANDY MODE — a selectable cosmetic "Candy Cosmos" skin (start-menu toggle,
+// persisted in game.js). Purely visual + music: gameplay, campaign, and SUPER
+// are untouched. While ON, this single theme replaces every zone's THEMES entry
+// (a "visual filter", per design), the baked space background becomes a candy
+// scene, and poly Blobs draw as angry cupcakes. The usual "pink = danger" rule
+// inverts here (the whole field is pink), so enemies remap to saturated frosting
+// hues that stay clear of the pastel field — danger reads via the cupcake's
+// glowing angry face + hot frosting instead.
+export const CANDY = {
+  theme: {
+    frontier: "#ff9ed2", claimedFill: "rgba(255, 140, 200, 0.16)",
+    claimedFillSlow: "rgba(58, 16, 40, 0.62)", trail: "#ffb3dd",
+    seam: "rgba(255, 170, 215, 0.32)", arena: "#a34f7d",
+    accent: "#ff7ec8", glassTint: "#ffc2e2",
+  },
+  // Draw-time remap {normal enemy hex → candy hex}; render-pixi's ecol() looks
+  // colors up here (unknown colors pass through). BLOB_TYPES → frosting hues,
+  // SPARX → peppermint reds. Logic files keep spawning the normal colors.
+  enemyMap: {
+    "#c13dff": "#5ab8ff", // violet blob  → blueberry frosting
+    "#e83dff": "#8f6bff", // magenta blob → grape frosting
+    "#ff3df0": "#ffb84d", // pink blob    → caramel frosting
+    "#ff3da6": "#59e0b8", // rose blob    → mint frosting
+    "#ff3d7a": "#ff5a5a", // hotpink blob → cherry frosting
+    "#ff5ec2": "#ff4d4d", // Sparx        → peppermint red
+    "#ff3d9e": "#e63946", // Fast Sparx   → deeper peppermint
+    "#ff1f6b": "#c1121f", // latched      → darkest candy red
+  },
+  // Twinkling-parallax star tints while candy is on (pastel sugar palette).
+  starTints: ["#fff0f8", "#ffd0e8", "#ffe6c4", "#ffffff", "#ffc2dd", "#ffe9a8"],
+  // bakeCandyTexture() knobs — colors as [r,g,b] where they feed gradients.
+  bg: {
+    base: "#1a0a1e",            // warm dark-berry void (replaces the blue-black)
+    clouds: 9,                  // big soft cloud puff clusters
+    cloudCols: [[255, 150, 200], [255, 120, 180], [250, 170, 215], [235, 130, 195]],
+    galaxyCols: [[255, 130, 200], [200, 120, 255], [255, 180, 225], [255, 235, 250]],
+    canes: 5,                   // candy-cane hooks scattered near the edges
+    caneRed: "#ff4d5e", caneWhite: "#fff4f6",
+    sprinkles: 14,              // little 4-point golden star sprinkles
+    sprinkleCols: ["#ffd24d", "#ffb84d", "#ff8fb0"],
+    castle: "#ffd7ea",          // pale castle silhouette color
+    stars: 220,                 // pastel background star dots
+  },
+  // Cupcake art proportions (× the blob's radius, so visuals track hitRadius).
+  cupcake: {
+    cupW: 1.7,      // cup top width
+    cupBottom: 0.6, // cup bottom width ratio (trapezoid taper)
+    cupH: 0.9,      // cup height
+    frostH: 1.0,    // frosting dome height above the cup rim
+    cherryR: 0.28,  // cherry radius
+    eyeW: 0.34,     // angry eye slit half-width
+  },
+  // Start-menu toggle chip (drawn in render-pixi's drawMenu; hit-tested in main.js).
+  // Width/height are the TAP target; y is the chip's center line.
+  menuBtn: { y: HEIGHT - (MOBILE ? 178 : 148), w: 250, h: 40 },
+  musicBtn: { y: HEIGHT - (MOBILE ? 138 : 112), w: 250, h: 34 }, // PINK/NORMAL row (only while candy is ON)
+};
+
 // Phase 9 art-direction §1: BLOOM (Pixi-only, AdvancedBloomFilter from pixi-filters).
 // The single biggest upgrade toward the reference look — only bright neon things
 // (perimeter, trail, enemies, stars, marker) glow; the dark void/glass stays dark
@@ -300,19 +395,21 @@ export const TOUCH = {
   pauseBtn: { x: WIDTH - 64, y: HEIGHT - 52, r: 28, hitR: 46 },
 };
 
-// Pause menu (P/Esc → RESUME / SFX / MUSIC / QUIT TO MENU). Row geometry shared
-// between touch hit-testing (main.js) and drawing (render-pixi.js) — the text
-// itself is always centered on WIDTH/2 (matches render-pixi's centerText), so
-// only the vertical layout needs to live here.
+// Pause menu (P/Esc → RESUME / SFX / MUSIC / CANDY [/ CANDY MUSIC] / QUIT TO
+// MENU — the last two rows are dynamic, see game.pauseMenuRows()). Row
+// geometry shared between touch hit-testing (main.js) and drawing
+// (render-pixi.js) — the text itself is always centered on WIDTH/2 (matches
+// render-pixi's centerText), so only the vertical layout needs to live here.
+// `total` (the current row COUNT, from game.pauseMenuRows().length — config
+// itself stays state-free) drives the centering, since it varies with Candy Mode.
 export const PAUSE_MENU = {
-  items: ["RESUME", "SFX", "MUSIC", "QUIT"],
   cy: HEIGHT / 2 + (MOBILE ? 10 : 20),
   rowGap: MOBILE ? 58 : 48,
   rowW: 280,                        // tap width per row, centered on WIDTH/2
   rowH: MOBILE ? 46 : 38,           // tap height per row
 };
-export function pauseRowY(i) {
-  return PAUSE_MENU.cy + (i - (PAUSE_MENU.items.length - 1) / 2) * PAUSE_MENU.rowGap;
+export function pauseRowY(i, total) {
+  return PAUSE_MENU.cy + (i - (total - 1) / 2) * PAUSE_MENU.rowGap;
 }
 
 // Art pass — player-death IMPACT (Pixi-only). The hit point erupts: one-shot spark
@@ -366,12 +463,12 @@ export const AUDIO = {
   moveLevel: 0.09,  // base volume of the movement "schoo"
   beat: {           // beat-reactive throb on the frontier line
     bassBins: 6,      // # of lowest FFT bins summed for the sub-bass pulse
-    smoothing: 0.3,   // analyser FFT smoothing (lower = punchier transients)
+    smoothing: 0.2,   // analyser FFT smoothing (lower = punchier transients)
     baselineEase: 0.04, // how fast the steady-bass baseline tracks; the throb is the rise above it
     devGain: 7,       // gain on that rise → 0..1 throb (raise if the pulse is weak)
     release: 0.16,    // pulse ease-down per frame (attack is instant)
     glowBoost: 40,    // frontier shadowBlur added at full beat
-    widthBoost: 3,    // frontier lineWidth (px) added at full beat
+    widthBoost: 5,    // frontier lineWidth (px) added at full beat
   },
   tension: {        // 0..1 tension from fill% + danger; drives the sonar ping rate
     progressWeight: 0.6, //   (the music speed-up is OFF — rateSpan 0 — it felt bad)
@@ -402,10 +499,10 @@ export const AUDIO = {
 // long stick only kills where the line actually is.
 export const QIX = {
   sizeScale:        1.5,  // overall enemy size multiplier (applied to blob radius)
-  lines:             26,  // sheaf depth — number of past line snapshots drawn
+  lines:             30,  // sheaf depth — number of past line snapshots drawn
   endpointSpeed:     95,  // base px/sec the endpoints sweep within the box
   surgeSpeedMult:   2.4,  // endpoint speed multiplier at full surge
-  spanBase:          26,  // typical half-length (compact, twisty)
+  spanBase:          44,  // typical half-length (compact, twisty)
   // Half-length at full surge (≈ stick spanning ~50% of the field's short side).
   // Derived, not literal: on the portrait mobile field (400 wide) the old 250
   // would exceed the wall-bounce margin and pin/jitter the Qix (see TODO note).

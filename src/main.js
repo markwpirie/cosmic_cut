@@ -14,7 +14,7 @@ import * as pixiRenderer from "./render-pixi.js";
 import * as audio from "./audio.js";
 import * as director from "./audio-director.js";
 import * as fx from "./fx.js";
-import { TIMING, POINTS, THEMES, POWERUPS, RESPAWN, SPECIAL_BLOBS, CELL, field, WIDTH, HEIGHT, MOBILE, TOUCH, AUDIO, PAUSE_MENU, pauseRowY } from "./config.js";
+import { TIMING, POINTS, THEMES, CANDY, POWERUPS, RESPAWN, SPECIAL_BLOBS, CELL, field, WIDTH, HEIGHT, MOBILE, TOUCH, AUDIO, PAUSE_MENU, pauseRowY } from "./config.js";
 import * as powerups from "./powerups.js";
 import * as sparx from "./sparx.js";
 
@@ -72,6 +72,21 @@ function zoneColor() { return THEMES[game.currentLevel().zone - 1].frontier; }
 // Highest selectable menu slot: unlocked zones, plus one more (the SUPER chip)
 // once SUPER mode has been earned by clearing 5-5.
 function menuMax() { return game.unlockedZone + (game.superUnlocked ? 1 : 0); }
+// --- CANDY MODE toggles (start-menu chip/keys AND pause-menu rows, mid-game) -
+// The skin itself is read straight off game.candyTheme by the renderer each
+// frame; only the MUSIC choice needs pushing into the director (which stays
+// game-module-free by design). Effective candy music = skin ON && music PINK.
+// Toggling while PAUSED must NOT touch live audio (enterPause() already
+// silenced it) — it just flags candyMusicDirty so resumeFromPause() re-cues
+// the right track the moment play resumes, instead of blindly resuming
+// whatever was playing before the toggle (which was the original bug: no way
+// to escape the candy track mid-level short of quitting).
+let candyMusicDirty = false;
+function syncCandyMusic() { director.setCandyMusic(game.candyTheme && game.candyMusic); }
+syncCandyMusic(); // boot: apply the persisted flags before any stage cue fires
+function toggleCandy() { game.toggleCandy(); syncCandyMusic(); if (paused) candyMusicDirty = true; audio.ui(); }
+function toggleCandyMusic() { game.toggleCandyMusic(); syncCandyMusic(); if (paused) candyMusicDirty = true; audio.ui(); }
+
 // Start whatever's selected — the SUPER chip (menuMax() when unlocked) starts the
 // SUPER campaign from 1-1; any other slot is a normal zone start.
 function startSelected() {
@@ -79,39 +94,52 @@ function startSelected() {
   else game.startRun(menuSel);
 }
 
-// --- Pause menu (RESUME / SFX / MUSIC / QUIT TO MENU) ------------------------
+// --- Pause menu (RESUME / SFX / MUSIC / CANDY [/ CANDY MUSIC] / QUIT TO MENU)
 // P/Esc still toggles pause instantly either way (freeze/resume); once paused,
 // the same freeze doubles as a small menu — arrows/WASD move the selection,
-// left/right adjust the SFX/music sliders, Enter/Space activates RESUME or QUIT.
-// control.setPaused() stops those same keys (and the touch joystick, which also
-// calls control.press()) from being recorded as movement intents while frozen.
+// left/right adjust the SFX/music sliders, Enter/Space activates a row (toggles
+// for CANDY/CANDY MUSIC, actions for RESUME/QUIT). control.setPaused() stops
+// those same keys (and the touch joystick, which also calls control.press())
+// from being recorded as movement intents while frozen. Row order/kind comes
+// from game.pauseMenuRows() — the single source of truth also read by
+// render-pixi's drawPaused(), so the two never drift out of sync.
 function enterPause() {
   paused = true;
   pauseSel = 0;
+  candyMusicDirty = false;
   control.setPaused(true);
   audio.stopMusic(); audio.moveTone(false); audio.cutStop(); prevCutting = false;
 }
 function resumeFromPause() {
   paused = false;
   control.setPaused(false);
+  // Only re-cue the stage track if a candy toggle actually changed it while
+  // paused — otherwise this is a plain resume, and startMusic() alone just
+  // un-ducks + continues whatever was already playing from its paused position.
+  if (candyMusicDirty) { director.stage(game.currentLevel().zone); candyMusicDirty = false; }
   audio.startMusic();
 }
 function quitFromPause() {
   paused = false;
+  candyMusicDirty = false;
   control.setPaused(false);
   game.quitToMenu();
   menuSel = Math.min(menuSel, menuMax());
   audio.ui();
 }
 function adjustPauseVolume(dir) {
-  if (pauseSel === 1) audio.setSfxVolume(audio.getSfxVolume() + dir * AUDIO.volumeStep);
-  else if (pauseSel === 2) audio.setMusicVolume(audio.getMusicVolume() + dir * AUDIO.volumeStep);
+  const kind = game.pauseMenuRows()[pauseSel];
+  if (kind === "sfx") audio.setSfxVolume(audio.getSfxVolume() + dir * AUDIO.volumeStep);
+  else if (kind === "music") audio.setMusicVolume(audio.getMusicVolume() + dir * AUDIO.volumeStep);
   else return;
   audio.ui();
 }
 function activatePauseRow() {
-  if (pauseSel === 0) resumeFromPause();
-  else if (pauseSel === 3) quitFromPause();
+  const kind = game.pauseMenuRows()[pauseSel];
+  if (kind === "resume") resumeFromPause();
+  else if (kind === "candy") toggleCandy();
+  else if (kind === "candyMusic") toggleCandyMusic();
+  else if (kind === "quit") quitFromPause();
 }
 
 // Load the current level's world: clear the arena, home the marker, spawn the
@@ -215,9 +243,9 @@ window.addEventListener("keydown", (e) => {
     return;
   }
   if (paused) {
-    // RESUME / SFX / MUSIC / QUIT — arrows or WASD move the selection, left/right
-    // adjust a slider, Enter/Space activates RESUME or QUIT.
-    const n = PAUSE_MENU.items.length;
+    // RESUME / SFX / MUSIC / CANDY [/ CANDY MUSIC] / QUIT — arrows or WASD move
+    // the selection, left/right adjust a slider, Enter/Space activates a row.
+    const n = game.pauseMenuRows().length;
     if (e.key === "ArrowUp" || e.key === "w" || e.key === "W") { pauseSel = (pauseSel + n - 1) % n; audio.ui(); }
     else if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") { pauseSel = (pauseSel + 1) % n; audio.ui(); }
     else if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") { adjustPauseVolume(-1); }
@@ -232,6 +260,8 @@ window.addEventListener("keydown", (e) => {
     if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") { menuSel = Math.max(1, menuSel - 1); audio.ui(); }
     else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") { menuSel = Math.min(menuMax(), menuSel + 1); audio.ui(); }
     else if (e.key === "Enter" || e.key === " ") { startSelected(); audio.ui(); }
+    else if (e.key === "c" || e.key === "C") toggleCandy();
+    else if ((e.key === "v" || e.key === "V") && game.candyTheme) toggleCandyMusic();
     return;
   }
   // DEV/TEST: Z drops a ZOOM on the marker (instant pickup) to test the aim path.
@@ -302,14 +332,20 @@ function hitPauseBtn(t) {
   const p = canvasPos(t), b = TOUCH.pauseBtn;
   return Math.hypot(p.x - b.x, p.y - b.y) <= b.hitR;
 }
+// Start-menu CANDY chip / music row (rects centered on WIDTH/2, from config.CANDY).
+function hitCandyBtn(t, b) {
+  const p = canvasPos(t);
+  return Math.abs(p.x - WIDTH / 2) <= b.w / 2 && Math.abs(p.y - b.y) <= b.h / 2;
+}
 // Which pause-menu row (if any) a touch landed on, and which half (for the
 // SFX/MUSIC sliders: left half decreases, right half increases) — mirrors the
 // row geometry render-pixi.js draws from the same config.PAUSE_MENU/pauseRowY.
 function hitPauseRow(t) {
   const p = canvasPos(t);
-  const { items, rowW, rowH } = PAUSE_MENU;
-  for (let i = 0; i < items.length; i++) {
-    const y = pauseRowY(i);
+  const { rowW, rowH } = PAUSE_MENU;
+  const total = game.pauseMenuRows().length;
+  for (let i = 0; i < total; i++) {
+    const y = pauseRowY(i, total);
     if (Math.abs(p.y - y) <= rowH / 2 && Math.abs(p.x - WIDTH / 2) <= rowW / 2) {
       return { row: i, side: p.x < WIDTH / 2 ? -1 : 1 };
     }
@@ -321,7 +357,8 @@ function handlePauseTouch(t) {
   const hit = hitPauseRow(t);
   if (!hit) return;
   pauseSel = hit.row;
-  if (hit.row === 1 || hit.row === 2) adjustPauseVolume(hit.side);
+  const kind = game.pauseMenuRows()[hit.row];
+  if (kind === "sfx" || kind === "music") adjustPauseVolume(hit.side);
   else activatePauseRow();
 }
 // SLOW is held while the button finger is down OR two+ steering fingers are down
@@ -433,9 +470,13 @@ if (canvas && typeof window !== "undefined" && "ontouchstart" in window) {
     }
     if (!slowStill) slowTouchId = null;
     if (!steerStill) {
-      // A tap (no movement) that both began AND ended on the menu starts the run.
+      // A tap (no movement) that both began AND ended on the menu starts the run —
+      // unless it landed on the CANDY chip (or its music row), which toggles instead.
       if (anchorState === "menu" && game.state === "menu" && !touchMoved && touchId !== null) {
-        startSelected(); audio.ui();
+        const t = [...e.changedTouches].find((ct) => ct.identifier === touchId);
+        if (t && hitCandyBtn(t, CANDY.menuBtn)) toggleCandy();
+        else if (t && game.candyTheme && hitCandyBtn(t, CANDY.musicBtn)) toggleCandyMusic();
+        else { startSelected(); audio.ui(); }
       }
       setTouchDir(null); touchId = null; touchAnchor = null; anchorState = null;
     }
@@ -496,7 +537,7 @@ function loop(now) {
           popups.push({ text: `ZOOM +${POWERUPS.ZOOM.killPoints * scoredKills}`, x: marker.x, y: marker.y - 20, t: 0 });
         }
         for (const k of dashKilled) {
-          fx.explode(k.x, k.y, k.color, 1.2);
+          fx.explode(k.x, k.y, pixiRenderer.ecol(k.color), 1.2);
           fx.ring(k.x, k.y, k.color, 16, 260, 0.6);
         }
         audio.kill(); director.kill(); fx.addShake(12); scorePulseT = 0;
@@ -567,14 +608,14 @@ function loop(now) {
       // re-exploding stale positions from an earlier frame's kill of the other kind.
       if (blobKills > 0) {
         for (const k of enemy.lastKilled) {
-          fx.explode(k.x, k.y, k.color, 1.4);
+          fx.explode(k.x, k.y, pixiRenderer.ecol(k.color), 1.4);
           fx.ring(k.x, k.y, k.color, 22, 340, 0.7);
           fx.ring(k.x, k.y, "#ffffff", 16, 220, 0.45);
         }
       }
       if (sparxKillsNow > 0) {
         for (const k of sparx.lastKilled) {
-          fx.explode(k.x, k.y, k.color, 1.4);
+          fx.explode(k.x, k.y, pixiRenderer.ecol(k.color), 1.4);
           fx.ring(k.x, k.y, k.color, 22, 340, 0.7);
           fx.ring(k.x, k.y, "#ffffff", 16, 220, 0.45);
         }

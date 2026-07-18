@@ -449,7 +449,9 @@ const TRACKS = {
   stage7:      { file: "14 - Hunger Made Them Desperate (Stage 7 - Orn Base).mp3", loop: true },
   stage8:      { file: "16. Final Point (Stage 8 - Orn Core).mp3", loop: true },
   stageClear:  { file: "18 - Stage Clear.mp3", loop: false },
+  loseLife:    { file: "17 - Lose a Life.mp3", loop: false },
   gameOver:    { file: "22 - Game Over.mp3", loop: false },
+  pinkMode:    { file: "Pink Mode 1.mp3", loop: true }, // CANDY MODE stage music (config.CANDY)
 };
 
 const trackCache = new Map(); // key -> { el, ok } (el null until canplaythrough)
@@ -517,6 +519,7 @@ export function setTrack(key, { resume = false } = {}) {
 
 // Convenience for the game loop: play the theme for a zone (1..8).
 export function setStageMusic(zone) { setTrack("stage" + zone); }
+export function getActiveTrack() { return activeTrack; }
 
 // Tension curve: scale the active stage track's playback speed (tempo + pitch),
 // clamped to config. Jingles (loop:false) keep normal speed.

@@ -10,7 +10,7 @@
 
 import { Application, Container, Graphics, Sprite, TilingSprite, Texture, Text, Rectangle, DisplacementFilter } from "pixi.js";
 import { AdvancedBloomFilter } from "pixi-filters";
-import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, TIMING, POWERUPS, SPECIAL_BLOBS, QIX, BOSS, BLOB_POLY, SPARX, MARKER, RESPAWN, REVEAL, BLOOM, CORNERS, GLASS, NEBULA,STARFIELD, SHIP_TRAIL, SHIP_VIS, AMBIENT, ENERGY, IMPACT, GRID_BG, MOTES, VIGNETTE, HUD, MOBILE, TOUCH, PAUSE_MENU, pauseRowY } from "./config.js";
+import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, ZONE_BG, CANDY, TIMING, POWERUPS, SPECIAL_BLOBS, QIX, BOSS, BLOB_POLY, SPARX, MARKER, RESPAWN, REVEAL, BLOOM, CORNERS, GLASS, NEBULA,STARFIELD, SHIP_TRAIL, SHIP_VIS, AMBIENT, ENERGY, IMPACT, GRID_BG, MOTES, VIGNETTE, HUD, MOBILE, TOUCH, PAUSE_MENU, pauseRowY } from "./config.js";
 import { revealSource } from "./reveal.js";
 import * as powerups from "./powerups.js";
 import { grid, slowFill, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
@@ -31,12 +31,22 @@ const BGS = Math.min(WIDTH, HEIGHT) / 680;
 const FONT = HUD.font; // Orbitron with a system-ui fallback (loaded in index.html)
 const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
 
-function theme() { return THEMES[game.currentLevel().zone - 1] || THEMES[0]; }
+function theme() {
+  if (game.candyTheme) return CANDY.theme; // CANDY MODE: one skin for every zone
+  return THEMES[game.currentLevel().zone - 1] || THEMES[0];
+}
+
+// CANDY MODE enemy-color remap, draw-time only — logic modules keep spawning the
+// normal danger-band colors; unknown colors pass through. Exported so main.js can
+// match kill-dust FX to the frosting color.
+export function ecol(c) { return game.candyTheme ? (CANDY.enemyMap[c] ?? c) : c; }
 
 // --- Pixi app + persistent layers ------------------------------------------
 let app = null;
 let G = {};          // named Graphics layers, cleared + redrawn each frame
 let bgSprite = null; // baked nebula/galaxy texture
+const bgTexCache = {}; // baked background per look ("z1".."z5" per zone, "candy") — lazy
+let lastBgKey = null;  // latch: swap texture/star tints only when the look changes
 let dispSprite = null; // noise map driving the nebula smoke-warp DisplacementFilter
 let refractSprite = null; // nebula copy, extra-displaced + glass-masked → refraction
 let refractMask = null;   // glass-shape mask (in bgRoot space) for refractSprite
@@ -232,7 +242,9 @@ export async function init(canvas) {
   const bgRoot = new Container();
   worldRoot = new Container();
 
-  bgSprite = new Sprite(bakeDeepSpaceTexture());
+  // Starts EMPTY; syncBackground() (called below, and per frame) bakes + assigns
+  // the right look — per-zone starscape, or the candy scene when Candy Mode is on.
+  bgSprite = new Sprite(Texture.EMPTY);
   bgSprite.anchor.set(0.5);                  // centre-anchored so it can drift/breathe/rotate
   bgSprite.position.set(WIDTH / 2, HEIGHT / 2);
   // Smoke-warp: an oversized noise map (renderable:false — it only supplies the texture
@@ -333,6 +345,7 @@ export async function init(canvas) {
 
   initStars();
   seedMotes();
+  syncBackground(); // bake + assign the boot look (zone 1, or candy if persisted ON)
 }
 
 // Faint holographic lattice over the UNCLAIMED void — run-based segments so the grid
@@ -743,35 +756,35 @@ function bakeNebula(g, cx, cy, R, cols, flatten = 0.82) {
   }
   g.restore();
 }
-function bakeDeepSpaceTexture() {
+function bakeDeepSpaceTexture(zoneIdx = 0) {
   const cv = document.createElement("canvas");
   cv.width = WIDTH; cv.height = HEIGHT;
   const g = cv.getContext("2d");
   g.fillStyle = COLORS.bg; g.fillRect(0, 0, WIDTH, HEIGHT);
-  // Palette pass (Phase 9 §2): restrained, cyan-hero void. Retinted off the old
-  // purple/magenta mix toward deep teal-blue and muted indigo, and dropped a touch
-  // in alpha for a deeper near-black void — magenta is now reserved for boss energy
-  // (see TODO §1 art-direction). Zone-independent, so safe regardless of THEMES.
-  // Radii scale with the canvas short side (tuned on the 680-min desktop) so the
-  // portrait mobile bake keeps the same cloud-to-canvas proportions.
+  // Palette pass (Phase 9 §2): restrained near-black void. Per-zone since
+  // 2026-07-18 — the cloud/nebula colours come from config.ZONE_BG[zoneIdx]
+  // (zone 1 keeps the original cyan-hero values), so each zone's background
+  // carries its own hue like the field palette does. Positions/radii stay
+  // fixed here; radii scale with the canvas short side (tuned on the 680-min
+  // desktop) so the portrait mobile bake keeps the same proportions.
+  const Z = ZONE_BG[zoneIdx] || ZONE_BG[0];
   const clouds = [
-    { x: WIDTH * 0.22, y: HEIGHT * 0.28, r: 320 * BGS, c: "rgba(40,95,155,0.13)" },
-    { x: WIDTH * 0.80, y: HEIGHT * 0.66, r: 360 * BGS, c: "rgba(20,110,170,0.13)" },
-    { x: WIDTH * 0.62, y: HEIGHT * 0.18, r: 240 * BGS, c: "rgba(30,120,150,0.08)" },
-    { x: WIDTH * 0.12, y: HEIGHT * 0.78, r: 280 * BGS, c: "rgba(50,55,140,0.09)" },
-    { x: WIDTH * 0.50, y: HEIGHT * 0.50, r: 420 * BGS, c: "rgba(30,22,72,0.08)" },
+    { x: WIDTH * 0.22, y: HEIGHT * 0.28, r: 320 * BGS, c: Z.clouds[0] },
+    { x: WIDTH * 0.80, y: HEIGHT * 0.66, r: 360 * BGS, c: Z.clouds[1] },
+    { x: WIDTH * 0.62, y: HEIGHT * 0.18, r: 240 * BGS, c: Z.clouds[2] },
+    { x: WIDTH * 0.12, y: HEIGHT * 0.78, r: 280 * BGS, c: Z.clouds[3] },
+    { x: WIDTH * 0.50, y: HEIGHT * 0.50, r: 420 * BGS, c: Z.clouds[4] },
   ];
   for (const n of clouds) {
     const rg = g.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r);
     rg.addColorStop(0, n.c); rg.addColorStop(1, "rgba(0,0,0,0)");
     g.fillStyle = rg; g.fillRect(0, 0, WIDTH, HEIGHT);
   }
-  // Two colourful nebulae (blue/pink/teal + teal/green/red accent) — organic clouds
-  // with filaments + dust, not white discs. Low per-daub alpha keeps the void dark.
-  // Art pass: cooled palettes — the pink/warm daubs are gone so the void reads
-  // cyan/teal/blue and magenta stays reserved for enemy & boss energy.
-  bakeNebula(g, WIDTH * 0.74, HEIGHT * 0.28, 205 * BGS, [[90, 150, 255], [110, 190, 235], [120, 225, 255], [190, 225, 245]], 0.85);
-  bakeNebula(g, WIDTH * 0.20, HEIGHT * 0.72, 165 * BGS, [[60, 220, 205], [120, 255, 200], [80, 140, 220], [110, 150, 255]], 0.80);
+  // Two colourful nebulae — organic clouds with filaments + dust, not white
+  // discs. Low per-daub alpha keeps the void dark; hues stay clear of the
+  // enemies' magenta/hot-pink danger band (rule inherited from THEMES).
+  bakeNebula(g, WIDTH * 0.74, HEIGHT * 0.28, 205 * BGS, Z.nebA, 0.85);
+  bakeNebula(g, WIDTH * 0.20, HEIGHT * 0.72, 165 * BGS, Z.nebB, 0.80);
   for (let i = 0; i < 260; i++) {
     g.globalAlpha = 0.1 + Math.random() * 0.4;
     g.fillStyle = STAR_TINTS[(Math.random() * STAR_TINTS.length) | 0];
@@ -781,7 +794,140 @@ function bakeDeepSpaceTexture() {
   return Texture.from(cv);
 }
 
+// CANDY MODE background (config.CANDY.bg): the concept-art scene — warm berry
+// void, big fluffy pink cloud banks, a pink/purple swirl galaxy (bakeNebula
+// reused with candy cols), candy-cane hooks near the edges, a pale castle
+// silhouette low-center, golden 4-point star sprinkles, pastel star dots.
+// Same shape/size as the deep-space bake so bgSprite can swap textures freely.
+function bakeCandyTexture() {
+  const B = CANDY.bg;
+  const cv = document.createElement("canvas");
+  cv.width = WIDTH; cv.height = HEIGHT;
+  const g = cv.getContext("2d");
+  g.fillStyle = B.base; g.fillRect(0, 0, WIDTH, HEIGHT);
+
+  // Swirl galaxy up top (reuses the nebula baker — additive daubs + filaments).
+  bakeNebula(g, WIDTH * 0.68, HEIGHT * 0.22, 190 * BGS, B.galaxyCols, 0.85);
+
+  // Fluffy cloud banks: clusters of soft radial puffs, biased to the lower half
+  // and corners (concept framing), each with a lighter top lobe so they read as
+  // lit cotton-candy rather than flat fog.
+  const pickCloud = () => B.cloudCols[(Math.random() * B.cloudCols.length) | 0];
+  for (let i = 0; i < B.clouds; i++) {
+    const lower = Math.random() < 0.7;
+    const cx = Math.random() * WIDTH;
+    const cy = lower ? HEIGHT * (0.55 + Math.random() * 0.4) : HEIGHT * (0.05 + Math.random() * 0.3);
+    const span = (90 + Math.random() * 130) * BGS;
+    const c = pickCloud();
+    const puffs = 8 + (Math.random() * 6 | 0);
+    for (let p = 0; p < puffs; p++) {
+      const px = cx + (Math.random() - 0.5) * span * 2;
+      const py = cy + (Math.random() - 0.5) * span * 0.7;
+      const pr = (28 + Math.random() * 55) * BGS;
+      // Alphas kept LOW: bloom (threshold 0.55) turns bright overlapping puffs
+      // into big white glare blobs — found in headless screenshots, so the
+      // clouds stay soft and the lit lobes stay subtle.
+      const grd = g.createRadialGradient(px, py, 0, px, py, pr);
+      grd.addColorStop(0, rgba(c, 0.11 + Math.random() * 0.06));
+      grd.addColorStop(1, rgba(c, 0));
+      g.fillStyle = grd; g.beginPath(); g.arc(px, py, pr, 0, Math.PI * 2); g.fill();
+      // lit top lobe (light from above, like the concept's glowing cloud rims)
+      const hr = pr * 0.55;
+      const hg = g.createRadialGradient(px - hr * 0.2, py - pr * 0.5, 0, px - hr * 0.2, py - pr * 0.5, hr);
+      hg.addColorStop(0, "rgba(255,225,240,0.05)"); hg.addColorStop(1, "rgba(255,225,240,0)");
+      g.fillStyle = hg; g.beginPath(); g.arc(px - hr * 0.2, py - pr * 0.5, hr, 0, Math.PI * 2); g.fill();
+    }
+  }
+
+  // Castle silhouette, low-center: STUBBY towers joined by a curtain wall, with
+  // short cone roofs. (First pass drew tall thin towers + oversized cones — in
+  // the headless screenshots they read as five floating ARROWS, not a castle;
+  // the wall + squat proportions are what make the silhouette read.)
+  const castleH = 80 * BGS, baseY = HEIGHT * 0.6, ccx = WIDTH * 0.5;
+  g.fillStyle = B.castle; g.globalAlpha = 0.13;
+  g.fillRect(ccx - 1.35 * castleH, baseY - 0.34 * castleH, 2.7 * castleH, 0.34 * castleH); // curtain wall
+  const towers = [ // [xOffset (× castleH), width, height] — center keep tallest
+    [-1.1, 0.5, 0.52], [-0.55, 0.4, 0.7], [0, 0.55, 0.9], [0.55, 0.4, 0.7], [1.1, 0.5, 0.52],
+  ];
+  for (const [ox, tw, th] of towers) {
+    const x = ccx + ox * castleH, w = tw * castleH, h = th * castleH;
+    g.fillRect(x - w / 2, baseY - h, w, h);
+    g.beginPath(); // short cone roof, barely wider than its tower
+    g.moveTo(x - w * 0.6, baseY - h); g.lineTo(x + w * 0.6, baseY - h); g.lineTo(x, baseY - h - w * 0.8);
+    g.closePath(); g.fill();
+  }
+  g.globalAlpha = 0.28; // tiny glowing windows
+  for (const [ox, , th] of towers) {
+    g.fillRect(ccx + ox * castleH - 1.5 * BGS, baseY - th * castleH * 0.55, 3 * BGS, 4 * BGS);
+  }
+  g.globalAlpha = 1;
+
+  // Candy-cane hooks near the edges: a shaft + semicircle hook, sampled into
+  // points and stroked in alternating red/white segments (round caps blend them).
+  const cane = (x, y, len, rot) => {
+    const hookR = len * 0.3, w = len * 0.14;
+    const pts = [];
+    for (let t = 0; t <= 1.001; t += 0.05) { // shaft: bottom → hook start
+      pts.push([0, len * 0.7 - t * len * 0.7]);
+    }
+    for (let a = 0; a <= 1.001; a += 0.08) { // hook: semicircle over the top,
+      const th = Math.PI - a * Math.PI;      // arc center (hookR, 0) — starts AT
+      pts.push([hookR + Math.cos(th) * hookR, -Math.sin(th) * hookR * 0.9]); // the shaft top
+    }
+    const cs = Math.cos(rot), sn = Math.sin(rot);
+    const world = pts.map(([px, py]) => [x + px * cs - py * sn, y + px * sn + py * cs]);
+    g.lineCap = "round";
+    for (let seg = 0; seg < world.length - 1; seg++) {
+      const stripe = (seg / 3 | 0) % 2 === 0;
+      // Kept dim: bright white strokes bloom into featureless glowing worms
+      // (headless screenshots) — the red/white striping needs to survive the blur.
+      g.strokeStyle = stripe ? B.caneRed : B.caneWhite;
+      g.globalAlpha = stripe ? 0.5 : 0.38;
+      g.lineWidth = w;
+      g.beginPath();
+      g.moveTo(world[seg][0], world[seg][1]);
+      g.lineTo(world[seg + 1][0], world[seg + 1][1]);
+      g.stroke();
+    }
+    g.globalAlpha = 1;
+  };
+  // Fixed edge slots (x%, y%, rot) — random placement let canes overlap into
+  // unreadable squiggles; these keep them apart and clear of the field centre.
+  const caneSlots = [
+    [0.06, 0.16, -0.3], [0.05, 0.58, 0.25], [0.94, 0.14, 0.35],
+    [0.95, 0.52, -0.2], [0.90, 0.84, 0.15], [0.10, 0.88, -0.15],
+  ];
+  for (let i = 0; i < Math.min(B.canes, caneSlots.length); i++) {
+    const [sx, sy, rot] = caneSlots[i];
+    cane(WIDTH * sx, HEIGHT * sy, (60 + Math.random() * 25) * BGS, rot + (Math.random() - 0.5) * 0.2);
+  }
+
+  // Golden 4-point star sprinkles (concave diamond) + pastel star dots.
+  const star4 = (x, y, r, col, rot) => {
+    g.save(); g.translate(x, y); g.rotate(rot);
+    g.fillStyle = col; g.globalAlpha = 0.85;
+    g.beginPath();
+    g.moveTo(0, -r); g.quadraticCurveTo(0, 0, r, 0); g.quadraticCurveTo(0, 0, 0, r);
+    g.quadraticCurveTo(0, 0, -r, 0); g.quadraticCurveTo(0, 0, 0, -r);
+    g.fill(); g.globalAlpha = 1; g.restore();
+  };
+  for (let i = 0; i < B.sprinkles; i++) {
+    star4(Math.random() * WIDTH, Math.random() * HEIGHT,
+      (3 + Math.random() * 5) * BGS,
+      B.sprinkleCols[(Math.random() * B.sprinkleCols.length) | 0],
+      Math.random() * Math.PI);
+  }
+  for (let i = 0; i < B.stars; i++) {
+    g.globalAlpha = 0.1 + Math.random() * 0.4;
+    g.fillStyle = CANDY.starTints[(Math.random() * CANDY.starTints.length) | 0];
+    g.fillRect(Math.random() * WIDTH, Math.random() * HEIGHT, 1, 1);
+  }
+  g.globalAlpha = 1;
+  return Texture.from(cv);
+}
+
 function initStars() {
+  const tints = game.candyTheme ? CANDY.starTints : STAR_TINTS; // pastel sugar vs space
   starsState = [];
   for (let i = 0; i < 150; i++) {
     const far = Math.random() < 0.6;
@@ -791,9 +937,29 @@ function initStars() {
       v: (far ? 3 : 9) + Math.random() * (far ? 6 : 14),
       a: 0.3 + Math.random() * 0.6,
       tw: Math.random() * Math.PI * 2, tws: 1.5 + Math.random() * 3,
-      tint: STAR_TINTS[(Math.random() * STAR_TINTS.length) | 0],
+      tint: tints[(Math.random() * tints.length) | 0],
     });
   }
+}
+
+// Background look swap, checked once per frame: the look is keyed by Candy Mode
+// or, otherwise, by the current ZONE — so entering a new zone flips the whole
+// starscape to that zone's hue, the same total colour switch Candy Mode does
+// (Mark, 2026-07-18). Each texture bakes lazily on first visit, then caches —
+// later swaps are free. The refraction copy shares the texture, and the
+// twinkle-star tints re-roll with each look.
+function syncBackground() {
+  const key = game.candyTheme ? "candy" : "z" + (game.currentLevel().zone || 1);
+  if (key === lastBgKey) return;
+  lastBgKey = key;
+  if (!bgTexCache[key]) {
+    bgTexCache[key] = key === "candy"
+      ? bakeCandyTexture()
+      : bakeDeepSpaceTexture((game.currentLevel().zone || 1) - 1);
+  }
+  bgSprite.texture = bgTexCache[key];
+  if (refractSprite) refractSprite.texture = bgTexCache[key];
+  initStars();
 }
 
 // --- Per-frame scene draws -------------------------------------------------
@@ -1100,7 +1266,7 @@ function drawSpawning(g, x, y, color, radius, spawnT) {
 function drawEnemies() {
   const g = G.enemy; g.clear();
   for (const b of blobs) {
-    if (b.spawnT > 0) { drawSpawning(g, b.x, b.y, b.color, boundRadius(b), b.spawnT); continue; }
+    if (b.spawnT > 0) { drawSpawning(g, b.x, b.y, ecol(b.color), boundRadius(b), b.spawnT); continue; }
     (b.shape === "sheaf" ? drawSheaf : drawPoly)(g, b);
   }
 }
@@ -1122,7 +1288,7 @@ function emitWake(b) {
       vx: (b.vx || 0) * 0.25 + (Math.random() - 0.5) * 20,
       vy: (b.vy || 0) * 0.25 + (Math.random() - 0.5) * 20,
       life: 0.45 + Math.random() * 0.35, max: 0.8,
-      size: 1 + Math.random(), color: b.color, glow: true, shrink: true,
+      size: 1 + Math.random(), color: ecol(b.color), glow: true, shrink: true,
     });
   }
 }
@@ -1225,17 +1391,22 @@ function drawSheafLightning(g, b, H, t, boss) {
   }
 }
 function drawPoly(g, b) {
-  const verts = polyVerts(b);
-  const Nv = verts.length, half = Nv >> 1;
-  const ring = (gg) => { verts.forEach((v, i) => i === 0 ? gg.moveTo(v.x, v.y) : gg.lineTo(v.x, v.y)); gg.closePath(); };
-  glow(g, ring, [{ w: 9, c: b.color, a: 0.12 }, { w: 4, c: b.color, a: 0.3 }, { w: 1.6, c: "#ffffff", a: 0.9 }]);
-  // internal diagonals
-  for (let i = 0; i < half; i++) {
-    g.moveTo(verts[i].x, verts[i].y).lineTo(verts[i + half].x, verts[i + half].y)
-      .stroke({ width: 1.6, color: b.color, alpha: 0.5 });
+  const fc = ecol(b.color); // CANDY MODE frosting remap (identity otherwise)
+  if (game.candyTheme) {
+    drawCupcake(g, b, fc);
+  } else {
+    const verts = polyVerts(b);
+    const Nv = verts.length, half = Nv >> 1;
+    const ring = (gg) => { verts.forEach((v, i) => i === 0 ? gg.moveTo(v.x, v.y) : gg.lineTo(v.x, v.y)); gg.closePath(); };
+    glow(g, ring, [{ w: 9, c: b.color, a: 0.12 }, { w: 4, c: b.color, a: 0.3 }, { w: 1.6, c: "#ffffff", a: 0.9 }]);
+    // internal diagonals
+    for (let i = 0; i < half; i++) {
+      g.moveTo(verts[i].x, verts[i].y).lineTo(verts[i + half].x, verts[i + half].y)
+        .stroke({ width: 1.6, color: b.color, alpha: 0.5 });
+    }
+    energyCore(g, b.x, b.y, 4, b.color, b.t * 1.7); // breathing halo under the core
+    sphere(g, b.x, b.y, 4, b.color, { glow: 0.28 }); // glowy 3D core
   }
-  energyCore(g, b.x, b.y, 4, b.color, b.t * 1.7); // breathing halo under the core
-  sphere(g, b.x, b.y, 4, b.color, { glow: 0.28 }); // glowy 3D core
   // Special Blob glyph (§8) — reads at a glance which reward it holds.
   if (b.special === "life") {
     const gl = b.radius * 0.5;
@@ -1255,16 +1426,95 @@ function drawPoly(g, b) {
     if (d > 0) {
       const reach = Math.min(d * 0.45, boundRadius(b) * 2.5);
       g.moveTo(b.x, b.y).lineTo(b.x + (dx / d) * reach, b.y + (dy / d) * reach)
-        .stroke({ width: 1.2, color: b.color, alpha: 0.15 + 0.12 * Math.sin(b.t * 3.5) });
+        .stroke({ width: 1.2, color: fc, alpha: 0.15 + 0.12 * Math.sin(b.t * 3.5) });
     }
   }
+}
+
+// CANDY MODE poly-Blob body: an angry cupcake (concept art). Same center +
+// radius as the poly it replaces, so the visual tracks the unchanged hitRadius.
+// Built from the existing glossy `sphere()` lobes so bloom gives the frosting
+// the same lit-candy sheen as power-up cores. Proportions in config.CANDY.cupcake.
+// The whole cupcake TILTS its cherry into the travel direction (Mark, 2026-07-18):
+// every shape is an offset from center, rotated by an angle eased toward the
+// blob's velocity heading. The eased angles live in a renderer-side WeakMap —
+// this module reads world objects but never writes to them.
+const cakeRot = new WeakMap();
+function drawCupcake(g, b, fc) {
+  const r = b.radius, C = CANDY.cupcake;
+  const pulse = 1 + 0.06 * Math.sin(b.t * 3); // gentle breathing, like the poly pulse
+
+  // Heading: "up" (−y, where the cherry is) turns toward (vx, vy). Ease with
+  // shortest-arc wrap so bounces swing the cupcake round instead of snapping it.
+  const moving = (b.vx || 0) !== 0 || (b.vy || 0) !== 0;
+  let rot = cakeRot.get(b) ?? 0;
+  if (moving) {
+    const target = Math.atan2(b.vy, b.vx) + Math.PI / 2;
+    let d = target - rot;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    rot += d * Math.min(1, ambDt * 6);
+  }
+  cakeRot.set(b, rot);
+  const cs = Math.cos(rot), sn = Math.sin(rot);
+  const PX = (dx, dy) => b.x + dx * cs - dy * sn; // local offset → world (rotated)
+  const PY = (dx, dy) => b.y + dx * sn + dy * cs;
+
+  const rim = r * 0.1; // local y of the cup rim (down is +y in local space)
+  const topW = r * C.cupW * pulse, botW = topW * C.cupBottom, cupH = r * C.cupH;
+
+  energyCore(g, b.x, b.y, 4, fc, b.t * 1.7); // breathing halo → bloom radiance
+
+  // Crinkle cup: tapered wrapper + darker ridge lines.
+  g.poly([PX(-topW / 2, rim), PY(-topW / 2, rim), PX(topW / 2, rim), PY(topW / 2, rim),
+          PX(botW / 2, rim + cupH), PY(botW / 2, rim + cupH), PX(-botW / 2, rim + cupH), PY(-botW / 2, rim + cupH)])
+    .fill({ color: "#7a4636", alpha: 0.95 })
+    .stroke({ width: 1, color: "#54291d", alpha: 0.9 });
+  for (let i = 1; i < 4; i++) {
+    const t = i / 4;
+    const xt = -topW / 2 + topW * t, xb = -botW / 2 + botW * t;
+    g.moveTo(PX(xt, rim), PY(xt, rim)).lineTo(PX(xb, rim + cupH), PY(xb, rim + cupH))
+      .stroke({ width: 1.2, color: "#54291d", alpha: 0.7 });
+  }
+
+  // Frosting: three rows of glossy lobes stacked into a swirl dome.
+  const fh = r * C.frostH;
+  const lobe = (dx, dy, lr) => sphere(g, PX(dx, rim - dy), PY(dx, rim - dy), lr, fc, { glow: 0.1 });
+  lobe(-topW * 0.30, fh * 0.10, r * 0.46);
+  lobe( topW * 0.30, fh * 0.10, r * 0.46);
+  lobe( 0,           fh * 0.12, r * 0.50);
+  lobe(-topW * 0.17, fh * 0.48, r * 0.42);
+  lobe( topW * 0.17, fh * 0.48, r * 0.42);
+  lobe( 0,           fh * 0.85, r * 0.36);
+
+  // Cherry on top, with a tiny stem.
+  const cdy = rim - fh * 1.18 - r * C.cherryR; // local y of the cherry center
+  g.moveTo(PX(0, cdy - r * C.cherryR * 0.6), PY(0, cdy - r * C.cherryR * 0.6))
+    .lineTo(PX(r * 0.12, cdy - r * C.cherryR * 1.6), PY(r * 0.12, cdy - r * C.cherryR * 1.6))
+    .stroke({ width: 1.4, color: "#6b3a2a", alpha: 0.9 });
+  sphere(g, PX(0, cdy), PY(0, cdy), r * C.cherryR, "#e0263e", { glow: 0.3 });
+
+  // Angry glowing face on the frosting front: slanted slit eyes + zigzag mouth.
+  const ey = rim - fh * 0.42, ew = r * C.eyeW;
+  const eyes = (gg) => gg
+    .moveTo(PX(-ew * 1.7, ey - ew * 0.7), PY(-ew * 1.7, ey - ew * 0.7))
+    .lineTo(PX(-ew * 0.4, ey + ew * 0.25), PY(-ew * 0.4, ey + ew * 0.25))
+    .moveTo(PX(ew * 1.7, ey - ew * 0.7), PY(ew * 1.7, ey - ew * 0.7))
+    .lineTo(PX(ew * 0.4, ey + ew * 0.25), PY(ew * 0.4, ey + ew * 0.25));
+  glow(g, eyes, [{ w: 5, c: fc, a: 0.35 }, { w: 2.2, c: "#ffffff", a: 0.95 }]);
+  const my = rim - fh * 0.12, mw = r * 0.55;
+  g.moveTo(PX(-mw, my), PY(-mw, my))
+    .lineTo(PX(-mw * 0.33, my - r * 0.14), PY(-mw * 0.33, my - r * 0.14))
+    .lineTo(PX(mw * 0.33, my + r * 0.02), PY(mw * 0.33, my + r * 0.02))
+    .lineTo(PX(mw, my - r * 0.12), PY(mw, my - r * 0.12))
+    .stroke({ width: 1.6, color: "#3a1020", alpha: 0.95 });
 }
 
 function drawSparx() {
   const g = G.sparx; g.clear();
   for (const s of sparxList) {
-    if (s.spawnT > 0) { drawSpawning(g, s.x, s.y, s.color, SPARX.radius, s.spawnT); continue; }
-    const col = s.latched ? SPARX.latchColor : s.color;
+    if (s.spawnT > 0) { drawSpawning(g, s.x, s.y, ecol(s.color), SPARX.radius, s.spawnT); continue; }
+    const col = ecol(s.latched ? SPARX.latchColor : s.color); // CANDY: peppermint reds
     const pulse = 0.6 + 0.4 * Math.sin(s.t * 8 + (s.fast ? 1.5 : 0));
     for (let i = 0; i < s.tail.length; i++) {
       const a = (1 - i / s.tail.length) * 0.35 * pulse;
@@ -1597,8 +1847,26 @@ function drawMenu(menuSel) {
     drawText(isSuper ? "S" : String(z), x, y - 6, { size: isSuper ? chipTxt * 0.7 : chipTxt, color: locked ? COLORS.locked : selected ? COLORS.hudAccent : COLORS.frontier, weight: "700", align: "center" });
     drawText(locked ? "LOCKED" : (isSuper ? "SUPER" : `${z}-1`), x, y + half * 0.7, { size: Math.min(13, half * 0.34), color: locked ? COLORS.locked : COLORS.hud, weight: "500", align: "center" });
   }
+  // CANDY MODE toggle chip (+ a PINK/NORMAL music row while it's on). Tap
+  // rects come from config.CANDY.menuBtn/musicBtn — main.js hit-tests the same
+  // rects for mobile, and C / V toggle them on desktop.
+  const cb = CANDY.menuBtn, candyOn = game.candyTheme;
+  const chipCol = candyOn ? CANDY.theme.accent : COLORS.arena;
+  // Dark backing fill first — the candy background's bright clouds sit right
+  // behind this chip, so without it the label washes out (headless screenshots).
+  G.overlay.roundRect(WIDTH / 2 - cb.w / 2, cb.y - cb.h / 2, cb.w, cb.h, 10)
+    .fill({ color: "#12071a", alpha: 0.72 })
+    .roundRect(WIDTH / 2 - cb.w / 2, cb.y - cb.h / 2, cb.w, cb.h, 10)
+    .stroke({ width: candyOn ? 2.5 : 1.5, color: chipCol, alpha: candyOn ? 0.95 : 0.6 });
+  centerText(`CANDY MODE  ${candyOn ? "ON" : "OFF"}`, cb.y, 17, candyOn ? CANDY.theme.accent : COLORS.hud, candyOn ? 1 : 0.75, "700");
+  if (candyOn) {
+    const mb = CANDY.musicBtn;
+    G.overlay.roundRect(WIDTH / 2 - mb.w / 2, mb.y - mb.h / 2, mb.w, mb.h, 8)
+      .fill({ color: "#12071a", alpha: 0.6 });
+    centerText(`music  ${game.candyMusic ? "PINK MODE" : "NORMAL"}`, mb.y, 14, "#ffffff", 0.9, "500");
+  }
   centerText(MOBILE ? "swipe ← →  select      tap  start" : "← →  select        ENTER  start", HEIGHT - 78, 18, COLORS.hud, 1, "500");
-  if (!MOBILE) centerText("M  mute     ·     N  music", HEIGHT - 48, 15, COLORS.locked, 1, "500");
+  if (!MOBILE) centerText(candyOn ? "M  mute   ·   N  music   ·   C  candy   ·   V  candy music" : "M  mute   ·   N  music   ·   C  candy", HEIGHT - 48, 15, COLORS.locked, 1, "500");
 }
 
 function drawIntro() {
@@ -1674,19 +1942,26 @@ function drawCampaignComplete() {
   centerText(tail, CY + 72, 20, COLORS.hud, 1, "500");
 }
 
-// Interactive pause menu: RESUME / SFX / MUSIC / QUIT TO MENU. Row Y positions
-// come from config.pauseRowY so touch hit-testing in main.js lines up exactly.
+// Interactive pause menu: RESUME / SFX / MUSIC / CANDY [/ CANDY MUSIC] / QUIT
+// TO MENU — the last two rows are dynamic (game.pauseMenuRows(), the same
+// source main.js reads for input/hit-testing, so the two never drift apart).
+// Row Y positions come from config.pauseRowY(i, total) so touch hit-testing
+// in main.js lines up exactly.
+const PAUSE_LABELS = {
+  resume: () => "RESUME",
+  sfx: () => `SFX     ◀  ${Math.round(audio.getSfxVolume() * 100)}%  ▶`,
+  music: () => `MUSIC   ◀  ${Math.round(audio.getMusicVolume() * 100)}%  ▶`,
+  candy: () => `CANDY MODE   ${game.candyTheme ? "ON" : "OFF"}`,
+  candyMusic: () => `CANDY MUSIC   ${game.candyMusic ? "PINK MODE" : "NORMAL"}`,
+  quit: () => "QUIT TO MENU",
+};
 function drawPaused(sel = 0) {
   dim(0.7);
-  centerText("PAUSED", pauseRowY(0) - 70, 44, COLORS.frontier);
-  const labels = [
-    "RESUME",
-    `SFX     ◀  ${Math.round(audio.getSfxVolume() * 100)}%  ▶`,
-    `MUSIC   ◀  ${Math.round(audio.getMusicVolume() * 100)}%  ▶`,
-    "QUIT TO MENU",
-  ];
-  labels.forEach((label, i) => {
-    const y = pauseRowY(i);
+  const rows = game.pauseMenuRows();
+  const total = rows.length;
+  centerText("PAUSED", pauseRowY(0, total) - 70, 44, COLORS.frontier);
+  rows.forEach((kind, i) => {
+    const y = pauseRowY(i, total);
     const isSel = i === sel;
     if (isSel) {
       uiGfx.roundRect(WIDTH / 2 - PAUSE_MENU.rowW / 2, y - PAUSE_MENU.rowH / 2, PAUSE_MENU.rowW, PAUSE_MENU.rowH, 8)
@@ -1694,12 +1969,12 @@ function drawPaused(sel = 0) {
         .roundRect(WIDTH / 2 - PAUSE_MENU.rowW / 2, y - PAUSE_MENU.rowH / 2, PAUSE_MENU.rowW, PAUSE_MENU.rowH, 8)
         .stroke({ width: 2, color: COLORS.hudAccent, alpha: 0.9 });
     }
-    centerText(label, y, isSel ? 22 : 19, isSel ? COLORS.hudAccent : COLORS.hud, isSel ? 1 : 0.75, isSel ? "800" : "600");
+    centerText(PAUSE_LABELS[kind](), y, isSel ? 22 : 19, isSel ? COLORS.hudAccent : COLORS.hud, isSel ? 1 : 0.75, isSel ? "800" : "600");
   });
   const hint = MOBILE
-    ? "tap RESUME / QUIT · tap left/right of SFX · MUSIC to adjust"
+    ? "tap RESUME / QUIT / CANDY · tap left/right of SFX · MUSIC to adjust"
     : "↑↓ select   ·   ←→ adjust   ·   ENTER choose   ·   P/ESC resume";
-  centerText(hint, pauseRowY(3) + 46, 14, COLORS.locked, 1, "500");
+  centerText(hint, pauseRowY(total - 1, total) + 46, 14, COLORS.locked, 1, "500");
 }
 
 function drawPauseButton() {
@@ -1714,6 +1989,7 @@ function drawPauseButton() {
 // --- The frame -------------------------------------------------------------
 export function render(view = {}) {
   if (!app) return;
+  syncBackground(); // per-zone / candy background swap (no-op unless the look changed)
   const { transT = 0, menuSel = 1, popups = [], reward = null, deathPoint = null, scorePulseT = 99, danger = 0, beat = 0, paused = false, slowBtn = false, pauseSel = 0 } = view;
 
   // Pixi display objects persist between frames, so wipe every layer up front

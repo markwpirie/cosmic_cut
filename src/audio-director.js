@@ -24,11 +24,18 @@ const clamp01 = (x) => Math.max(0, Math.min(1, x));
 export function title() { interruptedKey = null; audio.setTrack("title"); }
 export function stageSelect() { interruptedKey = null; audio.setTrack("stageSelect"); }
 
+// CANDY MODE music: main.js pushes the flag in (this module stays game-free —
+// see the header contract). While set, every stage cue plays the Pink Mode
+// track instead of the zone theme; the interrupt/resume machinery is untouched
+// because it only ever compares the keys stage() actually chose.
+let candyMusic = false;
+export function setCandyMusic(on) { candyMusic = !!on; }
+
 // Play a zone's stage theme. If it's the very track an interrupting jingle just
 // paused, resume it from that position; otherwise start fresh. Tension resets so
 // each level opens calm.
 export function stage(zone) {
-  const key = "stage" + zone;
+  const key = candyMusic ? "pinkMode" : "stage" + zone;
   const resume = key === interruptedKey;
   interruptedKey = null;
   currentStageKey = key;
@@ -68,7 +75,9 @@ export function kill() { audio.killStinger(); }
 // Interrupting + resume: pause the stage track and play the short jingle. The
 // stage track keeps its position, and the next stage() call resumes it.
 export function levelComplete() { interruptedKey = currentStageKey; audio.setTrack("stageClear"); }
-export function caught() { interruptedKey = currentStageKey; audio.setTrack("gameOver"); }
+// Candy Mode gets its own cute "Lose a Life" jingle; normal mode keeps the
+// classic Game Over sting on death (Mark: the cute tune is candy-only).
+export function caught() { interruptedKey = currentStageKey; audio.setTrack(candyMusic ? "loseLife" : "gameOver"); }
 
 // Terminal: out of lives — play it through; the run ends at the menu, no resume.
 export function gameOver() { interruptedKey = null; audio.setTrack("gameOver"); }
