@@ -37,6 +37,20 @@ body {
            env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
+/* Phones (coarse pointer, narrow screen — matches config.js's MOBILE check):
+   top-align instead of vertically centering. The portrait canvas rarely fills
+   the exact screen aspect, so there's usually leftover slack; centering it
+   across the FULL viewport (ignoring the safe-area padding) split that slack
+   evenly above/below, pushing the game's own HUD text up under the iPhone
+   status bar / Dynamic Island while leaving the equivalent gap wasted at the
+   bottom. Top-aligning keeps the canvas flush under the safe-area padding
+   (i.e. right below the notch) and sends any slack to the bottom instead. */
+@media (pointer: coarse) and (max-width: 500px) {
+  body {
+    align-items: flex-start;
+  }
+}
+
 main {
   display: flex;
   flex-direction: column;

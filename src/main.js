@@ -29,7 +29,7 @@ await pixiRenderer.init(canvas);
 // viewport height allows, capped at native size so desktop stays pixel-crisp.
 // (dvh tracks the iOS URL bar; the ratio is device-branched so CSS can't hardcode it.)
 const RATIO = (WIDTH / HEIGHT).toFixed(4);
-canvas.style.width = `min(100vw, calc(100dvh * ${RATIO}), ${WIDTH}px)`;
+canvas.style.width = `min(100vw, calc((100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom)) * ${RATIO}), ${WIDTH}px)`;
 canvas.style.height = "auto";
 canvas.style.aspectRatio = `${WIDTH} / ${HEIGHT}`;
 function draw(view) {
