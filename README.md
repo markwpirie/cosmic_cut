@@ -51,23 +51,74 @@ untouched; only presentation changed. See [PHASE9.md](PHASE9.md).
 
 ## How to play
 
-Play it at <https://markwpirie.github.io/cosmic_cut/>.
+Play it at <https://markwpirie.github.io/cosmic_cut/>. New to the game? The **?**
+button on the zone-select screen (or the **H** key) opens a paginated in-game
+instructions screen — the same content as this section, on-device.
 
 - **Goal:** carve out the play field. Each level has a **target %** — claim that much of the arena to clear it and move on, through zones 1-1 … 5-5.
-- **Controls:** **Arrow keys** or **WASD**. Movement is continuous "ride the rail" — press a direction and you keep going until you turn or reverse (press the opposite). Hold a direction approaching a junction to take that turn. Push **into open space** to start a **cut**. **Hold SPACE while cutting for a SLOW DRAW** — you crawl (more exposed) but the claim is darker glass worth **double**.
-- **Cutting & risk:** while riding the bright perimeter (or a claimed edge) you're **safe**. The moment you cut into open space you're exposed — a Blob touching your **marker or your trail** costs a life. Close the loop back to safe ground to **claim** the enclosed area.
-- **Scoring:** bigger, bolder cuts pay off — **BLOCK OUT** (≥30%), **MEGA-CUT** (≥50%), **LONG** tiers (long cuts), and **SPLIT** (trap a Blob on the smaller side: it dies, you score, and the level multiplier ×2). Stacked bonuses → **MULTI STACK**.
-- **Flow:** a **title** screen → **stage-select** (pick any zone you've reached) → play. The level starts when you press a direction; on a hit you freeze on the spot (brief beat) — press any key to respawn; out of lives → start screen (beat the **high score**).
-- **Enemies:** the **Qix** (big twisting line-creature) and **Blobs** bounce through open
-  space — deadly only while you're cutting. **Hunter Blobs** drift toward you. **Sparx**
-  patrol the borders and are deadly *even while you ride safely*, so keep moving; **Fast
-  Sparx** will jump onto your cut line to chase you mid-draw.
-- **Power-ups:** grab **Freeze / Solar Wind / Boost / Shield** by claiming the area they
-  sit in. **Solar Wind** blows every enemy hard against one wall for a few seconds.
-  **ZOOM** floats — touch it, pick a direction, and rocket across the board destroying
-  everything in your path.
-- **Pause:** **P** or **Esc** freezes the game (music + tones duck); press again to resume.
-- **Audio:** **M** mutes all sound, **N** toggles the music (both remembered).
+- Movement is continuous "ride the rail" — press a direction and you keep going until you turn or reverse. Hold a direction approaching a junction to take that turn. Push **into open space** to start a **cut**.
+- **Cutting & risk:** while riding the bright perimeter (or a claimed edge) you're **safe**. The moment you cut into open space you're exposed — an enemy touching your **marker or your trail** costs a life (Sparx are dangerous even on safe ground — see [Enemies](#enemies)). Close the loop back to safe ground to **claim** the enclosed area.
+- **Flow:** a **title** screen → **zone-select** (pick any zone you've reached, or toggle **Candy Mode** — a cosmetic pink reskin, see below) → play. The level starts when you push a direction; on a hit you freeze on the spot (brief beat) — press any key/tap to respawn; out of lives → back to zone-select (beat the **high score**). Clear all 25 levels once to unlock **SUPER** — the same campaign replayed with 2× enemies and tighter targets.
+
+### Controls
+
+| Desktop | Action |
+|---|---|
+| **Arrow keys** / **WASD** | Steer — push into open space to cut |
+| **Hold SPACE** while cutting | **SLOW DRAW** — crawl, more exposed, but the claim scores **×10** |
+| **P** / **Esc** | Pause — also a menu: SFX/music volume, Candy Mode, quit to menu |
+| **M** | Mute all sound |
+| **N** | Toggle music |
+| **C** | Toggle Candy Mode (zone-select screen) |
+| **V** | Toggle Candy Mode's music, Pink Mode ↔ normal (while Candy Mode is on) |
+| **H** / **?** | Open the in-game instructions (zone-select screen) |
+
+| Touch (phone) | Action |
+|---|---|
+| **Swipe** | Aim your heading — the marker turns onto that line at the next junction |
+| **Two fingers held**, or the **SLOW** button | **SLOW DRAW** (bottom-left of the control strip) |
+| **⏸ button** | Pause (bottom-right of the control strip — there's no Esc key on a phone) |
+| **Tap** | Advance menus / respawn after a hit / start the level |
+
+### Scoring
+
+| Bonus | Trigger | Multiplier / points |
+|---|---|---|
+| Base | any claim | 10 pts per 1% of the arena |
+| **BLOCK OUT** | single cut claims ≥75% | ×2 |
+| **MEGA-CUT** | single cut claims ≥85% | ×4 |
+| **LONG** / **SUPER LONG** / **MEGA LONG** | cut ≥2× / 3× / 4× a field-height | ×1.5 / ×2 / ×3 |
+| **SLOW DRAW** | held SPACE for the whole cut | ×10 on that cut |
+| **SPLIT** | trap an enemy on the smaller side of a claim | it dies, +500, and ×2 to every cut for the rest of the level |
+| **NEAR MISS** | an enemy grazes your trail without hitting | +150 |
+| Level clear | reach the target % | +1000, plus +250 per life remaining |
+
+Bonuses on a single cut **stack** ("MULTI STACK!"). All values live in
+[`config.js`](src/config.js)'s `POINTS`.
+
+### Enemies
+
+- **Qix** — the twisting line-sheaf; only dangerous while you're cutting.
+- **Blobs** bounce through open space; **Hunter Blobs** drift toward you.
+- **Sparx** patrol the border *and* your cut trail — deadly even while you're riding
+  safely, so keep moving. **Fast Sparx** will latch onto your cut line mid-draw.
+- **Special Blobs** (rare, glowing) — trap one in a **SPLIT** for a reward: an extra
+  life, or a slow-down on every enemy. Touching one any other way is still lethal.
+- Killed enemies **stay dead** — each family only respawns (one at a time, telegraphed)
+  once it drops below 50% of the level's starting count.
+
+### Power-ups
+
+Grabbed by claiming the area they float in, except **ZOOM**, which floats freely and
+is grabbed by touch:
+
+| Power-up | Effect |
+|---|---|
+| **Freeze** | stops every enemy for 5s |
+| **Solar Wind** | blasts every enemy against one wall for 6.5s |
+| **Boost** | your ship moves 1.5× faster for 8s |
+| **Shield** | no death from enemy contact for 6s |
+| **ZOOM** | pick a direction, then rocket to that wall drawing a real cut — invulnerable, destroying every enemy in your path |
 
 ## Code layout
 

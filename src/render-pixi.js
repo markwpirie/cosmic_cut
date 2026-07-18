@@ -10,7 +10,7 @@
 
 import { Application, Container, Graphics, Sprite, TilingSprite, Texture, Text, Rectangle, DisplacementFilter } from "pixi.js";
 import { AdvancedBloomFilter } from "pixi-filters";
-import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, ZONE_BG, CANDY, TIMING, POWERUPS, SPECIAL_BLOBS, QIX, BOSS, BLOB_POLY, SPARX, MARKER, RESPAWN, REVEAL, BLOOM, CORNERS, GLASS, NEBULA,STARFIELD, SHIP_TRAIL, SHIP_VIS, AMBIENT, ENERGY, IMPACT, GRID_BG, MOTES, VIGNETTE, HUD, MOBILE, TOUCH, PAUSE_MENU, pauseRowY } from "./config.js";
+import { WIDTH, HEIGHT, field, CELL, COLS, ROWS, COLORS, THEMES, ZONE_BG, CANDY, TIMING, POWERUPS, SPECIAL_BLOBS, QIX, BOSS, BLOB_POLY, SPARX, MARKER, RESPAWN, REVEAL, BLOOM, CORNERS, GLASS, NEBULA,STARFIELD, SHIP_TRAIL, SHIP_VIS, AMBIENT, ENERGY, IMPACT, GRID_BG, MOTES, VIGNETTE, HUD, MOBILE, TOUCH, HELP_BTN, PAUSE_MENU, pauseRowY } from "./config.js";
 import { revealSource } from "./reveal.js";
 import * as powerups from "./powerups.js";
 import { grid, slowFill, EMPTY, FILLED, seams, cellSolid, percent } from "./grid.js";
@@ -1866,7 +1866,84 @@ function drawMenu(menuSel) {
     centerText(`music  ${game.candyMusic ? "PINK MODE" : "NORMAL"}`, mb.y, 14, "#ffffff", 0.9, "500");
   }
   centerText(MOBILE ? "swipe ← →  select      tap  start" : "← →  select        ENTER  start", HEIGHT - 78, 18, COLORS.hud, 1, "500");
-  if (!MOBILE) centerText(candyOn ? "M  mute   ·   N  music   ·   C  candy   ·   V  candy music" : "M  mute   ·   N  music   ·   C  candy", HEIGHT - 48, 15, COLORS.locked, 1, "500");
+  if (!MOBILE) centerText(candyOn ? "M  mute · N  music · C  candy · V  candy music · H  help" : "M  mute · N  music · C  candy · H  help", HEIGHT - 48, 15, COLORS.locked, 1, "500");
+  drawHelpButton();
+}
+
+// Top-right "?" badge on the zone-select screen — the discoverable entry
+// point into the instructions (openHelp()); desktop also has the H key.
+// Uses drawText (not centerText, which hardcodes x = WIDTH/2) since this
+// sits off-center. Geometry shared with main.js's touch hit-test via
+// config.HELP_BTN, same pattern as TOUCH.pauseBtn/drawPauseButton.
+function drawHelpButton() {
+  const b = HELP_BTN;
+  uiGfx.circle(b.x, b.y, b.r).fill({ color: "#06121f", alpha: 0.6 })
+    .circle(b.x, b.y, b.r).stroke({ width: 2, color: COLORS.hudAccent, alpha: 0.75 });
+  drawText("?", b.x, b.y + 1, { size: MOBILE ? 16 : 18, color: COLORS.hudAccent, weight: "800", align: "center" });
+}
+
+// --- Help / instructions screen ("?" button / H key from the zone-select
+// menu) — read-only, paginated (← → keys, or swipe on touch). Copy lives
+// here rather than config.js: it's display text, not a tunable feel knob.
+// Each row is either a small section { heading } or a { term, detail } pair.
+const HELP_PAGES = [
+  { title: "CONTROLS", rows: [
+    { heading: "KEYBOARD" },
+    { term: "ARROWS  /  WASD", detail: "steer — push into open space to cut" },
+    { term: "HOLD SPACE (while cutting)", detail: "SLOW DRAW — crawl, scores far more" },
+    { term: "P   /   ESC", detail: "pause — volume, Candy Mode" },
+    { term: "M     ·     N", detail: "mute all sound   ·   toggle music" },
+    { heading: "TOUCH" },
+    { term: "SWIPE", detail: "aim your heading" },
+    { term: "SLOW BUTTON  /  2 FINGERS", detail: "hold for a SLOW DRAW" },
+    { term: "⏸   BUTTON", detail: "pause (bottom-right)" },
+  ] },
+  { title: "SCORING", rows: [
+    { term: "BASE", detail: "10 pts per 1% claimed" },
+    { term: "BLOCK OUT   (single cut ≥75%)", detail: "×2" },
+    { term: "MEGA-CUT   (single cut ≥85%)", detail: "×4" },
+    { term: "LONG cuts   (2× / 3× / 4× field-height)", detail: "×1.5 / ×2 / ×3" },
+    { term: "SLOW DRAW   (held SPACE)", detail: "×10 on that cut" },
+    { term: "SPLIT   (trap an enemy in your claim)", detail: "it dies, +500, ×2 rest of level" },
+    { term: "NEAR MISS   (enemy grazes your trail)", detail: "+150" },
+    { term: "CLEAR THE LEVEL", detail: "+1000, +250 per life left" },
+  ], note: "Bonuses on one cut STACK — MULTI STACK!" },
+  { title: "ENEMIES", rows: [
+    { term: "QIX", detail: "twisting line — only dangerous while cutting" },
+    { term: "BLOBS", detail: "bounce around the open field" },
+    { term: "HUNTER BLOBS", detail: "drift toward you" },
+    { term: "SPARX", detail: "patrol the borders — deadly even when safe!" },
+    { term: "FAST SPARX", detail: "latches onto your cut trail" },
+    { term: "SPECIAL BLOBS   (rare, glowing)", detail: "SPLIT one: extra life or slow-down" },
+  ] },
+  { title: "POWER-UPS", rows: [
+    { term: "FREEZE", detail: "stops every enemy, 5s" },
+    { term: "SOLAR WIND", detail: "blasts enemies to one wall, 6.5s" },
+    { term: "BOOST", detail: "your ship 1.5× faster, 8s" },
+    { term: "SHIELD", detail: "no death from enemy contact, 6s" },
+    { term: "ZOOM   (touch to grab)", detail: "aim, then rocket through a wall — kills all in your path" },
+  ], note: "Clear all 25 levels to unlock SUPER — 2× enemies, same campaign." },
+];
+export const HELP_PAGE_COUNT = HELP_PAGES.length;
+
+function drawHelp(page = 0) {
+  const p = HELP_PAGES[Math.max(0, Math.min(HELP_PAGE_COUNT - 1, page))];
+  centerText("HOW TO PLAY", HEIGHT * 0.08, MOBILE ? 28 : 36, COLORS.frontier);
+  centerText(`${p.title}   —   ${page + 1} / ${HELP_PAGE_COUNT}`, HEIGHT * 0.155, 17, COLORS.hudAccent, 1, "700");
+  // Fixed per-row pixel blocks (not scaled by TXT_SCALE, which only shrinks the
+  // glyphs) — Orbitron's real line height runs well past its nominal font-size,
+  // so these were widened from an initial pass that visibly overlapped rows.
+  let y = HEIGHT * 0.21;
+  const rowGap = 58, subGap = 26, headGap = 40;
+  for (const row of p.rows) {
+    if (row.heading) { centerText(row.heading, y, 13, COLORS.locked, 1, "700"); y += headGap; continue; }
+    centerText(row.term, y, 16, COLORS.hud, 1, "700");
+    centerText(row.detail, y + subGap, 13, COLORS.locked, 1, "500");
+    y += rowGap;
+  }
+  if (p.note) centerText(p.note, y + 4, 13, COLORS.hudAccent, 0.9, "600");
+  const hint = MOBILE ? "swipe ← →  page      tap  close" : "← →  page        ENTER / ESC  close";
+  centerText(hint, HEIGHT - (MOBILE ? 40 : 36), 15, COLORS.locked, 1, "500");
 }
 
 function drawIntro() {
@@ -1990,7 +2067,7 @@ function drawPauseButton() {
 export function render(view = {}) {
   if (!app) return;
   syncBackground(); // per-zone / candy background swap (no-op unless the look changed)
-  const { transT = 0, menuSel = 1, popups = [], reward = null, deathPoint = null, scorePulseT = 99, danger = 0, beat = 0, paused = false, slowBtn = false, pauseSel = 0 } = view;
+  const { transT = 0, menuSel = 1, helpPage = 0, popups = [], reward = null, deathPoint = null, scorePulseT = 99, danger = 0, beat = 0, paused = false, slowBtn = false, pauseSel = 0 } = view;
 
   // Pixi display objects persist between frames, so wipe every layer up front
   // (and reset any shake offset) — otherwise the previous state's scene lingers
@@ -2006,9 +2083,11 @@ export function render(view = {}) {
   updateBeacon();              // ship spawn-beacon triggers on level (re)start / respawn
   if (game.state !== "dead") deathSpawned = false; // re-arm the death eruption latch
 
-  if (game.state === "title" || game.state === "menu") {
+  if (game.state === "title" || game.state === "menu" || game.state === "help") {
     ribbon.length = 0; clearAmbient();
-    if (game.state === "title") drawTitle(); else drawMenu(menuSel);
+    if (game.state === "title") drawTitle();
+    else if (game.state === "menu") drawMenu(menuSel);
+    else drawHelp(helpPage);
     finishFrame(); return;
   }
 

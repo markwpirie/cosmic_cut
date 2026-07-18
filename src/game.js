@@ -221,6 +221,13 @@ export function loseLife() {
   else state = "dead";
 }
 
+// Instructions screen, reachable from the zone-select menu (the "?" button/H
+// key) — a read-only overlay, not a real state transition in the campaign
+// sense, but modeled as one so main.js's existing state-driven input routing
+// and render-pixi's state-driven draw dispatch both just work unchanged.
+export function openHelp() { state = "help"; }
+export function closeHelp() { state = "menu"; }
+
 export function toMenu() {
   state = "menu";
 }

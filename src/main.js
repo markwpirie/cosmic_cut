@@ -11,10 +11,11 @@ import { marker, mode, dir, trail, lastCutLength, lastCutSlow, zoomDash, selfHit
 import * as enemy from "./enemy.js";
 import * as game from "./game.js";
 import * as pixiRenderer from "./render-pixi.js";
+import { HELP_PAGE_COUNT } from "./render-pixi.js";
 import * as audio from "./audio.js";
 import * as director from "./audio-director.js";
 import * as fx from "./fx.js";
-import { TIMING, POINTS, THEMES, CANDY, POWERUPS, RESPAWN, SPECIAL_BLOBS, CELL, field, WIDTH, HEIGHT, MOBILE, TOUCH, AUDIO, PAUSE_MENU, pauseRowY } from "./config.js";
+import { TIMING, POINTS, THEMES, CANDY, POWERUPS, RESPAWN, SPECIAL_BLOBS, CELL, field, WIDTH, HEIGHT, MOBILE, TOUCH, HELP_BTN, AUDIO, PAUSE_MENU, pauseRowY } from "./config.js";
 import * as powerups from "./powerups.js";
 import * as sparx from "./sparx.js";
 
@@ -48,6 +49,7 @@ const DIR_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
 
 let transT = 0;        // clock for intro / levelcomplete / dead transitions
 let menuSel = 1;       // selected starting zone on the menu
+let helpPage = 0;      // current page (0-based) of the instructions screen
 let popups = [];       // floating "+N%" claim pop-ups
 let reward = null;     // central score read-out (bonus labels + base × mult = total)
 let deathPoint = null; // where the last fatal contact happened (flashed while "dead")
@@ -238,6 +240,7 @@ window.addEventListener("keydown", (e) => {
   // the pause MENU's own resume shortcut once already paused.
   if (e.key === "p" || e.key === "P" || e.key === "Escape") {
     if (powerups.isAiming()) { powerups.cancelZoom(); return; } // cancel ZOOM aim
+    if (game.state === "help") { game.closeHelp(); audio.ui(); return; }
     if (paused) { resumeFromPause(); audio.ui(); }
     else if (game.state === "playing" || game.state === "intro" || game.state === "dead") { enterPause(); audio.ui(); }
     return;
@@ -262,6 +265,16 @@ window.addEventListener("keydown", (e) => {
     else if (e.key === "Enter" || e.key === " ") { startSelected(); audio.ui(); }
     else if (e.key === "c" || e.key === "C") toggleCandy();
     else if ((e.key === "v" || e.key === "V") && game.candyTheme) toggleCandyMusic();
+    else if (e.key === "h" || e.key === "H" || e.key === "?") { helpPage = 0; game.openHelp(); audio.ui(); }
+    return;
+  }
+  if (game.state === "help") {
+    // ← → (or A/D) page through CONTROLS/SCORING/ENEMIES/POWER-UPS; Enter/Space
+    // closes back to the menu (Escape/P already handled above, since those keys
+    // are intercepted before this state-dispatch chain is reached).
+    if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") { helpPage = Math.max(0, helpPage - 1); audio.ui(); }
+    else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") { helpPage = Math.min(HELP_PAGE_COUNT - 1, helpPage + 1); audio.ui(); }
+    else if (e.key === "Enter" || e.key === " ") { game.closeHelp(); audio.ui(); }
     return;
   }
   // DEV/TEST: Z drops a ZOOM on the marker (instant pickup) to test the aim path.
@@ -337,6 +350,13 @@ function hitCandyBtn(t, b) {
   const p = canvasPos(t);
   return Math.abs(p.x - WIDTH / 2) <= b.w / 2 && Math.abs(p.y - b.y) <= b.h / 2;
 }
+// Zone-select "?" HELP button (top-right, config.HELP_BTN) — always drawn, same
+// as the CANDY chip; on desktop that's a visual hint only (H is the real shortcut,
+// there's no mouse-click handling in this codebase), on touch it's a real target.
+function hitHelpBtn(t) {
+  const p = canvasPos(t), b = HELP_BTN;
+  return Math.hypot(p.x - b.x, p.y - b.y) <= b.hitR;
+}
 // Which pause-menu row (if any) a touch landed on, and which half (for the
 // SFX/MUSIC sliders: left half decreases, right half increases) — mirrors the
 // row geometry render-pixi.js draws from the same config.PAUSE_MENU/pauseRowY.
@@ -390,6 +410,12 @@ function setTouchDir(name) {
     else if (name === "right") { menuSel = Math.min(menuMax(), menuSel + 1); audio.ui(); }
     return;
   }
+  // On the help screen a swipe pages through CONTROLS/SCORING/ENEMIES/POWER-UPS.
+  if (game.state === "help") {
+    if (name === "left") { helpPage = Math.max(0, helpPage - 1); audio.ui(); }
+    else if (name === "right") { helpPage = Math.min(HELP_PAGE_COUNT - 1, helpPage + 1); audio.ui(); }
+    return;
+  }
   if (touchDir === name) return;
   if (touchDir) control.release(SYNTH[touchDir]);
   touchDir = name;
@@ -425,6 +451,11 @@ if (canvas && typeof window !== "undefined" && "ontouchstart" in window) {
       // The on-screen pause button (mobile only — there's no Esc key on a phone).
       if (hitPauseBtn(t) && (game.state === "playing" || game.state === "intro" || game.state === "dead")) {
         audio.resume(); enterPause(); audio.ui();
+        continue;
+      }
+      // The zone-select "?" HELP button.
+      if (hitHelpBtn(t) && game.state === "menu") {
+        audio.resume(); helpPage = 0; game.openHelp(); audio.ui();
         continue;
       }
       if (t.identifier === slowTouchId) continue; // already the SLOW finger
@@ -478,6 +509,12 @@ if (canvas && typeof window !== "undefined" && "ontouchstart" in window) {
         else if (t && game.candyTheme && hitCandyBtn(t, CANDY.musicBtn)) toggleCandyMusic();
         else { startSelected(); audio.ui(); }
       }
+      // A stationary tap while viewing help closes it back to the menu; a swipe
+      // already paged it during touchmove (setTouchDir), so touchMoved is true
+      // there and this is correctly skipped.
+      else if (anchorState === "help" && game.state === "help" && !touchMoved && touchId !== null) {
+        game.closeHelp(); audio.ui();
+      }
       setTouchDir(null); touchId = null; touchAnchor = null; anchorState = null;
     }
     refreshSlow(e);
@@ -494,7 +531,7 @@ function loop(now) {
   lastTime = now;
 
   if (paused) { // frozen: draw the overlay over the held frame, advance nothing
-    draw({ transT, menuSel, popups, reward, deathPoint, deathBlob, scorePulseT, danger, beat: 0, paused: true, slowBtn: slowTouchId !== null, pauseSel });
+    draw({ transT, menuSel, helpPage, popups, reward, deathPoint, deathBlob, scorePulseT, danger, beat: 0, paused: true, slowBtn: slowTouchId !== null, pauseSel });
     requestAnimationFrame(loop);
     return;
   }
@@ -770,7 +807,7 @@ function loop(now) {
   fx.update(dt);
 
   const beat = audio.musicPulse(); // 0..1 bass-driven pulse for a beat-synced screen glow
-  draw({ transT, menuSel, popups, reward, deathPoint, deathBlob, scorePulseT, danger, beat, slowBtn: slowTouchId !== null, pauseSel });
+  draw({ transT, menuSel, helpPage, popups, reward, deathPoint, deathBlob, scorePulseT, danger, beat, slowBtn: slowTouchId !== null, pauseSel });
   requestAnimationFrame(loop);
 }
 

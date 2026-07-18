@@ -395,6 +395,12 @@ export const TOUCH = {
   pauseBtn: { x: WIDTH - 64, y: HEIGHT - 52, r: 28, hitR: 46 },
 };
 
+// Zone-select "?" HELP button — top-right corner, clear of the zone chips/
+// CANDY chip below (config.CANDY.menuBtn) and the title/hi-score text above.
+// Desktop also opens help with the H key; this rect is the touch target and
+// (drawn the same size) the click target for both.
+export const HELP_BTN = { x: WIDTH - (MOBILE ? 28 : 36), y: MOBILE ? 28 : 36, r: MOBILE ? 16 : 18, hitR: MOBILE ? 28 : 30 };
+
 // Pause menu (P/Esc → RESUME / SFX / MUSIC / CANDY [/ CANDY MUSIC] / QUIT TO
 // MENU — the last two rows are dynamic, see game.pauseMenuRows()). Row
 // geometry shared between touch hit-testing (main.js) and drawing
